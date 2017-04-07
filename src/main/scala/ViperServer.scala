@@ -45,7 +45,6 @@ object ViperServerRunner {
       }
     } finally {
       cleanUp()
-      logger.info("The Viper Server has finished.")
     }
     sys.exit(0)
   }
@@ -68,11 +67,15 @@ object ViperServerRunner {
 
     val args = splitCommandLineArgs(input)
 
-    if (!args.isEmpty && args.head != "stop") {
-      actorWatcher ! Verify(args)
-    } else {
+    if(args.isEmpty){
+        return
+    } else if (args.head == "stop") {
+      actorWatcher ! Stop
+    } else if (args.head == "exit") {
       actorWatcher ! Stop
       _running = false
+    } else {
+      actorWatcher ! Verify(args)
     }
   }
 
@@ -140,9 +143,14 @@ class WatchActor extends Actor {
         _child ! Stop
       }
       if(_backend != null){
-        //println("stop backend1")
-        _backend.stop()
-        _backend = null
+        try {
+          _backend.stop()
+        }finally {
+          println("Verification stopped")
+          _backend = null
+        }
+      }else{
+        println("Verification stopped")
       }
     }
     case Verify(args) => {
@@ -152,7 +160,6 @@ class WatchActor extends Actor {
       }else{
         verify(args)
       }
-      //println("verified1")
     }
     case Terminated(child) => {
       _child = null
@@ -161,11 +168,9 @@ class WatchActor extends Actor {
         _args = null
         verify(args)
       }
-      //println("terminated1")
     }
     case Backend(backend) =>{
       _backend = backend
-      //println("backend1")
     }
     case _ => println("ActorWatcher: unexpected message received")
   }

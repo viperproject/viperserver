@@ -9,10 +9,11 @@ package viper.server
 import java.nio.file.Paths
 
 import akka.actor.{Actor, ActorRef}
-import viper.carbon.CarbonFrontend
+import viper.carbon.{CarbonFrontend, CarbonVerifier}
+import viper.server.RequestHandler.Backend
 import viper.silicon.SiliconFrontend
 import viper.silver.ast.Program
-import viper.silver.frontend.SilFrontend
+import viper.silver.frontend.{SilFrontend, TranslatorState}
 import viper.silver.verifier.Verifier
 
 object RequestHandler {
@@ -26,21 +27,16 @@ class RequestHandler extends Actor {
 
   private var _backend:Verifier = _
 
-  private var _sender:ActorRef = null
-
   def receive = {
     case Verify("silicon" :: args) => {
-      _sender = sender()
-      verifySilicon(args)
+      verifySilicon(args, sender())
       context stop self
     }
     case Verify("carbon" :: args) => {
-      _sender = sender()
-      verifyCarbon(args)
+      verifyCarbon(args, sender())
       context stop self
     }
     case Stop =>{
-      //println("stop")
       context stop self
     }
     case Verify(args) => println("invalid arguments: " + args.mkString(" "))
@@ -52,42 +48,88 @@ class RequestHandler extends Actor {
     //print("> ")
   }
 
-  def verifySilicon(args: List[String]): Unit ={
-    val frontend = new SiliconFrontend()
-    verify(frontend, args)
+  def verifySilicon(args: List[String],sender: ActorRef): Unit ={
+    val frontend = new ViperSiliconFrontend()
+    frontend.setSender(sender)
+    frontend.execute(args)
   }
 
-  def verifyCarbon(args: List[String]): Unit ={
-    val frontend = new CarbonFrontend()
-    verify(frontend, args)
+  def verifyCarbon(args: List[String],sender: ActorRef): Unit ={
+    val frontend = new ViperCarbonFrontend()
+    frontend.setSender(sender)
+    frontend.execute(args)
   }
+}
 
-  def verify(frontend:SilFrontend, args: List[String]) {
-    try{
-      frontend.setStartTime()
-      val backend = frontend.createVerifier(args.mkString(" "))
-      _sender ! Backend(backend)
 
-      frontend.setVerifier(backend)
+class ViperCarbonFrontend extends CarbonFrontend with Sender{
+  override def execute(args: Seq[String]) {
+    setStartTime()
 
-      frontend.prepare(args)
-      frontend.init(backend)
+    /* Create the verifier */
+    _ver = createVerifier(args.mkString(" "))
 
-      val fileName = frontend.config.file()
-      val file = Paths.get(fileName)
+    _sender ! Backend(_ver)
 
-      frontend.reset(file)
-      frontend.parse()
-      frontend.typecheck()
-      frontend.translate()
+    if (!prepare(args)) return
 
-      val targetNode: Program = frontend.translatorResult
+    // initialize the translator
+    init(_ver)
 
-      frontend.doVerify()
-      frontend.finish()
+    // set the file we want to verify
+    reset(Paths.get(_config.file()))
 
-    } catch {
-      case e => println("Error: " + e)
+    // run the parser, typechecker, and verifier
+    parse()
+    typecheck()
+    translate()
+
+    if (_errors.nonEmpty) {
+      _state = TranslatorState.Verified
+    }else {
+      doVerify()
     }
+
+    finish()
+  }
+}
+
+trait Sender {
+  protected var _sender:ActorRef = null
+
+  def setSender(sender:ActorRef): Unit ={
+    _sender = sender
+  }
+}
+
+class ViperSiliconFrontend extends SiliconFrontend with Sender{
+  override def execute(args: Seq[String]) {
+    setStartTime()
+
+    /* Create the verifier */
+    _ver = createVerifier(args.mkString(" "))
+
+    _sender ! Backend(_ver)
+
+    if (!prepare(args)) return
+
+    // initialize the translator
+    init(_ver)
+
+    // set the file we want to verify
+    reset(Paths.get(_config.file()))
+
+    // run the parser, typechecker, and verifier
+    parse()
+    typecheck()
+    translate()
+
+    if (_errors.nonEmpty) {
+      _state = TranslatorState.Verified
+    }else {
+      doVerify()
+    }
+
+    finish()
   }
 }
