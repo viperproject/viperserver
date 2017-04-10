@@ -8,7 +8,7 @@ package viper.server
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props, Terminated}
 import org.rogach.scallop.{Scallop, singleArgConverter}
-import viper.server.RequestHandler.{Backend, Stop, Verify}
+import viper.server.RequestHandler._
 import viper.silicon.Silicon
 import viper.silver.frontend.SilFrontendConfig
 import viper.silver.verifier.Verifier
@@ -137,14 +137,22 @@ class WatchActor extends Actor {
   private var _args:List[String] = null
   private var _backend: Verifier = null
 
+  private var _stopRequested = false
+
   def receive = {
     case Stop => {
       if (_child != null) {
-        _child ! Stop
+        //println("send STOP to child")
+        //_child ! Stop
+        _stopRequested = true
       }
       if(_backend != null){
         try {
           _backend.stop()
+        } catch {
+          case e: Exception => {
+            e.printStackTrace()
+          }
         }finally {
           println("Verification stopped")
           _backend = null
@@ -153,15 +161,22 @@ class WatchActor extends Actor {
         println("Verification stopped")
       }
     }
+    case ShowException(e:Exception) =>{
+      if(!_stopRequested){
+        e.printStackTrace()
+      }
+    }
     case Verify(args) => {
       if (_child != null) {
         _args = args
         self ! Stop
       }else{
+        _stopRequested = false
         verify(args)
       }
     }
     case Terminated(child) => {
+      //println("terminated")
       _child = null
       if(_args != null){
         val args = _args

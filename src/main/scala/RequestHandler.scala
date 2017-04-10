@@ -17,22 +17,27 @@ import viper.silver.frontend.{SilFrontend, TranslatorState}
 import viper.silver.verifier.Verifier
 
 object RequestHandler {
-  case class Verify(args:List[String])
+  case class Verify(args: List[String])
   case object Stop
-  case class Backend(backend:Verifier)
+  case object StopRequested
+  case class ShowException(e: Exception)
+  case class Backend(backend: Verifier)
 }
 
 class RequestHandler extends Actor {
   import RequestHandler._
 
-  private var _backend:Verifier = _
+  private var _exception: Exception = null
+  private var _sender: ActorRef = null
 
   def receive = {
     case Verify("silicon" :: args) => {
+      _sender = sender()
       verifySilicon(args, sender())
       context stop self
     }
     case Verify("carbon" :: args) => {
+      _sender = sender()
       verifyCarbon(args, sender())
       context stop self
     }
@@ -49,9 +54,15 @@ class RequestHandler extends Actor {
   }
 
   def verifySilicon(args: List[String],sender: ActorRef): Unit ={
-    val frontend = new ViperSiliconFrontend()
-    frontend.setSender(sender)
-    frontend.execute(args)
+    try {
+      val frontend = new ViperSiliconFrontend()
+      frontend.setSender(sender)
+      frontend.execute(args)
+    }catch {
+      case e: Exception => {
+        _sender ! ShowException(e)
+      }
+    }
   }
 
   def verifyCarbon(args: List[String],sender: ActorRef): Unit ={
@@ -89,6 +100,8 @@ class ViperCarbonFrontend extends CarbonFrontend with Sender{
     }else {
       doVerify()
     }
+
+    _ver.stop()
 
     finish()
   }
@@ -129,6 +142,8 @@ class ViperSiliconFrontend extends SiliconFrontend with Sender{
     }else {
       doVerify()
     }
+
+    _ver.stop()
 
     finish()
   }
