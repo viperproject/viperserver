@@ -4,10 +4,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+
 package viper.server
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Props, Terminated}
-import org.rogach.scallop.{Scallop, singleArgConverter}
+import akka.actor.{Actor, ActorRef, ActorSystem, Kill, Props, Terminated}
+import org.rogach.scallop.singleArgConverter
+import org.slf4j.LoggerFactory
+import ch.qos.logback.classic.Logger
 import viper.server.RequestHandler._
 import viper.silicon.Silicon
 import viper.silver.frontend.SilFrontendConfig
@@ -18,7 +21,7 @@ import scala.language.postfixOps
 
 object ViperServerRunner {
 
-  def logger = org.apache.log4j.Logger.getLogger("ViperServer")
+  def logger = LoggerFactory.getLogger(getClass.getName+"_IDE").asInstanceOf[Logger]
 
   private var _config: ViperConfig = _
 
@@ -50,7 +53,7 @@ object ViperServerRunner {
   }
 
   private def initialize(): Unit = {
-    logger.setLevel(org.apache.log4j.Level.INFO)
+//  logger.setLevel(org.apache.log4j.Level.INFO)
     _actorSystem = ActorSystem("MyActorSystem")
     _actorWatcher = actorSystem.actorOf(Props[WatchActor])
   }
@@ -60,15 +63,15 @@ object ViperServerRunner {
   }
 
   private def serve(): Unit = {
-    val input: String = scala.io.StdIn.readLine().trim()
-    if(input.length == 0) {
+    val input: String = scala.io.StdIn.readLine()
+    if (input == null || input.length == 0) {
       return
     }
 
-    val args = splitCommandLineArgs(input)
+    val args = splitCommandLineArgs(input.trim())
 
-    if(args.isEmpty){
-        return
+    if (args.isEmpty) {
+      return
     } else if (args.head == "stop") {
       actorWatcher ! Stop
     } else if (args.head == "exit") {
@@ -79,10 +82,10 @@ object ViperServerRunner {
     }
   }
 
-  private def splitCommandLineArgs(args:String): List[String] ={
+  private def splitCommandLineArgs(args: String): List[String] = {
     var res = new ListBuffer[String]()
-    if(args != null){
-      var last:Char = '\u0000'
+    if (args != null) {
+      var last: Char = '\u0000'
       var inQuotes = false
       var arg: StringBuilder = new StringBuilder()
 
@@ -91,22 +94,22 @@ object ViperServerRunner {
       trimmedArgs foreach (char =>
         char match {
           case '"' => {
-            if(inQuotes) {
-              if(last == '"'){
+            if (inQuotes) {
+              if (last == '"') {
                 arg += char
                 last = '\u0000'
-              }else{
+              } else {
                 last = char
               }
             } else {
               inQuotes = true
             }
           }
-          case ' ' =>{
-            if(last == '"'){
+          case ' ' => {
+            if (last == '"') {
               inQuotes = false
             }
-            if(inQuotes){
+            if (inQuotes) {
               arg += char
             } else {
               res += arg.toString()
@@ -115,14 +118,14 @@ object ViperServerRunner {
             last = char
           }
           case c => {
-            if(last == '"'){
+            if (last == '"') {
               inQuotes = false
             }
             arg += char
             last = char
           }
         }
-      )
+        )
     }
     return res.toList
   }
@@ -134,64 +137,65 @@ object ViperServerRunner {
 
 class WatchActor extends Actor {
   private var _child: ActorRef = null
-  private var _args:List[String] = null
+  private var _args: List[String] = null
   private var _backend: Verifier = null
 
-  private var _stopRequested = false
+
 
   def receive = {
     case Stop => {
-      if (_child != null) {
-        //println("send STOP to child")
-        //_child ! Stop
-        _stopRequested = true
-      }
-      if(_backend != null){
+      if (_backend != null) {
         try {
+          //takes care of background processes
           _backend.stop()
         } catch {
           case e: Exception => {
-            e.printStackTrace()
+            throw e
+            //e.printStackTrace()
           }
-        }finally {
-          println("Verification stopped")
-          _backend = null
         }
-      }else{
-        println("Verification stopped")
       }
-    }
-    case ShowException(e:Exception) =>{
-      if(!_stopRequested){
-        e.printStackTrace()
+      if (_child != null) {
+        try {
+          _child ! Stop
+        } catch {
+          case e: Exception => {
+            throw e
+            //e.printStackTrace()
+          }
+        }
       }
+      _backend = null
     }
-    case Verify(args) => {
+    case Verify(args)
+    => {
       if (_child != null) {
         _args = args
         self ! Stop
-      }else{
-        _stopRequested = false
+      } else {
         verify(args)
       }
     }
-    case Terminated(child) => {
-      //println("terminated")
+    case Stopped
+    => {
       _child = null
-      if(_args != null){
+      if (_args != null) {
         val args = _args
         _args = null
         verify(args)
       }
     }
-    case Backend(backend) =>{
+    case Terminated(child)
+    => {}
+    case Backend(backend)
+    => {
       _backend = backend
     }
-    case _ => println("ActorWatcher: unexpected message received")
+    case msg => println("ActorWatcher: unexpected message received: " + msg)
   }
 
-  def verify(args: List[String]): Unit ={
-    assert (_child == null)
+  def verify(args: List[String]): Unit = {
+    assert(_child == null)
     _child = context.actorOf(Props[RequestHandler], "RequestHandlerActor")
     context.watch(_child)
     _child ! Verify(args)
@@ -199,12 +203,6 @@ class WatchActor extends Actor {
 }
 
 class ViperConfig(args: Seq[String]) extends SilFrontendConfig(args, "Viper") {
-
-  val backend = opt[String]("backend",
-    descr = "Determine preferred verification backend (silicon or carbon)",
-    default = Some("silicon"),
-    noshort = true
-  )
 
   val logLevel = opt[String]("logLevel",
     descr = "One of the log levels ALL, TRACE, DEBUG, INFO, WARN, ERROR, OFF (default: OFF)",
