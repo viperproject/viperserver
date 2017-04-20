@@ -10,12 +10,15 @@ package viper.server
 import java.nio.file.Paths
 
 import akka.actor.{Actor, ActorRef}
-import viper.carbon.{CarbonFrontend, CarbonVerifier}
+import com.typesafe.scalalogging.LazyLogging
+import viper.carbon.CarbonFrontend
 import viper.server.RequestHandler.Backend
 import viper.silicon.SiliconFrontend
-import viper.silver.ast.Program
+import viper.silver.ast._
 import viper.silver.frontend.{SilFrontend, TranslatorState}
-import viper.silver.verifier.Verifier
+import viper.silver.verifier.{AbstractError, Failure, Success, Verifier}
+
+import scala.collection.mutable.ListBuffer
 
 object RequestHandler {
 
@@ -33,7 +36,7 @@ object RequestHandler {
 
 }
 
-class RequestHandler extends Actor{
+class RequestHandler extends Actor with LazyLogging {
 
   import RequestHandler._
 
@@ -44,21 +47,18 @@ class RequestHandler extends Actor{
 
   private var _stopRequested = false
 
-  def receive = {
-    case Verify("silicon" :: args) => {
+  def receive: PartialFunction[Any, Unit] = {
+    case Verify("silicon" :: args) =>
       _sender = sender()
       verifySilicon(args, sender())
-    }
-    case Verify("carbon" :: args) => {
+    case Verify("carbon" :: args) =>
       _sender = sender()
       verifyCarbon(args, sender())
-    }
-    case Stop => {
+    case Stop =>
       _stopRequested = true
       context stop self
-    }
-    case Verify(args) => println("invalid arguments: " + args.mkString(" "))
-    case _ => println("invalid arguments")
+    case Verify(args) => logger.info("invalid arguments: " + args.mkString(" "))
+    case _ => logger.info("invalid arguments")
   }
 
   override def postStop(): Unit = {
@@ -76,7 +76,7 @@ class RequestHandler extends Actor{
   private def startVerification(args: List[String], frontend: ViperFrontend): Unit = {
     //verify in another thread
     _worker = new Thread {
-      override def run {
+      override def run() {
         try {
           frontend.execute(args)
         } catch {
@@ -95,7 +95,7 @@ class RequestHandler extends Actor{
         }
       }
     }
-    _worker.start
+    _worker.start()
   }
 
   def verifyCarbon(args: List[String], sender: ActorRef): Unit = {
@@ -144,12 +144,100 @@ trait ViperFrontend extends SilFrontend {
     if (_errors.nonEmpty) {
       _state = TranslatorState.Verified
     } else {
-      doVerify()
+      printOutline(_program.get)
+      doVerifyCached()
     }
 
     _ver.stop()
 
     finish()
+  }
+
+  private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): List[AbstractError] = {
+    //The position of the error is used to determine to which Method it belongs.
+    val methodStart = m.pos.asInstanceOf[SourcePosition].start.line
+    val methodEnd = m.pos.asInstanceOf[SourcePosition].end.get.line
+
+    errors.filter(e => {
+      e.pos match {
+        case pos: HasLineColumn =>
+          val errorPos = pos.line
+          errorPos >= methodStart && errorPos <= methodEnd
+        case _ =>
+          false
+      }
+    }).toList
+  }
+
+  private def removeBody(m: Method): Unit = {
+    val node: Stmt = Inhale(FalseLit()())()
+    m.body_=(Seqn(Seq(node))(m.pos, m.info))
+  }
+
+  def doVerifyCached(): Unit = {
+    val (methodsToVerify, methodsToCache, cachedErrors) = consultCache()
+    //remove method body of methods to cache
+    methodsToCache.foreach(m => {
+      removeBody(m)
+    })
+    val program = _program.get
+    val file: String = _config.file()
+
+    val nofCachedMethods = program.methods.length - methodsToVerify.length
+    if (nofCachedMethods > 0) {
+      logger.info("Cached " + nofCachedMethods + " methods.")
+    }
+
+    _verificationResult = Some(mapVerificationResult(_verifier.get.verify(program)))
+    assert(_verificationResult != null)
+
+    _state = TranslatorState.Verified
+
+    //update cache
+    methodsToVerify.foreach(m => {
+      _verificationResult.get match {
+        case Failure(errors) =>
+          val errorsToCache = getMethodSpecificErrors(m, errors)
+          ViperCache.update(file, m, errorsToCache)
+          logger.info("Cache " + m.name + (if (errorsToCache.nonEmpty) ": Error" else ": Success"))
+        case Success =>
+          logger.info("Cache " + m.name + ": Success")
+          ViperCache.update(file, m, Nil)
+      }
+    })
+
+    //combine errors:
+    if (cachedErrors.nonEmpty) {
+      _verificationResult.get match {
+        case Failure(errorList) =>
+          _verificationResult = Some(Failure(errorList ++ cachedErrors))
+        case Success =>
+          _verificationResult = Some(Failure(cachedErrors))
+      }
+    }
+    //TODO: how to clean up the cache? -> Arshavir
+    //TODO: what to store in the cache such that the position of the error is updated when only whitespaces change? -> Valentin
+    // -> store localizer to ast Node
+  }
+
+  def consultCache(): (List[Method], List[Method], List[AbstractError]) = {
+    val errors: collection.mutable.ListBuffer[AbstractError] = ListBuffer()
+    val methodsToVerify: collection.mutable.ListBuffer[Method] = ListBuffer()
+    val methodsToCache: collection.mutable.ListBuffer[Method] = ListBuffer()
+    //perform caching
+    val file: String = _config.file()
+    _program.get.methods.foreach(m => {
+      ViperCache.get(file, m) match {
+        case None => {
+          methodsToVerify += m
+        }
+        case Some(methodErrors) => {
+          errors ++= methodErrors
+          methodsToCache += m
+        }
+      }
+    })
+    (methodsToVerify.toList, methodsToCache.toList, errors.toList)
   }
 }
 

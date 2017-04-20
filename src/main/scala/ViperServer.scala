@@ -7,33 +7,38 @@
 
 package viper.server
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Kill, Props, Terminated}
-import org.rogach.scallop.singleArgConverter
-import org.slf4j.LoggerFactory
+import java.security.MessageDigest
+
+import akka.actor.{Actor, ActorRef, ActorSystem, Props, Terminated}
 import ch.qos.logback.classic.Logger
+import com.typesafe.scalalogging.LazyLogging
+import org.rogach.scallop.{ScallopOption, singleArgConverter}
+import org.slf4j.LoggerFactory
 import viper.server.RequestHandler._
 import viper.silicon.Silicon
+import viper.silver.ast.Method
+import viper.silver.ast.pretty.FastPrettyPrinter
 import viper.silver.frontend.SilFrontendConfig
-import viper.silver.verifier.Verifier
+import viper.silver.verifier.{AbstractError, Verifier}
 
 import scala.collection.mutable.ListBuffer
 import scala.language.postfixOps
 
 object ViperServerRunner {
 
-  def logger = LoggerFactory.getLogger(getClass.getName+"_IDE").asInstanceOf[Logger]
+  def logger: Logger = LoggerFactory.getLogger(getClass.getName + "_IDE").asInstanceOf[Logger]
 
   private var _config: ViperConfig = _
 
-  final def config = _config
+  final def config: ViperConfig = _config
 
   private var _actorWatcher: ActorRef = null
 
-  final def actorWatcher = _actorWatcher
+  final def actorWatcher: ActorRef = _actorWatcher
 
   private var _actorSystem: ActorSystem = null
 
-  final def actorSystem = _actorSystem
+  final def actorSystem: ActorSystem = _actorSystem
 
   private var _running = true
 
@@ -42,7 +47,6 @@ object ViperServerRunner {
       initialize()
       logger.info("This is the Viper Server.")
       parseCommandLine(args)
-      //print("> ")
       while (_running) {
         serve()
       }
@@ -53,7 +57,7 @@ object ViperServerRunner {
   }
 
   private def initialize(): Unit = {
-//  logger.setLevel(org.apache.log4j.Level.INFO)
+    //  logger.setLevel(org.apache.log4j.Level.INFO)
     _actorSystem = ActorSystem("MyActorSystem")
     _actorWatcher = actorSystem.actorOf(Props[WatchActor])
   }
@@ -70,15 +74,15 @@ object ViperServerRunner {
 
     val args = splitCommandLineArgs(input.trim())
 
-    if (args.isEmpty) {
-      return
-    } else if (args.head == "stop") {
-      actorWatcher ! Stop
-    } else if (args.head == "exit") {
-      actorWatcher ! Stop
-      _running = false
-    } else {
-      actorWatcher ! Verify(args)
+    if (args.nonEmpty) {
+      if (args.head == "stop") {
+        actorWatcher ! Stop
+      } else if (args.head == "exit") {
+        actorWatcher ! Stop
+        _running = false
+      } else {
+        actorWatcher ! Verify(args)
+      }
     }
   }
 
@@ -91,43 +95,38 @@ object ViperServerRunner {
 
       val trimmedArgs: String = args.trim() + " "
 
-      trimmedArgs foreach (char =>
-        char match {
-          case '"' => {
-            if (inQuotes) {
-              if (last == '"') {
-                arg += char
-                last = '\u0000'
-              } else {
-                last = char
-              }
-            } else {
-              inQuotes = true
-            }
-          }
-          case ' ' => {
+      trimmedArgs foreach {
+        case char@'"' =>
+          if (inQuotes) {
             if (last == '"') {
-              inQuotes = false
-            }
-            if (inQuotes) {
               arg += char
+              last = '\u0000'
             } else {
-              res += arg.toString()
-              arg = new StringBuilder()
+              last = char
             }
-            last = char
+          } else {
+            inQuotes = true
           }
-          case c => {
-            if (last == '"') {
-              inQuotes = false
-            }
+        case char@' ' =>
+          if (last == '"') {
+            inQuotes = false
+          }
+          if (inQuotes) {
             arg += char
-            last = char
+          } else {
+            res += arg.toString()
+            arg = new StringBuilder()
           }
-        }
-        )
+          last = char
+        case char@c =>
+          if (last == '"') {
+            inQuotes = false
+          }
+          arg += char
+          last = char
+      }
     }
-    return res.toList
+    res.toList
   }
 
   def parseCommandLine(args: Seq[String]) {
@@ -135,63 +134,48 @@ object ViperServerRunner {
   }
 }
 
-class WatchActor extends Actor {
+class WatchActor extends Actor with LazyLogging {
   private var _child: ActorRef = null
   private var _args: List[String] = null
   private var _backend: Verifier = null
 
-
-
-  def receive = {
-    case Stop => {
+  def receive: PartialFunction[Any, Unit] = {
+    case Stop =>
       if (_backend != null) {
         try {
           //takes care of background processes
           _backend.stop()
         } catch {
-          case e: Exception => {
-            throw e
-            //e.printStackTrace()
-          }
+          case e: Exception => throw e
         }
       }
       if (_child != null) {
         try {
           _child ! Stop
         } catch {
-          case e: Exception => {
-            throw e
-            //e.printStackTrace()
-          }
+          case e: Exception => throw e
         }
       }
       _backend = null
-    }
     case Verify(args)
-    => {
+    =>
       if (_child != null) {
         _args = args
         self ! Stop
       } else {
         verify(args)
       }
-    }
     case Stopped
-    => {
+    =>
       _child = null
       if (_args != null) {
         val args = _args
         _args = null
         verify(args)
       }
-    }
-    case Terminated(child)
-    => {}
-    case Backend(backend)
-    => {
-      _backend = backend
-    }
-    case msg => println("ActorWatcher: unexpected message received: " + msg)
+    case Terminated(child) =>
+    case Backend(backend) => _backend = backend
+    case msg => logger.info("ActorWatcher: unexpected message received: " + msg)
   }
 
   def verify(args: List[String]): Unit = {
@@ -204,11 +188,46 @@ class WatchActor extends Actor {
 
 class ViperConfig(args: Seq[String]) extends SilFrontendConfig(args, "Viper") {
 
-  val logLevel = opt[String]("logLevel",
+  val logLevel: ScallopOption[String] = opt[String]("logLevel",
     descr = "One of the log levels ALL, TRACE, DEBUG, INFO, WARN, ERROR, OFF (default: OFF)",
     default = Some("WARN"),
     noshort = true,
     hidden = Silicon.hideInternalOptions
   )(singleArgConverter(level => level.toUpperCase))
+}
 
+object ViperCache {
+
+  private val cache = collection.mutable.Map[String, collection.mutable.Map[String, List[AbstractError]]]()
+
+  def has(file: String, m: Method): Boolean = {
+    cache.get(file) match {
+      case Some(fileCache) =>
+        fileCache.get(hash(m)) match {
+          case Some(_) => return true
+        }
+    }
+    false
+  }
+
+  def get(file: String, m: Method): Option[List[AbstractError]] = {
+    cache.get(file) match {
+      case Some(fileCache) => fileCache.get(hash(m))
+      case None => None
+    }
+  }
+
+  def hash(m: Method): String = {
+    val method = FastPrettyPrinter.pretty(m)
+    new String(MessageDigest.getInstance("MD5").digest(method.getBytes))
+  }
+
+  def update(file: String, m: Method, errors: List[AbstractError]): Unit = {
+    cache.get(file) match {
+      case Some(fileCache) => fileCache += (hash(m) -> errors)
+      case None =>
+        cache += (file -> collection.mutable.Map[String, List[AbstractError]]())
+        update(file, m, errors)
+    }
+  }
 }
