@@ -7,8 +7,6 @@
 
 package viper.server
 
-import java.security.MessageDigest
-
 import akka.actor.{Actor, ActorRef, ActorSystem, Props, Terminated}
 import ch.qos.logback.classic.Logger
 import com.typesafe.scalalogging.LazyLogging
@@ -17,7 +15,6 @@ import org.slf4j.LoggerFactory
 import viper.server.RequestHandler._
 import viper.silicon.Silicon
 import viper.silver.ast.Method
-import viper.silver.ast.pretty.FastPrettyPrinter
 import viper.silver.frontend.SilFrontendConfig
 import viper.silver.verifier.{AbstractError, Verifier}
 
@@ -196,38 +193,33 @@ class ViperConfig(args: Seq[String]) extends SilFrontendConfig(args, "Viper") {
   )(singleArgConverter(level => level.toUpperCase))
 }
 
+class CacheEntry(val errors: List[AbstractError], val dependencyHash: String) {}
+
 object ViperCache {
 
-  private val cache = collection.mutable.Map[String, collection.mutable.Map[String, List[AbstractError]]]()
+  private val cache = collection.mutable.Map[String, collection.mutable.Map[String, CacheEntry]]()
 
-  def has(file: String, m: Method): Boolean = {
-    cache.get(file) match {
-      case Some(fileCache) =>
-        fileCache.get(hash(m)) match {
-          case Some(_) => return true
-        }
-    }
-    false
+  def contains(file: String, m: Method): Boolean = {
+    cache.contains(m.entityHash)
   }
 
-  def get(file: String, m: Method): Option[List[AbstractError]] = {
+  def get(file: String, m: Method): Option[CacheEntry] = {
     cache.get(file) match {
-      case Some(fileCache) => fileCache.get(hash(m))
+      case Some(fileCache) => fileCache.get(m.entityHash)
       case None => None
     }
   }
 
-  def hash(m: Method): String = {
-    val method = FastPrettyPrinter.pretty(m)
-    new String(MessageDigest.getInstance("MD5").digest(method.getBytes))
-  }
-
   def update(file: String, m: Method, errors: List[AbstractError]): Unit = {
     cache.get(file) match {
-      case Some(fileCache) => fileCache += (hash(m) -> errors)
+      case Some(fileCache) => fileCache += (m.entityHash -> new CacheEntry(errors, m.dependencyHash))
       case None =>
-        cache += (file -> collection.mutable.Map[String, List[AbstractError]]())
+        cache += (file -> collection.mutable.Map[String, CacheEntry]())
         update(file, m, errors)
     }
+  }
+
+  def forgetFile(file: String): Unit = {
+    cache.remove(file)
   }
 }

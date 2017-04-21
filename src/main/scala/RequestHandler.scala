@@ -217,7 +217,7 @@ trait ViperFrontend extends SilFrontend {
     }
     //TODO: how to clean up the cache? -> Arshavir
     //TODO: what to store in the cache such that the position of the error is updated when only whitespaces change? -> Valentin
-    // -> store localizer to ast Node
+    // -> store localization of ast Node
   }
 
   def consultCache(): (List[Method], List[Method], List[AbstractError]) = {
@@ -231,9 +231,14 @@ trait ViperFrontend extends SilFrontend {
         case None => {
           methodsToVerify += m
         }
-        case Some(methodErrors) => {
-          errors ++= methodErrors
-          methodsToCache += m
+        case Some(cacheEntry) => {
+          if (m.dependencyHash != cacheEntry.dependencyHash) {
+            //even if the method itself did not change, a re-verification is required if it's dependencies changed
+            methodsToVerify += m
+          } else {
+            errors ++= cacheEntry.errors
+            methodsToCache += m
+          }
         }
       }
     })
@@ -241,8 +246,6 @@ trait ViperFrontend extends SilFrontend {
   }
 }
 
-class ViperCarbonFrontend extends CarbonFrontend with ViperFrontend {
-}
+class ViperCarbonFrontend extends CarbonFrontend with ViperFrontend {}
 
-class ViperSiliconFrontend extends SiliconFrontend with ViperFrontend {
-}
+class ViperSiliconFrontend extends SiliconFrontend with ViperFrontend {}
