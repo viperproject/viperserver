@@ -8,6 +8,7 @@
 package viper.server
 
 import java.nio.file.Paths
+import java.security.MessageDigest
 
 import akka.actor.{Actor, ActorRef}
 import com.typesafe.scalalogging.LazyLogging
@@ -15,8 +16,11 @@ import viper.carbon.CarbonFrontend
 import viper.server.RequestHandler.Backend
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
+import viper.silver.ast.pretty.FastPrettyPrinter
+import viper.silver.ast.utility.Visitor
 import viper.silver.frontend.{SilFrontend, TranslatorState}
-import viper.silver.verifier.{AbstractError, Failure, Success, Verifier}
+import viper.silver.verifier._
+import viper.silver.verifier.errors.PositionedNode
 
 import scala.collection.mutable.ListBuffer
 
@@ -153,29 +157,33 @@ trait ViperFrontend extends SilFrontend {
     finish()
   }
 
-  private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): List[AbstractError] = {
+  private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): List[VerificationError] = {
     //The position of the error is used to determine to which Method it belongs.
     val methodStart = m.pos.asInstanceOf[SourcePosition].start.line
     val methodEnd = m.pos.asInstanceOf[SourcePosition].end.get.line
 
-    errors.filter(e => {
-      e.pos match {
-        case pos: HasLineColumn =>
-          val errorPos = pos.line
-          errorPos >= methodStart && errorPos <= methodEnd
-        case _ =>
-          false
+    val result = scala.collection.mutable.ListBuffer[VerificationError]()
+
+    errors.foreach(err => err match {
+      case e: VerificationError => {
+        e.pos match {
+          case pos: HasLineColumn =>
+            val errorPos = pos.line
+            if (errorPos >= methodStart && errorPos <= methodEnd) result += e
+        }
       }
-    }).toList
+    })
+    result.toList
   }
 
   private def removeBody(m: Method): Unit = {
     val node: Stmt = Inhale(FalseLit()())()
-    m.body_=(Seqn(Seq(node))(m.pos, m.info))
+    m.body = (Seqn(Seq(node))(m.pos, m.info))
   }
 
   def doVerifyCached(): Unit = {
     val (methodsToVerify, methodsToCache, cachedErrors) = consultCache()
+
     //remove method body of methods to cache
     methodsToCache.foreach(m => {
       removeBody(m)
@@ -216,33 +224,83 @@ trait ViperFrontend extends SilFrontend {
       }
     }
     //TODO: how to clean up the cache? -> Arshavir
-    //TODO: what to store in the cache such that the position of the error is updated when only whitespaces change? -> Valentin
-    // -> store localization of ast Node
+    //TODO: how to update changed error position  e.g., due to whitespace changes?
+    // -> add an entityHash to each Node,
+    //    find the corresponding Node in the new AST
+    //    update the VerificationError before continuing
   }
 
-  def consultCache(): (List[Method], List[Method], List[AbstractError]) = {
-    val errors: collection.mutable.ListBuffer[AbstractError] = ListBuffer()
+  def consultCache(): (List[Method], List[Method], List[VerificationError]) = {
+    val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
     val methodsToVerify: collection.mutable.ListBuffer[Method] = ListBuffer()
     val methodsToCache: collection.mutable.ListBuffer[Method] = ListBuffer()
     //perform caching
     val file: String = _config.file()
-    _program.get.methods.foreach(m => {
+
+    val program = _program.get
+    //fill in the entityHashes into the new AST
+    computeEntityHashes(program)
+
+    program.methods.foreach((m:Method) => {
       ViperCache.get(file, m) match {
         case None => {
           methodsToVerify += m
         }
         case Some(cacheEntry) => {
-          if (m.dependencyHash != cacheEntry.dependencyHash) {
+          if (m.dependencyHash(m) != cacheEntry.dependencyHash) {
             //even if the method itself did not change, a re-verification is required if it's dependencies changed
             methodsToVerify += m
           } else {
-            errors ++= cacheEntry.errors
+            errors ++= updateErrorLocation(m, cacheEntry.errors)
             methodsToCache += m
           }
         }
       }
     })
     (methodsToVerify.toList, methodsToCache.toList, errors.toList)
+  }
+
+  def computeEntityHashes(program: Program): Unit = {
+    program.methods.foreach(m => {
+      var counter = 0
+      m.subnodes.foreach(node => {
+        node.visit({ case (n: Node) => {
+          n.entityHash = computeEntityHash("" + counter, n)
+          counter += 1
+        }
+        })
+      })
+      m.entityHash = computeEntityHash("", m)
+    })
+  }
+
+  def computeEntityHash(prefix: String, astNode: Node): String = {
+    val node = prefix + "_" + FastPrettyPrinter.pretty(astNode)
+    astNode.buildHash(node)
+  }
+
+  private def updateErrorLocation(m: Method, errors: List[VerificationError]): List[VerificationError] = {
+    errors.map(updateErrorLocation(m, _))
+  }
+
+  private def updateErrorLocation(m: Method, error: VerificationError): VerificationError = {
+    if(error.offendingNode == null) return error
+    val hash: String = error.offendingNode.entityHash
+
+    m.subnodes.foreach(node => {
+      //get the corresponding offending node in the new AST
+      val offendingNode = Visitor.find(node, (n: Node) => n.subnodes)({ case n: Node => {
+        if (n.entityHash == hash) n
+      }})
+      //create a new VerificationError that only differs in its offending Node.
+      offendingNode match {
+        case Some(n: PositionedNode) =>
+          val updatedError = error.getClass.newInstance()
+          return error.updateNode(n)
+      }
+    })
+    //TODO: are all cases covered?
+    null
   }
 }
 

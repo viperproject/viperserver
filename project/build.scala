@@ -26,7 +26,7 @@ object ViperServerBuild extends Build {
 
   /* Projects */
 
-  lazy val viperServer = {
+  lazy val viper = {
     var p = Project(
       id = "viper",
       base = file("."),
@@ -66,6 +66,7 @@ object ViperServerBuild extends Build {
            * You can inspect the settings in effect using via
            * "show javaOptions" on the Sbt console.
            */
+
           libraryDependencies ++= externalDep,
           BrandKeys.dataPackage := "viper.server",
           BrandKeys.dataObject := "brandingData",
@@ -96,6 +97,7 @@ object ViperServerBuild extends Build {
     p.aggregate(common)
   }
 
+
   lazy val common = Project(
     id = "common",
     base = file("common"),
@@ -111,14 +113,16 @@ object ViperServerBuild extends Build {
 
   def isBuildServer = sys.env.contains("BUILD_TAG") /* Should only be defined on the build server */
 
-  def internalDep = if (isBuildServer) Nil else Seq(dependencies.silSrc % "compile->compile;test->test",
+  def internalDep = if (isBuildServer) Nil else Seq(
+    dependencies.silverSrc % "compile->compile;test->test",
     dependencies.carbonSrc % "compile->compile;test->test",
     dependencies.siliconSrc % "compile->compile;test->test")
 
   def externalDep = (
-    Seq(dependencies.jgrapht, dependencies.commonsIO, dependencies.commonsPool, dependencies.scallop, dependencies.actors)
+    Seq(dependencies.jgrapht , dependencies.commonsIO, dependencies.commonsPool, dependencies.scallop, dependencies.actors)
       ++ dependencies.logging
-      ++ (if (isBuildServer) Seq(dependencies.sil % "compile->compile;test->test",
+      ++ (if (isBuildServer) Seq(
+      dependencies.silver % "compile->compile;test->test",
       dependencies.carbon % "compile->compile;test->test",
       dependencies.silicon % "compile->compile;test->test") else Nil))
 
@@ -136,8 +140,8 @@ object ViperServerBuild extends Build {
     lazy val commonsIO = "commons-io" % "commons-io" % "2.5"
     lazy val commonsPool = "org.apache.commons" % "commons-pool2" % "2.4.2"
 
-    lazy val sil = "viper" %% "silver" % "0.1-SNAPSHOT"
-    lazy val silSrc = RootProject(new java.io.File("../silver"))
+    lazy val silver = "viper" %% "silver" % "0.1-SNAPSHOT"
+    lazy val silverSrc = RootProject(new java.io.File("../silver"))
     lazy val silicon = "viper" %% "silicon" % "0.1-SNAPSHOT"
     lazy val siliconSrc = RootProject(new java.io.File("../silicon"))
     lazy val carbon = "viper" %% "carbon" % "0.1-SNAPSHOT"
@@ -145,5 +149,4 @@ object ViperServerBuild extends Build {
 
     lazy val actors = "com.typesafe.akka" %% "akka-actor" % "2.4.17"
   }
-
 }

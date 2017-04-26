@@ -16,7 +16,7 @@ import viper.server.RequestHandler._
 import viper.silicon.Silicon
 import viper.silver.ast.Method
 import viper.silver.frontend.SilFrontendConfig
-import viper.silver.verifier.{AbstractError, Verifier}
+import viper.silver.verifier.{VerificationError, Verifier}
 
 import scala.collection.mutable.ListBuffer
 import scala.language.postfixOps
@@ -193,7 +193,7 @@ class ViperConfig(args: Seq[String]) extends SilFrontendConfig(args, "Viper") {
   )(singleArgConverter(level => level.toUpperCase))
 }
 
-class CacheEntry(val errors: List[AbstractError], val dependencyHash: String) {}
+class CacheEntry(val errors: List[VerificationError], val dependencyHash: String) {}
 
 object ViperCache {
 
@@ -210,9 +210,9 @@ object ViperCache {
     }
   }
 
-  def update(file: String, m: Method, errors: List[AbstractError]): Unit = {
+  def update(file: String, m: Method, errors: List[VerificationError]): Unit = {
     cache.get(file) match {
-      case Some(fileCache) => fileCache += (m.entityHash -> new CacheEntry(errors, m.dependencyHash))
+      case Some(fileCache) => fileCache += (m.entityHash -> new CacheEntry(errors, m.dependencyHash(m)))
       case None =>
         cache += (file -> collection.mutable.Map[String, CacheEntry]())
         update(file, m, errors)
