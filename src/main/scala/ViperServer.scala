@@ -205,14 +205,15 @@ object ViperCache {
 
   def get(file: String, m: Method): Option[CacheEntry] = {
     cache.get(file) match {
-      case Some(fileCache) => fileCache.get(m.entityHash)
+      case Some(fileCache) =>
+        fileCache.get(m.entityHash)
       case None => None
     }
   }
 
   def update(file: String, m: Method, errors: List[VerificationError]): Unit = {
     cache.get(file) match {
-      case Some(fileCache) => fileCache += (m.entityHash -> new CacheEntry(errors, m.dependencyHash(m)))
+      case Some(fileCache) => fileCache += (m.entityHash -> new CacheEntry(errors, m.dependencyHash))
       case None =>
         cache += (file -> collection.mutable.Map[String, CacheEntry]())
         update(file, m, errors)

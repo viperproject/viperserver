@@ -149,7 +149,11 @@ trait ViperFrontend extends SilFrontend {
       _state = TranslatorState.Verified
     } else {
       printOutline(_program.get)
-      doVerifyCached()
+      if(config.useCaching()) {
+        doVerifyCached()
+      }else{
+        doVerify()
+      }
     }
 
     _ver.stop()
@@ -182,6 +186,13 @@ trait ViperFrontend extends SilFrontend {
   }
 
   def doVerifyCached(): Unit = {
+
+    if(config.useCaching()) {
+      //TODO: how to propagate the entityHashes to the transformed program?
+      //fill in the entityHashes into the new AST
+      _program.get.computeEntityHashes()
+    }
+
     val (methodsToVerify, methodsToCache, cachedErrors) = consultCache()
 
     //remove method body of methods to cache
@@ -238,8 +249,6 @@ trait ViperFrontend extends SilFrontend {
     val file: String = _config.file()
 
     val program = _program.get
-    //fill in the entityHashes into the new AST
-    computeEntityHashes(program)
 
     program.methods.foreach((m:Method) => {
       ViperCache.get(file, m) match {
@@ -247,7 +256,7 @@ trait ViperFrontend extends SilFrontend {
           methodsToVerify += m
         }
         case Some(cacheEntry) => {
-          if (m.dependencyHash(m) != cacheEntry.dependencyHash) {
+          if (m.dependencyHash != cacheEntry.dependencyHash) {
             //even if the method itself did not change, a re-verification is required if it's dependencies changed
             methodsToVerify += m
           } else {
@@ -258,25 +267,6 @@ trait ViperFrontend extends SilFrontend {
       }
     })
     (methodsToVerify.toList, methodsToCache.toList, errors.toList)
-  }
-
-  def computeEntityHashes(program: Program): Unit = {
-    program.methods.foreach(m => {
-      var counter = 0
-      m.subnodes.foreach(node => {
-        node.visit({ case (n: Node) => {
-          n.entityHash = computeEntityHash("" + counter, n)
-          counter += 1
-        }
-        })
-      })
-      m.entityHash = computeEntityHash("", m)
-    })
-  }
-
-  def computeEntityHash(prefix: String, astNode: Node): String = {
-    val node = prefix + "_" + FastPrettyPrinter.pretty(astNode)
-    astNode.buildHash(node)
   }
 
   private def updateErrorLocation(m: Method, errors: List[VerificationError]): List[VerificationError] = {
