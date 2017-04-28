@@ -149,10 +149,10 @@ trait ViperFrontend extends SilFrontend {
       _state = TranslatorState.Verified
     } else {
       printOutline(_program.get)
-      if (config.useCaching()) {
-        doVerifyCached()
-      } else {
+      if (config.disableCaching()) {
         doVerify()
+      } else {
+        doVerifyCached()
       }
     }
 
@@ -187,11 +187,8 @@ trait ViperFrontend extends SilFrontend {
 
   def doVerifyCached(): Unit = {
 
-    if (config.useCaching()) {
-      //TODO: how to propagate the entityHashes to the transformed program?
-      //fill in the entityHashes into the new AST
-      _program.get.computeEntityHashes()
-    }
+    //fill in the entityHashes into the new AST
+    _program.get.computeEntityHashes()
 
     val (methodsToVerify, methodsToCache, cachedErrors) = consultCache()
 
@@ -202,10 +199,10 @@ trait ViperFrontend extends SilFrontend {
     val program = _program.get
     val file: String = _config.file()
 
-    val nofCachedMethods = program.methods.length - methodsToVerify.length
-    if (nofCachedMethods > 0) {
-      logger.info("Cached " + nofCachedMethods + " methods.")
-    }
+    //val nofCachedMethods = program.methods.length - methodsToVerify.length
+    //if (nofCachedMethods > 0) {
+    //  logger.info("Cached " + nofCachedMethods + " methods.")
+    //}
 
     _verificationResult = Some(mapVerificationResult(_verifier.get.verify(program)))
     assert(_verificationResult != null)
@@ -218,9 +215,9 @@ trait ViperFrontend extends SilFrontend {
         case Failure(errors) =>
           val errorsToCache = getMethodSpecificErrors(m, errors)
           ViperCache.update(file, m, errorsToCache)
-          logger.info("Cache " + m.name + (if (errorsToCache.nonEmpty) ": Error" else ": Success"))
+          logger.trace("Store in cache " + m.name + (if (errorsToCache.nonEmpty) ": Error" else ": Success"))
         case Success =>
-          logger.info("Cache " + m.name + ": Success")
+          logger.trace("Store in cache " + m.name + ": Success")
           ViperCache.update(file, m, Nil)
       }
     })
@@ -235,7 +232,7 @@ trait ViperFrontend extends SilFrontend {
       }
     }
     //TODO: how to clean up the cache? -> Arshavir
-    //TODO: how to update changed error position  e.g., due to whitespace changes?
+    //updating changed error position  e.g., due to whitespace changes?
     // -> add an entityHash to each Node,
     //    find the corresponding Node in the new AST
     //    update the VerificationError before continuing
@@ -287,7 +284,7 @@ trait ViperFrontend extends SilFrontend {
   private def updateErrorLocation(m: Method, error: VerificationError): VerificationError = {
     if (error.offendingNode == null) return error
     val hash: String = error.offendingNode.info.entityHash
-    val reasonHash:String = error.reason.offendingNode.info.entityHash
+    val reasonHash: String = error.reason.offendingNode.info.entityHash
     assert(hash != null)
 
     //get the corresponding offending node in the new AST
@@ -296,7 +293,9 @@ trait ViperFrontend extends SilFrontend {
     //create a new VerificationError that only differs in its offending Node.
     offendingNode match {
       case Some(n: PositionedNode) =>
-        return error.updateNode(n,reasonOffendingNode.get)
+        val updatedError = error.updateNode(n, reasonOffendingNode.get)
+        updatedError.cached = true
+        return updatedError
       case None =>
         assert(false, "No corresponding Node found")
     }
