@@ -14,7 +14,7 @@ import org.rogach.scallop.{ScallopOption, singleArgConverter}
 import org.slf4j.LoggerFactory
 import viper.server.RequestHandler._
 import viper.silicon.Silicon
-import viper.silver.ast.Method
+import viper.silver.ast.{Method}
 import viper.silver.frontend.SilFrontendConfig
 import viper.silver.verifier.{VerificationError, Verifier}
 
@@ -200,20 +200,23 @@ object ViperCache {
   private val cache = collection.mutable.Map[String, collection.mutable.Map[String, CacheEntry]]()
 
   def contains(file: String, m: Method): Boolean = {
-    cache.contains(m.entityHash)
+    assert (m.info.entityHash != null)
+    cache.contains(m.info.entityHash)
   }
 
   def get(file: String, m: Method): Option[CacheEntry] = {
+    assert (m.info.entityHash != null)
     cache.get(file) match {
       case Some(fileCache) =>
-        fileCache.get(m.entityHash)
+        fileCache.get(m.info.entityHash)
       case None => None
     }
   }
 
   def update(file: String, m: Method, errors: List[VerificationError]): Unit = {
+    assert (m.info.entityHash != null)
     cache.get(file) match {
-      case Some(fileCache) => fileCache += (m.entityHash -> new CacheEntry(errors, m.dependencyHash))
+      case Some(fileCache) => fileCache += (m.info.entityHash -> new CacheEntry(errors, m.dependencyHash))
       case None =>
         cache += (file -> collection.mutable.Map[String, CacheEntry]())
         update(file, m, errors)

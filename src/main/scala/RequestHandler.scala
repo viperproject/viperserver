@@ -149,9 +149,9 @@ trait ViperFrontend extends SilFrontend {
       _state = TranslatorState.Verified
     } else {
       printOutline(_program.get)
-      if(config.useCaching()) {
+      if (config.useCaching()) {
         doVerifyCached()
-      }else{
+      } else {
         doVerify()
       }
     }
@@ -187,7 +187,7 @@ trait ViperFrontend extends SilFrontend {
 
   def doVerifyCached(): Unit = {
 
-    if(config.useCaching()) {
+    if (config.useCaching()) {
       //TODO: how to propagate the entityHashes to the transformed program?
       //fill in the entityHashes into the new AST
       _program.get.computeEntityHashes()
@@ -250,7 +250,7 @@ trait ViperFrontend extends SilFrontend {
 
     val program = _program.get
 
-    program.methods.foreach((m:Method) => {
+    program.methods.foreach((m: Method) => {
       ViperCache.get(file, m) match {
         case None => {
           methodsToVerify += m
@@ -273,22 +273,33 @@ trait ViperFrontend extends SilFrontend {
     errors.map(updateErrorLocation(m, _))
   }
 
-  private def updateErrorLocation(m: Method, error: VerificationError): VerificationError = {
-    if(error.offendingNode == null) return error
-    val hash: String = error.offendingNode.entityHash
-
-    m.subnodes.foreach(node => {
-      //get the corresponding offending node in the new AST
-      val offendingNode = Visitor.find(node, (n: Node) => n.subnodes)({ case n: Node => {
-        if (n.entityHash == hash) n
-      }})
-      //create a new VerificationError that only differs in its offending Node.
-      offendingNode match {
-        case Some(n: PositionedNode) =>
-          val updatedError = error.getClass.newInstance()
-          return error.updateNode(n)
+  private def findCorrespondingNode(method: Method, hash: String): Option[errors.PositionedNode] = {
+    method.subnodes.foreach(node => {
+      Visitor.visit(node, (n: Node) => n.subnodes)({ case n: errors.PositionedNode => {
+        if (n.info.entityHash == hash)
+          return Some(n)
       }
+      })
     })
+    return None
+  }
+
+  private def updateErrorLocation(m: Method, error: VerificationError): VerificationError = {
+    if (error.offendingNode == null) return error
+    val hash: String = error.offendingNode.info.entityHash
+    val reasonHash:String = error.reason.offendingNode.info.entityHash
+    assert(hash != null)
+
+    //get the corresponding offending node in the new AST
+    val offendingNode = findCorrespondingNode(m, hash)
+    val reasonOffendingNode = findCorrespondingNode(m, reasonHash)
+    //create a new VerificationError that only differs in its offending Node.
+    offendingNode match {
+      case Some(n: PositionedNode) =>
+        return error.updateNode(n,reasonOffendingNode.get)
+      case None =>
+        assert(false, "No corresponding Node found")
+    }
     //TODO: are all cases covered?
     null
   }
