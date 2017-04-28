@@ -20,7 +20,6 @@ import viper.silver.ast.pretty.FastPrettyPrinter
 import viper.silver.ast.utility.Visitor
 import viper.silver.frontend.{SilFrontend, TranslatorState}
 import viper.silver.verifier._
-import viper.silver.verifier.errors.PositionedNode
 
 import scala.collection.mutable.ListBuffer
 
@@ -174,6 +173,8 @@ trait ViperFrontend extends SilFrontend {
           case pos: HasLineColumn =>
             val errorPos = pos.line
             if (errorPos >= methodStart && errorPos <= methodEnd) result += e
+          case _ =>
+            assert (false, "The reported errors should have a Location")
         }
       }
     })
@@ -270,9 +271,9 @@ trait ViperFrontend extends SilFrontend {
     errors.map(updateErrorLocation(m, _))
   }
 
-  private def findCorrespondingNode(method: Method, hash: String): Option[errors.PositionedNode] = {
+  private def findCorrespondingNode(method: Method, hash: String): Option[errors.ErrorNode] = {
     method.subnodes.foreach(node => {
-      Visitor.visit(node, (n: Node) => n.subnodes)({ case n: errors.PositionedNode => {
+      Visitor.visit(node, (n: Node) => n.subnodes)({ case n: errors.ErrorNode => {
         if (n.info.entityHash == hash)
           return Some(n)
       }
@@ -292,7 +293,7 @@ trait ViperFrontend extends SilFrontend {
     val reasonOffendingNode = findCorrespondingNode(m, reasonHash)
     //create a new VerificationError that only differs in its offending Node.
     offendingNode match {
-      case Some(n: PositionedNode) =>
+      case Some(n: errors.ErrorNode) =>
         val updatedError = error.updateNode(n, reasonOffendingNode.get)
         updatedError.cached = true
         return updatedError
