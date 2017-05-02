@@ -4,46 +4,26 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-
 package viper.server
 
 import java.nio.file.Paths
-import java.security.MessageDigest
 
 import akka.actor.{Actor, ActorRef}
 import com.typesafe.scalalogging.LazyLogging
 import viper.carbon.CarbonFrontend
-import viper.server.RequestHandler.Backend
+import viper.server.ViperServerProtocol.Backend
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
-import viper.silver.ast.pretty.FastPrettyPrinter
 import viper.silver.ast.utility.Visitor
 import viper.silver.frontend.{SilFrontend, TranslatorState}
 import viper.silver.verifier._
 
 import scala.collection.mutable.ListBuffer
 
-object RequestHandler {
+class VerificationActor extends Actor with LazyLogging {
 
-  case class Verify(args: List[String])
+  import ViperServerProtocol._
 
-  case object Stop
-
-  case object StopRequested
-
-  case class ShowException(e: Exception)
-
-  case class Backend(backend: Verifier)
-
-  case object Stopped
-
-}
-
-class RequestHandler extends Actor with LazyLogging {
-
-  import RequestHandler._
-
-  private var _exception: Exception = null
   private var _sender: ActorRef = null
 
   private var _worker: Thread = null
@@ -53,10 +33,10 @@ class RequestHandler extends Actor with LazyLogging {
   def receive: PartialFunction[Any, Unit] = {
     case Verify("silicon" :: args) =>
       _sender = sender()
-      verifySilicon(args, sender())
+      startVerification(args, new ViperSiliconFrontend(), sender())
     case Verify("carbon" :: args) =>
       _sender = sender()
-      verifyCarbon(args, sender())
+      startVerification(args, new ViperCarbonFrontend(), sender())
     case Stop =>
       _stopRequested = true
       context stop self
@@ -70,24 +50,18 @@ class RequestHandler extends Actor with LazyLogging {
     }
   }
 
-  def verifySilicon(args: List[String], sender: ActorRef): Unit = {
-    val frontend = new ViperSiliconFrontend()
+  private def startVerification(args: List[String], frontend: ViperFrontend, sender: ActorRef): Unit = {
     frontend.setSender(sender)
-    startVerification(args, frontend)
-  }
-
-  private def startVerification(args: List[String], frontend: ViperFrontend): Unit = {
     //verify in another thread
     _worker = new Thread {
       override def run() {
         try {
           frontend.execute(args)
         } catch {
-          case e: Exception => {
+          case e: Exception =>
             if (!_stopRequested) {
               e.printStackTrace(System.err)
             }
-          }
         } finally {
           //stop worker after completed verification
           if (context != null) {
@@ -99,12 +73,6 @@ class RequestHandler extends Actor with LazyLogging {
       }
     }
     _worker.start()
-  }
-
-  def verifyCarbon(args: List[String], sender: ActorRef): Unit = {
-    val frontend = new ViperCarbonFrontend()
-    frontend.setSender(sender)
-    startVerification(args, frontend)
   }
 }
 
@@ -164,26 +132,24 @@ trait ViperFrontend extends SilFrontend {
     //The position of the error is used to determine to which Method it belongs.
     val methodStart = m.pos.asInstanceOf[SourcePosition].start.line
     val methodEnd = m.pos.asInstanceOf[SourcePosition].end.get.line
-
     val result = scala.collection.mutable.ListBuffer[VerificationError]()
 
-    errors.foreach(err => err match {
-      case e: VerificationError => {
+    errors.foreach {
+      case e: VerificationError =>
         e.pos match {
           case pos: HasLineColumn =>
             val errorPos = pos.line
             if (errorPos >= methodStart && errorPos <= methodEnd) result += e
           case _ =>
-            assert (false, "The reported errors should have a Location")
+            throw new Exception("Error determining method specific errors for the cache: The reported errors should have a location")
         }
-      }
-    })
+    }
     result.toList
   }
 
   private def removeBody(m: Method): Unit = {
     val node: Stmt = Inhale(FalseLit()())()
-    m.body = (Seqn(Seq(node))(m.pos, m.info))
+    m.body = Seqn(Seq(node))(m.pos, m.info)
   }
 
   def doVerifyCached(): Unit = {
@@ -194,16 +160,10 @@ trait ViperFrontend extends SilFrontend {
     val (methodsToVerify, methodsToCache, cachedErrors) = consultCache()
 
     //remove method body of methods to cache
-    methodsToCache.foreach(m => {
-      removeBody(m)
-    })
+    methodsToCache.foreach(removeBody)
+
     val program = _program.get
     val file: String = _config.file()
-
-    //val nofCachedMethods = program.methods.length - methodsToVerify.length
-    //if (nofCachedMethods > 0) {
-    //  logger.info("Cached " + nofCachedMethods + " methods.")
-    //}
 
     _verificationResult = Some(mapVerificationResult(_verifier.get.verify(program)))
     assert(_verificationResult != null)
@@ -233,27 +193,22 @@ trait ViperFrontend extends SilFrontend {
       }
     }
     //TODO: how to clean up the cache? -> Arshavir
-    //updating changed error position  e.g., due to whitespace changes?
-    // -> add an entityHash to each Node,
-    //    find the corresponding Node in the new AST
-    //    update the VerificationError before continuing
   }
 
   def consultCache(): (List[Method], List[Method], List[VerificationError]) = {
     val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
     val methodsToVerify: collection.mutable.ListBuffer[Method] = ListBuffer()
     val methodsToCache: collection.mutable.ListBuffer[Method] = ListBuffer()
-    //perform caching
-    val file: String = _config.file()
 
+    val file: String = _config.file()
     val program = _program.get
 
+    //read errors from cache
     program.methods.foreach((m: Method) => {
       ViperCache.get(file, m) match {
-        case None => {
+        case None =>
           methodsToVerify += m
-        }
-        case Some(cacheEntry) => {
+        case Some(cacheEntry) =>
           if (m.dependencyHash != cacheEntry.dependencyHash) {
             //even if the method itself did not change, a re-verification is required if it's dependencies changed
             methodsToVerify += m
@@ -261,7 +216,6 @@ trait ViperFrontend extends SilFrontend {
             errors ++= updateErrorLocation(m, cacheEntry.errors)
             methodsToCache += m
           }
-        }
       }
     })
     (methodsToVerify.toList, methodsToCache.toList, errors.toList)
@@ -273,13 +227,12 @@ trait ViperFrontend extends SilFrontend {
 
   private def findCorrespondingNode(method: Method, hash: String): Option[errors.ErrorNode] = {
     method.subnodes.foreach(node => {
-      Visitor.visit(node, (n: Node) => n.subnodes)({ case n: errors.ErrorNode => {
+      Visitor.visit(node, (n: Node) => n.subnodes)({ case n: errors.ErrorNode =>
         if (n.info.entityHash == hash)
           return Some(n)
-      }
       })
     })
-    return None
+    None
   }
 
   private def updateErrorLocation(m: Method, error: VerificationError): VerificationError = {
@@ -298,9 +251,8 @@ trait ViperFrontend extends SilFrontend {
         updatedError.cached = true
         return updatedError
       case None =>
-        assert(false, "No corresponding Node found")
+        throw new Exception("Error updating the location of cached errors: No corresponding Node found")
     }
-    //TODO: are all cases covered?
     null
   }
 }

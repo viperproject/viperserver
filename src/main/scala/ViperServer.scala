@@ -4,7 +4,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-
 package viper.server
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props, Terminated}
@@ -12,12 +11,10 @@ import ch.qos.logback.classic.Logger
 import com.typesafe.scalalogging.LazyLogging
 import org.rogach.scallop.{ScallopOption, singleArgConverter}
 import org.slf4j.LoggerFactory
-import viper.server.RequestHandler._
+import viper.server.ViperServerProtocol._
 import viper.silicon.Silicon
-import viper.silver.ast.{Method}
 import viper.silver.frontend.SilFrontendConfig
-import viper.silver.verifier.{VerificationError, Verifier}
-
+import viper.silver.verifier.Verifier
 import scala.collection.mutable.ListBuffer
 import scala.language.postfixOps
 
@@ -29,9 +26,9 @@ object ViperServerRunner {
 
   final def config: ViperConfig = _config
 
-  private var _actorWatcher: ActorRef = null
+  private var _mainActor: ActorRef = null
 
-  final def actorWatcher: ActorRef = _actorWatcher
+  final def mainActor: ActorRef = _mainActor
 
   private var _actorSystem: ActorSystem = null
 
@@ -56,7 +53,7 @@ object ViperServerRunner {
   private def initialize(): Unit = {
     //  logger.setLevel(org.apache.log4j.Level.INFO)
     _actorSystem = ActorSystem("MyActorSystem")
-    _actorWatcher = actorSystem.actorOf(Props[WatchActor])
+    _mainActor = actorSystem.actorOf(Props[MainActor])
   }
 
   private def cleanUp(): Unit = {
@@ -73,12 +70,12 @@ object ViperServerRunner {
 
     if (args.nonEmpty) {
       if (args.head == "stop") {
-        actorWatcher ! Stop
+        mainActor ! Stop
       } else if (args.head == "exit") {
-        actorWatcher ! Stop
+        mainActor ! Stop
         _running = false
       } else {
-        actorWatcher ! Verify(args)
+        mainActor ! Verify(args)
       }
     }
   }
@@ -131,7 +128,7 @@ object ViperServerRunner {
   }
 }
 
-class WatchActor extends Actor with LazyLogging {
+class MainActor extends Actor with LazyLogging {
   private var _child: ActorRef = null
   private var _args: List[String] = null
   private var _backend: Verifier = null
@@ -172,12 +169,12 @@ class WatchActor extends Actor with LazyLogging {
       }
     case Terminated(child) =>
     case Backend(backend) => _backend = backend
-    case msg => logger.info("ActorWatcher: unexpected message received: " + msg)
+    case msg => logger.info("Main Actor: unexpected message received: " + msg)
   }
 
   def verify(args: List[String]): Unit = {
     assert(_child == null)
-    _child = context.actorOf(Props[RequestHandler], "RequestHandlerActor")
+    _child = context.actorOf(Props[VerificationActor], "RequestHandlerActor")
     context.watch(_child)
     _child ! Verify(args)
   }
@@ -193,37 +190,18 @@ class ViperConfig(args: Seq[String]) extends SilFrontendConfig(args, "Viper") {
   )(singleArgConverter(level => level.toUpperCase))
 }
 
-class CacheEntry(val errors: List[VerificationError], val dependencyHash: String) {}
+object ViperServerProtocol {
 
-object ViperCache {
+  //Main Actor requests Verification
+  case class Verify(args: List[String])
 
-  private val cache = collection.mutable.Map[String, collection.mutable.Map[String, CacheEntry]]()
+  //VerificationActor sends backend to Main Actor
+  case class Backend(backend: Verifier)
 
-  def contains(file: String, m: Method): Boolean = {
-    assert (m.info.entityHash != null)
-    cache.contains(m.info.entityHash)
-  }
+  //Main Actor requests verification stop
+  case object Stop
 
-  def get(file: String, m: Method): Option[CacheEntry] = {
-    assert (m.info.entityHash != null)
-    cache.get(file) match {
-      case Some(fileCache) =>
-        fileCache.get(m.info.entityHash)
-      case None => None
-    }
-  }
+  //Verification Actor reports end of verification
+  case object Stopped
 
-  def update(file: String, m: Method, errors: List[VerificationError]): Unit = {
-    assert (m.info.entityHash != null)
-    cache.get(file) match {
-      case Some(fileCache) => fileCache += (m.info.entityHash -> new CacheEntry(errors, m.dependencyHash))
-      case None =>
-        cache += (file -> collection.mutable.Map[String, CacheEntry]())
-        update(file, m, errors)
-    }
-  }
-
-  def forgetFile(file: String): Unit = {
-    cache.remove(file)
-  }
 }
