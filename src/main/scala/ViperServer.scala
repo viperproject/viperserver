@@ -9,12 +9,12 @@ package viper.server
 import akka.actor.{Actor, ActorRef, ActorSystem, Props, Terminated}
 import ch.qos.logback.classic.Logger
 import com.typesafe.scalalogging.LazyLogging
-import org.rogach.scallop.{ScallopOption, singleArgConverter}
+import org.rogach.scallop.{ScallopConf, ScallopOption, singleArgConverter}
 import org.slf4j.LoggerFactory
 import viper.server.ViperServerProtocol._
 import viper.silicon.Silicon
-import viper.silver.frontend.SilFrontendConfig
 import viper.silver.verifier.Verifier
+
 import scala.collection.mutable.ListBuffer
 import scala.language.postfixOps
 
@@ -125,62 +125,43 @@ object ViperServerRunner {
 
   def parseCommandLine(args: Seq[String]) {
     _config = new ViperConfig(args)
+    _config.verify()
   }
 }
 
 class MainActor extends Actor with LazyLogging {
-  private var _child: ActorRef = null
+  private var _verificationTask: Thread = null
   private var _args: List[String] = null
-  private var _backend: Verifier = null
 
   def receive: PartialFunction[Any, Unit] = {
     case Stop =>
-      if (_backend != null) {
-        try {
-          //takes care of background processes
-          _backend.stop()
-        } catch {
-          case e: Exception => throw e
-        }
+      if (_verificationTask != null  && _verificationTask.isAlive) {
+        _verificationTask.interrupt()
+        _verificationTask.join()
+      }else{
+        ViperFrontend.printStopped()
       }
-      if (_child != null) {
-        try {
-          _child ! Stop
-        } catch {
-          case e: Exception => throw e
-        }
-      }
-      _backend = null
-    case Verify(args)
-    =>
-      if (_child != null) {
+    case Verify(args) =>
+      if (_verificationTask != null && _verificationTask.isAlive) {
         _args = args
-        self ! Stop
-      } else {
-        verify(args)
+        _verificationTask.interrupt()
+        _verificationTask.join()
       }
-    case Stopped
-    =>
-      _child = null
-      if (_args != null) {
-        val args = _args
-        _args = null
-        verify(args)
-      }
-    case Terminated(child) =>
-    case Backend(backend) => _backend = backend
-    case msg => logger.info("Main Actor: unexpected message received: " + msg)
+      _verificationTask = null
+      verify(args)
+    case msg =>
+      throw new Exception("Main Actor: unexpected message received: " + msg)
+
   }
 
   def verify(args: List[String]): Unit = {
-    assert(_child == null)
-    _child = context.actorOf(Props[VerificationActor], "RequestHandlerActor")
-    context.watch(_child)
-    _child ! Verify(args)
+    assert(_verificationTask == null)
+    _verificationTask = new Thread(new VerificationWorker(Verify(args)))
+    _verificationTask.start()
   }
 }
 
-class ViperConfig(args: Seq[String]) extends SilFrontendConfig(args, "Viper") {
+class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
 
   val logLevel: ScallopOption[String] = opt[String]("logLevel",
     descr = "One of the log levels ALL, TRACE, DEBUG, INFO, WARN, ERROR, OFF (default: OFF)",
@@ -188,6 +169,34 @@ class ViperConfig(args: Seq[String]) extends SilFrontendConfig(args, "Viper") {
     noshort = true,
     hidden = Silicon.hideInternalOptions
   )(singleArgConverter(level => level.toUpperCase))
+
+  val ideMode = opt[Boolean]("ideMode",
+    descr = ("Used for VS Code IDE. Report errors in json format, and write"
+      + "errors in the format '<file>,<line>:<col>,<line>:<col>,<message>' to"
+      + "a file (see option ideModeErrorFile)."),
+    default = Some(false),
+    noshort = true,
+    hidden = false
+  )
+
+  val disableCaching = opt[Boolean]("disableCaching",
+    descr = ("Used for ViperServer. Cache verification errors to speed up the"
+      + "verification process"),
+    default = Some(false),
+    noshort = true,
+    hidden = false
+  )
+
+  val ideModeAdvanced = opt[Boolean]("ideModeAdvanced",
+    descr = ("Used for VS Code IDE. Write symbolic execution log into .vscode/executionTreeData.js file, "
+      + "write execution tree graph into .vscode/dot_input.dot, "
+      + "and output z3's counter example models."),
+    default = Some(false),
+    noshort = true,
+    hidden = true
+  )
+
+  dependsOnAll(ideModeAdvanced, ideMode :: Nil)
 }
 
 object ViperServerProtocol {

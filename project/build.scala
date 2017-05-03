@@ -1,7 +1,8 @@
 import sbt._
 import Keys._
+import com.typesafe.sbt.packager.archetypes.JavaAppPackaging
 import sbtassembly.AssemblyPlugin.autoImport._
-import de.oakgrove.SbtBrand.{BrandKeys, brandSettings, Val, BrandObject}
+import de.oakgrove.SbtBrand.{BrandKeys, BrandObject, Val, brandSettings}
 import de.oakgrove.SbtHgId.{HgIdKeys, hgIdSettings}
 
 object ViperServerBuild extends Build {
@@ -55,8 +56,8 @@ object ViperServerBuild extends Build {
            * Not sure what to do if Silicon really required so much
            * stack at some point.
            */
-          javaOptions in run ++= Seq("-Xss128M", "-Dfile.encoding=UTF-8"),
-          javaOptions in Test += "-Xss128M",
+          javaOptions in run ++= Seq("-Xss128M", "-Xmx1512M", "-Dfile.encoding=UTF-8"),
+          javaOptions in Test ++= Seq("-Xss128M", "-Xmx1512M"),
           /* Options passed to JVMs forked by test-related Sbt command.
            * See http://www.scala-sbt.org/0.12.4/docs/Detailed-Topics/Forking.html
            * In contrast to what the documentation states, it seemed
@@ -95,6 +96,7 @@ object ViperServerBuild extends Build {
     }
 
     p.aggregate(common)
+    p.enablePlugins(JavaAppPackaging)
   }
 
 
@@ -119,7 +121,7 @@ object ViperServerBuild extends Build {
     dependencies.siliconSrc % "compile->compile;test->test")
 
   def externalDep = (
-    Seq(dependencies.jgrapht , dependencies.commonsIO, dependencies.commonsPool, dependencies.scallop, dependencies.actors)
+    Seq(dependencies.jgrapht, dependencies.commonsIO, dependencies.commonsPool, dependencies.scallop, dependencies.actors)
       ++ dependencies.logging
       ++ (if (isBuildServer) Seq(
       dependencies.silver % "compile->compile;test->test",
@@ -149,4 +151,5 @@ object ViperServerBuild extends Build {
 
     lazy val actors = "com.typesafe.akka" %% "akka-actor" % "2.4.17"
   }
+
 }

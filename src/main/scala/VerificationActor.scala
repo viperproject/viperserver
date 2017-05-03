@@ -8,10 +8,8 @@ package viper.server
 
 import java.nio.file.Paths
 
-import akka.actor.{Actor, ActorRef}
 import com.typesafe.scalalogging.LazyLogging
 import viper.carbon.CarbonFrontend
-import viper.server.ViperServerProtocol.Backend
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
 import viper.silver.ast.utility.Visitor
@@ -20,71 +18,74 @@ import viper.silver.verifier._
 
 import scala.collection.mutable.ListBuffer
 
-class VerificationActor extends Actor with LazyLogging {
+class VerificationWorker(val command: Any) extends Runnable with LazyLogging {
 
   import ViperServerProtocol._
 
-  private var _sender: ActorRef = null
+  //private var _sender: ActorRef = null
 
-  private var _worker: Thread = null
+  //private var _worker: Thread = null
 
-  private var _stopRequested = false
+  //private var _stopRequested = false
 
-  def receive: PartialFunction[Any, Unit] = {
-    case Verify("silicon" :: args) =>
-      _sender = sender()
-      startVerification(args, new ViperSiliconFrontend(), sender())
-    case Verify("carbon" :: args) =>
-      _sender = sender()
-      startVerification(args, new ViperCarbonFrontend(), sender())
-    case Stop =>
-      _stopRequested = true
-      context stop self
-    case Verify(args) => logger.info("invalid arguments: " + args.mkString(" "))
-    case _ => logger.info("invalid arguments")
-  }
+  private var _frontend: ViperFrontend = null
 
-  override def postStop(): Unit = {
-    if (_worker != null) {
-      _worker.interrupt()
-    }
-  }
-
-  private def startVerification(args: List[String], frontend: ViperFrontend, sender: ActorRef): Unit = {
-    frontend.setSender(sender)
-    //verify in another thread
-    _worker = new Thread {
-      override def run() {
-        try {
-          frontend.execute(args)
-        } catch {
-          case e: Exception =>
-            if (!_stopRequested) {
-              e.printStackTrace(System.err)
-            }
-        } finally {
-          //stop worker after completed verification
-          if (context != null) {
-            context stop self
-          }
-          _sender ! Stopped
-          frontend.printStopped()
-        }
+  def run(): Unit = {
+    try {
+      command match {
+        case Verify("silicon" :: args) =>
+          startVerification(args, new ViperSiliconFrontend())
+        case Verify("carbon" :: args) =>
+          startVerification(args, new ViperCarbonFrontend())
+        case Verify(args) =>
+          logger.info("invalid arguments: " + args.mkString(" "))
+        case _ =>
+          logger.info("invalid arguments")
+      }
+    } catch {
+      case e: InterruptedException =>
+      case e: Exception =>
+        e.printStackTrace(System.err)
+    } finally {
+      stop()
+      if (_frontend != null) {
+        _frontend.printStopped()
+      } else {
+        ViperFrontend.printStopped()
       }
     }
-    _worker.start()
+  }
+
+  private def startVerification(args: List[String], frontend: ViperFrontend): Unit = {
+    //frontend.setSender(sender)
+    _frontend = frontend
+    frontend.execute(args)
+  }
+
+  private def stop(): Unit = {
+    try {
+      _frontend.verifier.stop()
+    } catch {
+      case _: Throwable =>
+    }
   }
 }
 
-trait ViperFrontend extends SilFrontend {
-  protected var _sender: ActorRef = null
+object ViperFrontend extends ViperSiliconFrontend {
+  override def ideMode: Boolean = ViperServerRunner.config.ideMode()
+}
 
-  def setSender(sender: ActorRef): Unit = {
-    _sender = sender
-  }
+trait ViperFrontend extends SilFrontend {
+  //protected var _sender: ActorRef = null
+
+  //def setSender(sender: ActorRef): Unit = {
+  //  _sender = sender
+  //}
+
+  def ideMode: Boolean = config.ideMode()
 
   def printStopped(): Unit = {
-    if (config.ideMode()) {
+    if (ideMode) {
       loggerForIde.info(s"""{"type":"Stopped"}\r\n""")
     } else {
       logger.info(s"${_ver.name} stopped")
@@ -97,7 +98,7 @@ trait ViperFrontend extends SilFrontend {
     /* Create the verifier */
     _ver = createVerifier(args.mkString(" "))
 
-    _sender ! Backend(_ver)
+    //_sender ! Backend(_ver)
 
     if (!prepare(args)) return
 
@@ -105,7 +106,7 @@ trait ViperFrontend extends SilFrontend {
     init(_ver)
 
     // set the file we want to verify
-    reset(Paths.get(_config.file()))
+    reset(Paths.get(config.file()))
 
     // run the parser, typechecker, and verifier
     parse()
