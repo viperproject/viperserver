@@ -66,7 +66,7 @@ object ViperServerRunner {
       return
     }
 
-    val args = splitCommandLineArgs(input.trim())
+    val args: Seq[String] = splitCommandLineArgs(input.trim())
 
     if (args.nonEmpty) {
       if (args.head == "stop") {
@@ -74,8 +74,16 @@ object ViperServerRunner {
       } else if (args.head == "exit") {
         mainActor ! Stop
         _running = false
+      } else if (args.head == "flushCache") {
+        // INFO: the flushCache command is not expected to complete with a stopped message,
+        // as the IDE is not waiting for its completion
+        if(args.length > 1){
+          ViperCache.forgetFile(args.tail.head)
+        }else{
+          ViperCache.resetCache()
+        }
       } else {
-        mainActor ! Verify(args)
+        mainActor ! Verify(args.toList)
       }
     }
   }
@@ -179,9 +187,8 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     hidden = false
   )
 
-  val disableCaching = opt[Boolean]("disableCaching",
-    descr = ("Used for ViperServer. Cache verification errors to speed up the"
-      + "verification process"),
+  val backendSpecificCache = opt[Boolean]("backendSpecificCache",
+    descr = ("Use a separate cache for each backend?"),
     default = Some(false),
     noshort = true,
     hidden = false

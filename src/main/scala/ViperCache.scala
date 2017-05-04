@@ -4,12 +4,12 @@ import viper.silver.ast.Method
 import viper.silver.verifier.VerificationError
 
 object ViperCache {
+  //TODO: take config.backendSpecificCache() into account
 
   private val cache = collection.mutable.Map[String, collection.mutable.Map[String, CacheEntry]]()
 
   def contains(file: String, m: Method): Boolean = {
-    assert(m.info.entityHash != null)
-    cache.contains(m.info.entityHash)
+    get(file, m).isDefined
   }
 
   def get(file: String, m: Method): Option[CacheEntry] = {
@@ -33,6 +33,10 @@ object ViperCache {
 
   def forgetFile(file: String): Unit = {
     cache.remove(file)
+  }
+
+  def resetCache(): Unit ={
+    cache.clear()
   }
 }
 

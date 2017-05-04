@@ -193,7 +193,6 @@ trait ViperFrontend extends SilFrontend {
           _verificationResult = Some(Failure(cachedErrors))
       }
     }
-    //TODO: how to clean up the cache? -> Arshavir
   }
 
   def consultCache(): (List[Method], List[Method], List[VerificationError]) = {
@@ -240,7 +239,8 @@ trait ViperFrontend extends SilFrontend {
     if (error.offendingNode == null) return error
     val hash: String = error.offendingNode.info.entityHash
     val reasonHash: String = error.reason.offendingNode.info.entityHash
-    assert(hash != null)
+    assert(hash != null) //TODO: in carbon its possible that the transformation removes the entityHashes
+    assert(reasonHash != null)
 
     //get the corresponding offending node in the new AST
     val offendingNode = findCorrespondingNode(m, hash)
@@ -248,7 +248,7 @@ trait ViperFrontend extends SilFrontend {
     //create a new VerificationError that only differs in its offending Node.
     offendingNode match {
       case Some(n: errors.ErrorNode) =>
-        val updatedError = error.updateNode(n, reasonOffendingNode.get)
+        val updatedError = error.updateNode(n, reasonOffendingNode.getOrElse(null))//TODO: is it fine to have a reasonOffending node of null?
         updatedError.cached = true
         return updatedError
       case None =>
