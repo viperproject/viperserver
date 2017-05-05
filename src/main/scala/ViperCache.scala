@@ -1,41 +1,53 @@
 package viper.server
 
+import viper.carbon.CarbonVerifier
 import viper.silver.ast.Method
-import viper.silver.verifier.VerificationError
+import viper.silver.verifier.{VerificationError, Verifier}
 
 object ViperCache {
   //TODO: take config.backendSpecificCache() into account
 
   private val cache = collection.mutable.Map[String, collection.mutable.Map[String, CacheEntry]]()
 
-  def contains(file: String, m: Method): Boolean = {
-    get(file, m).isDefined
+  private var _backendSpecificCache: Boolean = false
+
+  def initialize(backendSpecificCache: Boolean): Unit = {
+    _backendSpecificCache = backendSpecificCache
   }
 
-  def get(file: String, m: Method): Option[CacheEntry] = {
+  def contains(backendName: String, file: String, m: Method): Boolean = {
+    get(backendName, file, m).isDefined
+  }
+
+  def get(backendName: String, file: String, m: Method): Option[CacheEntry] = {
     assert(m.info.entityHash != null)
-    cache.get(file) match {
+    val key = getKey(backendName, file)
+    cache.get(key) match {
       case Some(fileCache) =>
         fileCache.get(m.info.entityHash)
       case None => None
     }
   }
 
-  def update(file: String, m: Method, errors: List[VerificationError]): Unit = {
+  def update(backendName: String, file: String, m: Method, errors: List[VerificationError]): Unit = {
     assert(m.info.entityHash != null)
-    cache.get(file) match {
+    val key = getKey(backendName, file)
+    cache.get(key) match {
       case Some(fileCache) => fileCache += (m.info.entityHash -> new CacheEntry(errors, m.dependencyHash))
       case None =>
-        cache += (file -> collection.mutable.Map[String, CacheEntry]())
-        update(file, m, errors)
+        cache += (key -> collection.mutable.Map[String, CacheEntry]())
+        update(backendName, file, m, errors)
     }
   }
 
-  def forgetFile(file: String): Unit = {
-    cache.remove(file)
+  def forgetFile(backendName: String, file: String): Unit = {
+    val key = getKey(backendName, file)
+    cache.remove(key)
   }
 
-  def resetCache(): Unit ={
+  private def getKey(backendName: String, file: String): String = (if (_backendSpecificCache) backendName else "") + file
+
+  def resetCache(): Unit = {
     cache.clear()
   }
 }

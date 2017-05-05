@@ -176,11 +176,11 @@ trait ViperFrontend extends SilFrontend {
       _verificationResult.get match {
         case Failure(errors) =>
           val errorsToCache = getMethodSpecificErrors(m, errors)
-          ViperCache.update(file, m, errorsToCache)
+          ViperCache.update(backendName, file, m, errorsToCache)
           logger.trace("Store in cache " + m.name + (if (errorsToCache.nonEmpty) ": Error" else ": Success"))
         case Success =>
           logger.trace("Store in cache " + m.name + ": Success")
-          ViperCache.update(file, m, Nil)
+          ViperCache.update(backendName, file, m, Nil)
       }
     })
 
@@ -195,6 +195,8 @@ trait ViperFrontend extends SilFrontend {
     }
   }
 
+  def backendName = _ver.getClass.getName
+
   def consultCache(): (List[Method], List[Method], List[VerificationError]) = {
     val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
     val methodsToVerify: collection.mutable.ListBuffer[Method] = ListBuffer()
@@ -205,7 +207,7 @@ trait ViperFrontend extends SilFrontend {
 
     //read errors from cache
     program.methods.foreach((m: Method) => {
-      ViperCache.get(file, m) match {
+      ViperCache.get(backendName, file, m) match {
         case None =>
           methodsToVerify += m
         case Some(cacheEntry) =>

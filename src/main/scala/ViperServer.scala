@@ -11,6 +11,7 @@ import ch.qos.logback.classic.Logger
 import com.typesafe.scalalogging.LazyLogging
 import org.rogach.scallop.{ScallopConf, ScallopOption, singleArgConverter}
 import org.slf4j.LoggerFactory
+import viper.carbon.CarbonVerifier
 import viper.server.ViperServerProtocol._
 import viper.silicon.Silicon
 import viper.silver.verifier.Verifier
@@ -38,9 +39,9 @@ object ViperServerRunner {
 
   def main(args: Array[String]) {
     try {
-      initialize()
       logger.info("This is the Viper Server.")
       parseCommandLine(args)
+      initialize()
       while (_running) {
         serve()
       }
@@ -54,6 +55,9 @@ object ViperServerRunner {
     //  logger.setLevel(org.apache.log4j.Level.INFO)
     _actorSystem = ActorSystem("MyActorSystem")
     _mainActor = actorSystem.actorOf(Props[MainActor])
+
+    //initialize cache
+    ViperCache.initialize(config.backendSpecificCache())
   }
 
   private def cleanUp(): Unit = {
@@ -77,9 +81,10 @@ object ViperServerRunner {
       } else if (args.head == "flushCache") {
         // INFO: the flushCache command is not expected to complete with a stopped message,
         // as the IDE is not waiting for its completion
-        if(args.length > 1){
-          ViperCache.forgetFile(args.tail.head)
-        }else{
+        if (args.length > 1) {
+          ViperCache.forgetFile(viper.silicon.Silicon.getClass.getName.replace("$",""),args.tail.head)
+          ViperCache.forgetFile(CarbonVerifier.getClass.getName.replace("$",""),args.tail.head)
+        } else {
           ViperCache.resetCache()
         }
       } else {
@@ -143,10 +148,10 @@ class MainActor extends Actor with LazyLogging {
 
   def receive: PartialFunction[Any, Unit] = {
     case Stop =>
-      if (_verificationTask != null  && _verificationTask.isAlive) {
+      if (_verificationTask != null && _verificationTask.isAlive) {
         _verificationTask.interrupt()
         _verificationTask.join()
-      }else{
+      } else {
         ViperFrontend.printStopped()
       }
     case Verify(args) =>
@@ -178,7 +183,7 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     hidden = Silicon.hideInternalOptions
   )(singleArgConverter(level => level.toUpperCase))
 
-  val ideMode = opt[Boolean]("ideMode",
+  val ideMode: ScallopOption[Boolean] = opt[Boolean]("ideMode",
     descr = ("Used for VS Code IDE. Report errors in json format, and write"
       + "errors in the format '<file>,<line>:<col>,<line>:<col>,<message>' to"
       + "a file (see option ideModeErrorFile)."),
@@ -187,14 +192,14 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     hidden = false
   )
 
-  val backendSpecificCache = opt[Boolean]("backendSpecificCache",
-    descr = ("Use a separate cache for each backend?"),
+  val backendSpecificCache: ScallopOption[Boolean] = opt[Boolean]("backendSpecificCache",
+    descr = "Use a separate cache for each backend?",
     default = Some(false),
     noshort = true,
     hidden = false
   )
 
-  val ideModeAdvanced = opt[Boolean]("ideModeAdvanced",
+  val ideModeAdvanced: ScallopOption[Boolean] = opt[Boolean]("ideModeAdvanced",
     descr = ("Used for VS Code IDE. Write symbolic execution log into .vscode/executionTreeData.js file, "
       + "write execution tree graph into .vscode/dot_input.dot, "
       + "and output z3's counter example models."),
