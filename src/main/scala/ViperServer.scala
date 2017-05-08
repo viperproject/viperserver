@@ -15,7 +15,6 @@ import viper.carbon.CarbonVerifier
 import viper.server.ViperServerProtocol._
 import viper.silicon.Silicon
 import viper.silver.verifier.Verifier
-
 import scala.collection.mutable.ListBuffer
 import scala.language.postfixOps
 
@@ -46,6 +45,7 @@ object ViperServerRunner {
         serve()
       }
     } finally {
+      //TODO: this is the place to store the ViperCache to disk
       cleanUp()
     }
     sys.exit(0)
@@ -57,6 +57,7 @@ object ViperServerRunner {
     _mainActor = actorSystem.actorOf(Props[MainActor])
 
     //initialize cache
+    //TODO: this is to load the ViperCache from disk
     ViperCache.initialize(config.backendSpecificCache())
   }
 

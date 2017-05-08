@@ -7,12 +7,10 @@
 package viper.server
 
 import java.nio.file.Paths
-
 import com.typesafe.scalalogging.LazyLogging
 import viper.carbon.CarbonFrontend
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
-import viper.silver.ast.utility.Visitor
 import viper.silver.frontend.{SilFrontend, TranslatorState}
 import viper.silver.verifier._
 
@@ -21,12 +19,6 @@ import scala.collection.mutable.ListBuffer
 class VerificationWorker(val command: Any) extends Runnable with LazyLogging {
 
   import ViperServerProtocol._
-
-  //private var _sender: ActorRef = null
-
-  //private var _worker: Thread = null
-
-  //private var _stopRequested = false
 
   private var _frontend: ViperFrontend = null
 
@@ -43,7 +35,7 @@ class VerificationWorker(val command: Any) extends Runnable with LazyLogging {
           logger.info("invalid arguments")
       }
     } catch {
-      case e: InterruptedException =>
+      case _: InterruptedException =>
       case e: Exception =>
         e.printStackTrace(System.err)
     } finally {
@@ -129,14 +121,14 @@ trait ViperFrontend extends SilFrontend {
     finish()
   }
 
-  private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): List[VerificationError] = {
+  private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): List[AbstractVerificationError] = {
     //The position of the error is used to determine to which Method it belongs.
     val methodStart = m.pos.asInstanceOf[SourcePosition].start.line
     val methodEnd = m.pos.asInstanceOf[SourcePosition].end.get.line
-    val result = scala.collection.mutable.ListBuffer[VerificationError]()
+    val result = scala.collection.mutable.ListBuffer[AbstractVerificationError]()
 
     errors.foreach {
-      case e: VerificationError =>
+      case e: AbstractVerificationError =>
         e.pos match {
           case pos: HasLineColumn =>
             val errorPos = pos.line
@@ -144,11 +136,14 @@ trait ViperFrontend extends SilFrontend {
           case _ =>
             throw new Exception("Error determining method specific errors for the cache: The reported errors should have a location")
         }
+      case e =>
+        throw new Exception("Error with unexpected type found: " + e)
     }
     result.toList
   }
 
   private def removeBody(m: Method): Unit = {
+    //TODO: how to change the body with m.copy(body = ...) and insert the copied node into the AST
     val node: Stmt = Inhale(FalseLit()())()
     m.body = Seqn(Seq(node))(m.pos, m.info)
   }
@@ -195,7 +190,7 @@ trait ViperFrontend extends SilFrontend {
     }
   }
 
-  def backendName = _ver.getClass.getName
+  def backendName: String = _ver.getClass.getName
 
   def consultCache(): (List[Method], List[Method], List[VerificationError]) = {
     val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
@@ -215,7 +210,7 @@ trait ViperFrontend extends SilFrontend {
             //even if the method itself did not change, a re-verification is required if it's dependencies changed
             methodsToVerify += m
           } else {
-            errors ++= updateErrorLocation(m, cacheEntry.errors)
+            errors ++= updateErrorLocation(m, cacheEntry)
             methodsToCache += m
           }
       }
@@ -223,40 +218,29 @@ trait ViperFrontend extends SilFrontend {
     (methodsToVerify.toList, methodsToCache.toList, errors.toList)
   }
 
-  private def updateErrorLocation(m: Method, errors: List[VerificationError]): List[VerificationError] = {
-    errors.map(updateErrorLocation(m, _))
+  private def updateErrorLocation(m: Method, cacheEntry: CacheEntry): List[VerificationError] = {
+    cacheEntry.errors.map(updateErrorLocation(m, _))
   }
 
-  private def findCorrespondingNode(method: Method, hash: String): Option[errors.ErrorNode] = {
-    method.subnodes.foreach(node => {
-      Visitor.visit(node, (n: Node) => n.subnodes)({ case n: errors.ErrorNode =>
-        if (n.info.entityHash == hash)
-          return Some(n)
-      })
-    })
-    None
-  }
-
-  private def updateErrorLocation(m: Method, error: VerificationError): VerificationError = {
-    if (error.offendingNode == null) return error
-    val hash: String = error.offendingNode.info.entityHash
-    val reasonHash: String = error.reason.offendingNode.info.entityHash
-    assert(hash != null) //TODO: in carbon its possible that the transformation removes the entityHashes
-    assert(reasonHash != null)
+  private def updateErrorLocation(m: Method, error: LocalizedError): VerificationError = {
+    assert(error.error != null && error.accessPath != null && error.reasonAccessPath != null)
 
     //get the corresponding offending node in the new AST
-    val offendingNode = findCorrespondingNode(m, hash)
-    val reasonOffendingNode = findCorrespondingNode(m, reasonHash)
-    //create a new VerificationError that only differs in its offending Node.
-    offendingNode match {
-      case Some(n: errors.ErrorNode) =>
-        val updatedError = error.updateNode(n, reasonOffendingNode.getOrElse(null))//TODO: is it fine to have a reasonOffending node of null?
-        updatedError.cached = true
-        return updatedError
-      case None =>
-        throw new Exception("Error updating the location of cached errors: No corresponding Node found")
+    //TODO: are these casts ok?
+    val offendingNode = ViperCache.getNode(m, error.accessPath, error.error.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
+    val reasonOffendingNode = ViperCache.getNode(m, error.reasonAccessPath, error.error.reason.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
+
+    if (offendingNode.isEmpty || reasonOffendingNode.isEmpty) {
+      throw new Exception("Cache error: no corresponding node found for error: " + error.error.readableMessage())
     }
-    null
+
+    //create a new VerificationError that only differs in its offending Node.
+    //TODO: how to do that with updateNode and updateReason?
+    //val updatedError = error.error.withNode(offendingNode.get).withReason(error.error.reason.withNode(reasonOffendingNode.get).asInstanceOf[ErrorReason])
+    val updatedError = error.error.updateNode(offendingNode.get, reasonOffendingNode.get)
+
+    updatedError.cached = true
+    updatedError
   }
 }
 
