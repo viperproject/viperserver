@@ -234,17 +234,12 @@ trait ViperFrontend extends SilFrontend {
       throw new Exception("Cache error: no corresponding node found for error: " + error.error.readableMessage())
     }
 
-    //create a new VerificationError that only differs in its offending Node.
-    //TODO: how to do that with updateNode and updateReason?
-    //TODO: how to also update the position of the errorReason?
-    //val updatedError = error.error.withNode(offendingNode.get).withReason(error.error.reason.withNode(reasonOffendingNode.get).asInstanceOf[ErrorReason])
-
+    //create a new VerificationError that only differs in the Position of the offending Node
     //the cast is fine, because the offending Nodes are supposed to be ErrorNodes
     val updatedOffendingNode = updatePosition(error.error.offendingNode, offendingNode.get.pos).asInstanceOf[errors.ErrorNode]
     val updatedReasonOffendingNode = updatePosition(error.error.reason.offendingNode, reasonOffendingNode.get.pos).asInstanceOf[errors.ErrorNode]
+    //TODO: how to also update the position of error.error.reason.offendingNode?
     val updatedError = error.error.withNode(updatedOffendingNode).asInstanceOf[AbstractVerificationError]
-    //
-    //val updatedError = error.error.updateNode(offendingNode.get, reasonOffendingNode.get)
 
     updatedError.cached = true
     updatedError
