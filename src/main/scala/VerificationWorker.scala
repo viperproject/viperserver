@@ -210,8 +210,16 @@ trait ViperFrontend extends SilFrontend {
             //even if the method itself did not change, a re-verification is required if it's dependencies changed
             methodsToVerify += m
           } else {
-            errors ++= updateErrorLocation(m, cacheEntry)
-            methodsToCache += m
+            try {
+              val cachedErrors = updateErrorLocation(m, cacheEntry)
+              errors ++= cachedErrors
+              methodsToCache += m
+            } catch {
+              case e:Exception =>
+                logger.warn("The cache lookup failed:" + e)
+                //Default to verifying the method in case the cache lookup fails.
+                methodsToVerify += m
+            }
           }
       }
     })

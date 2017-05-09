@@ -1,5 +1,8 @@
 package viper.server
 
+import ch.qos.logback.classic.Logger
+import org.slf4j.LoggerFactory
+import viper.server.ViperServerRunner.getClass
 import viper.silver.ast.pretty.FastPrettyPrinter
 import viper.silver.ast.{Forall, Method, Node}
 import viper.silver.verifier.{AbstractVerificationError, VerificationError, errors}
@@ -10,6 +13,8 @@ object ViperCache {
   private val cache = collection.mutable.Map[String, collection.mutable.Map[String, CacheEntry]]()
 
   private var _backendSpecificCache: Boolean = false
+
+  def logger: Logger = LoggerFactory.getLogger(getClass.getName).asInstanceOf[Logger]
 
   def initialize(backendSpecificCache: Boolean): Unit = {
     _backendSpecificCache = backendSpecificCache
@@ -34,8 +39,13 @@ object ViperCache {
     val key = getKey(backendName, file)
     cache.get(key) match {
       case Some(fileCache) =>
-        val localizedErrors = errors.map(err => LocalizedError(err, getAccessPath(err.offendingNode, m), getAccessPath(err.reason.offendingNode, m), backendName))
-        fileCache += (m.entityHash -> new CacheEntry(localizedErrors, m.dependencyHash))
+        try {
+          val localizedErrors = errors.map(err => LocalizedError(err, getAccessPath(err.offendingNode, m), getAccessPath(err.reason.offendingNode, m), backendName))
+          fileCache += (m.entityHash -> new CacheEntry(localizedErrors, m.dependencyHash))
+        } catch {
+          case e: Exception =>
+            logger.warn("Error getting the accessPath, the errors cannot be stored in the cache: " + e )
+        }
       case None =>
         cache += (key -> collection.mutable.Map[String, CacheEntry]())
         update(backendName, file, m, errors)
@@ -57,7 +67,7 @@ object ViperCache {
     val accessPath = computeAccessPath(nodeToFind, m)
     accessPath match {
       case Some(path) => path
-      case None => throw new Exception("Cache: Error determining the acess path, the offending Node has not been found in the method " + m.name)
+      case None => throw new Exception("Cache: Error determining the access path, the offending Node has not been found in the method " + m.name)
     }
   }
 
@@ -76,7 +86,7 @@ object ViperCache {
 
     //specialCase for AutoTriggers
     if (nodeToFind.isInstanceOf[Forall] && curr.isInstanceOf[Forall]) {
-      if (posEquals(nodeToFind,curr.asInstanceOf[Forall].autoTrigger)) {
+      if (posEquals(nodeToFind, curr.asInstanceOf[Forall].autoTrigger)) {
         return Some(List())
       }
     }
