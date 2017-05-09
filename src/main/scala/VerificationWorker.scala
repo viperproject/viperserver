@@ -236,11 +236,150 @@ trait ViperFrontend extends SilFrontend {
 
     //create a new VerificationError that only differs in its offending Node.
     //TODO: how to do that with updateNode and updateReason?
+    //TODO: how to also update the position of the errorReason?
     //val updatedError = error.error.withNode(offendingNode.get).withReason(error.error.reason.withNode(reasonOffendingNode.get).asInstanceOf[ErrorReason])
-    val updatedError = error.error.updateNode(offendingNode.get, reasonOffendingNode.get)
+
+    //the cast is fine, because the offending Nodes are supposed to be ErrorNodes
+    val updatedOffendingNode = updatePosition(error.error.offendingNode, offendingNode.get.pos).asInstanceOf[errors.ErrorNode]
+    val updatedReasonOffendingNode = updatePosition(error.error.reason.offendingNode, reasonOffendingNode.get.pos).asInstanceOf[errors.ErrorNode]
+    val updatedError = error.error.withNode(updatedOffendingNode).asInstanceOf[AbstractVerificationError]
+    //
+    //val updatedError = error.error.updateNode(offendingNode.get, reasonOffendingNode.get)
 
     updatedError.cached = true
     updatedError
+  }
+
+  def updatePosition(n: Node, pos: Position): Node = {
+    n match {
+      case t: Trigger => t.copy()(pos, t.info, t.errT)
+      case t: Program => t.copy()(pos, t.info, t.errT)
+
+      //Members
+      case t: Field => t.copy()(pos, t.info, t.errT)
+      case t: Function => t.copy()(pos, t.info, t.errT)
+      case t: Method => t.copy()(pos, t.info, t.errT)
+      case t: Predicate => t.copy()(pos, t.info, t.errT)
+      case t: Domain => t.copy()(pos, t.info, t.errT)
+
+      //DomainMembers
+      case t: DomainAxiom => t.copy()(pos, t.info, t.domainName, t.errT)
+      case t: DomainFunc => t.copy()(pos, t.info, t.domainName, t.errT)
+
+      //Statements
+      case t: NewStmt => t.copy()(pos, t.info, t.errT)
+      case t: LocalVarAssign => t.copy()(pos, t.info, t.errT)
+      case t: FieldAssign => t.copy()(pos, t.info, t.errT)
+      case t: Fold => t.copy()(pos, t.info, t.errT)
+      case t: Unfold => t.copy()(pos, t.info, t.errT)
+      case t: Package => t.copy()(pos, t.info, t.errT)
+      case t: Apply => t.copy()(pos, t.info, t.errT)
+      case t: Inhale => t.copy()(pos, t.info, t.errT)
+      case t: Exhale => t.copy()(pos, t.info, t.errT)
+      case t: Assert => t.copy()(pos, t.info, t.errT)
+      case t: MethodCall => t.copy()(pos, t.info, t.errT)
+      case t: Seqn => t.copy()(pos, t.info, t.errT)
+      case t: While => t.copy()(pos, t.info, t.errT)
+      case t: If => t.copy()(pos, t.info, t.errT)
+      case t: Label => t.copy()(pos, t.info, t.errT)
+      case t: Goto => t.copy()(pos, t.info, t.errT)
+      case t: Fresh => t.copy()(pos, t.info, t.errT)
+      case t: Constraining => t.copy()(pos, t.info, t.errT)
+      case t: LocalVarDeclStmt => t.copy()(pos, t.info, t.errT)
+
+      case t: LocalVarDecl => t.copy()(pos, t.info, t.errT)
+
+      //Expressions
+      case t: FalseLit => t.copy()(pos, t.info, t.errT)
+      case t: NullLit => t.copy()(pos, t.info, t.errT)
+      case t: TrueLit => t.copy()(pos, t.info, t.errT)
+      case t: IntLit => t.copy()(pos, t.info, t.errT)
+      case t: LocalVar => t.copy()(t.typ, pos, t.info, t.errT)
+      case t: viper.silver.ast.Result => t.copy()(t.typ, pos, t.info, t.errT)
+      case t: FieldAccess => t.copy()(pos, t.info, t.errT)
+      case t: PredicateAccess => t.copy()(pos, t.info, t.errT)
+      case t: Unfolding => t.copy()(pos, t.info, t.errT)
+      case t: UnfoldingGhostOp => t.copy()(pos, t.info, t.errT)
+      case t: FoldingGhostOp => t.copy()(pos, t.info, t.errT)
+      case t: ApplyingGhostOp => t.copy()(pos, t.info, t.errT)
+      case t: PackagingGhostOp => t.copy()(pos, t.info, t.errT)
+      case t: Old => t.copy()(pos, t.info, t.errT)
+      case t: CondExp => t.copy()(pos, t.info, t.errT)
+      case t: Let => t.copy()(pos, t.info, t.errT)
+      case t: Exists => t.copy()(pos, t.info, t.errT)
+      case t: Forall => t.copy()(pos, t.info, t.errT)
+      case t: ForPerm => t.copy()(pos, t.info, t.errT)
+      case t: InhaleExhaleExp => t.copy()(pos, t.info, t.errT)
+      case t: WildcardPerm => t.copy()(pos, t.info, t.errT)
+      case t: FullPerm => t.copy()(pos, t.info, t.errT)
+      case t: NoPerm => t.copy()(pos, t.info, t.errT)
+      case t: EpsilonPerm => t.copy()(pos, t.info, t.errT)
+      case t: CurrentPerm => t.copy()(pos, t.info, t.errT)
+      case t: FractionalPerm => t.copy()(pos, t.info, t.errT)
+      case t: FieldAccessPredicate => t.copy()(pos, t.info, t.errT)
+      case t: PredicateAccessPredicate => t.copy()(pos, t.info, t.errT)
+
+      //Binary operators
+      case t: Add => t.copy()(pos, t.info, t.errT)
+      case t: Sub => t.copy()(pos, t.info, t.errT)
+      case t: Mul => t.copy()(pos, t.info, t.errT)
+      case t: Div => t.copy()(pos, t.info, t.errT)
+      case t: Mod => t.copy()(pos, t.info, t.errT)
+      case t: LtCmp => t.copy()(pos, t.info, t.errT)
+      case t: LeCmp => t.copy()(pos, t.info, t.errT)
+      case t: GtCmp => t.copy()(pos, t.info, t.errT)
+      case t: GeCmp => t.copy()(pos, t.info, t.errT)
+      case t: EqCmp => t.copy()(pos, t.info, t.errT)
+      case t: NeCmp => t.copy()(pos, t.info, t.errT)
+      case t: Or => t.copy()(pos, t.info, t.errT)
+      case t: And => t.copy()(pos, t.info, t.errT)
+      case t: Implies => t.copy()(pos, t.info, t.errT)
+      case t: MagicWand => t.copy()(pos, t.info, t.errT)
+      case t: FractionalPerm => t.copy()(pos, t.info, t.errT)
+      case t: PermDiv => t.copy()(pos, t.info, t.errT)
+      case t: PermAdd => t.copy()(pos, t.info, t.errT)
+      case t: PermSub => t.copy()(pos, t.info, t.errT)
+      case t: PermMul => t.copy()(pos, t.info, t.errT)
+      case t: IntPermMul => t.copy()(pos, t.info, t.errT)
+      case t: PermLtCmp => t.copy()(pos, t.info, t.errT)
+      case t: PermLeCmp => t.copy()(pos, t.info, t.errT)
+      case t: PermGtCmp => t.copy()(pos, t.info, t.errT)
+      case t: PermGeCmp => t.copy()(pos, t.info, t.errT)
+      case t: AnySetUnion => t.copy()(pos, t.info, t.errT)
+      case t: AnySetIntersection => t.copy()(pos, t.info, t.errT)
+      case t: AnySetSubset => t.copy()(pos, t.info, t.errT)
+      case t: AnySetMinus => t.copy()(pos, t.info, t.errT)
+      case t: AnySetContains => t.copy()(pos, t.info, t.errT)
+
+      //Unary operators
+      case t: Minus => t.copy()(pos, t.info, t.errT)
+      case t: Not => t.copy()(pos, t.info, t.errT)
+      case t: PermMinus => t.copy()(pos, t.info, t.errT)
+      case t: Old => t.copy()(pos, t.info, t.errT)
+      case t: ApplyOld => t.copy()(pos, t.info, t.errT)
+      case t: LabelledOld => t.copy()(pos, t.info, t.errT)
+      case t: AnySetCardinality => t.copy()(pos, t.info, t.errT)
+      case t: FuncApp => t.copy()(pos, t.info, t.typ, t.formalArgs, t.errT)
+      //TODO: Strangely, the copy method is not a member of the DomainFuncApp case class.
+      //case t: DomainFuncApp => t.copy()(pos, t.info, t.typ, t.formalArgs, t.domainName, t.errT)
+      case t: EmptySeq => t.copy()(pos, t.info, t.errT)
+      case t: ExplicitSeq => t.copy()(pos, t.info, t.errT)
+      case t: RangeSeq => t.copy()(pos, t.info, t.errT)
+      case t: SeqAppend => t.copy()(pos, t.info, t.errT)
+      case t: SeqIndex => t.copy()(pos, t.info, t.errT)
+      case t: SeqTake => t.copy()(pos, t.info, t.errT)
+      case t: SeqDrop => t.copy()(pos, t.info, t.errT)
+      case t: SeqContains => t.copy()(pos, t.info, t.errT)
+      case t: SeqUpdate => t.copy()(pos, t.info, t.errT)
+      case t: SeqLength => t.copy()(pos, t.info, t.errT)
+
+      //
+      case t: EmptySet => t.copy()(pos, t.info, t.errT)
+      case t: ExplicitSet => t.copy()(pos, t.info, t.errT)
+      case t: EmptyMultiset => t.copy()(pos, t.info, t.errT)
+      case t: ExplicitMultiset => t.copy()(pos, t.info, t.errT)
+      case t => t
+    }
   }
 }
 

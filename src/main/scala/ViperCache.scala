@@ -1,7 +1,8 @@
 package viper.server
 
+import viper.silver.ast.pretty.FastPrettyPrinter
 import viper.silver.ast.{Forall, Method, Node}
-import viper.silver.verifier.{AbstractVerificationError, VerificationError}
+import viper.silver.verifier.{AbstractVerificationError, VerificationError, errors}
 
 object ViperCache {
   //TODO: take config.backendSpecificCache() into account
@@ -60,14 +61,22 @@ object ViperCache {
     }
   }
 
+  private def posEquals(nodeToFind: Node, curr: Node): Boolean = {
+    if (nodeToFind.getClass != curr.getClass) return false
+    curr match {
+      case c: errors.ErrorNode => nodeToFind.asInstanceOf[errors.ErrorNode].pos == c.pos
+      case _ => false
+    }
+  }
+
   private def computeAccessPath(nodeToFind: Node, curr: Node): Option[List[Int]] = {
-    if (nodeToFind == curr) { //object equality
+    if (posEquals(nodeToFind, curr)) {
       return Some(List())
     }
 
     //specialCase for AutoTriggers
     if (nodeToFind.isInstanceOf[Forall] && curr.isInstanceOf[Forall]) {
-      if (nodeToFind == curr.asInstanceOf[Forall].autoTrigger) { //object equality
+      if (posEquals(nodeToFind,curr.asInstanceOf[Forall].autoTrigger)) {
         return Some(List())
       }
     }
