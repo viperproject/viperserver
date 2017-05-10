@@ -109,6 +109,7 @@ trait ViperFrontend extends SilFrontend {
       _state = TranslatorState.Verified
     } else {
       printOutline(_program.get)
+      printDefinitions(_program.get)
       if (config.disableCaching()) {
         doVerify()
       } else {
