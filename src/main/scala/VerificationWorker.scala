@@ -363,8 +363,7 @@ trait ViperFrontend extends SilFrontend {
       case t: LabelledOld => t.copy()(pos, t.info, t.errT)
       case t: AnySetCardinality => t.copy()(pos, t.info, t.errT)
       case t: FuncApp => t.copy()(pos, t.info, t.typ, t.formalArgs, t.errT)
-      //TODO: Strangely, the copy method is not a member of the DomainFuncApp case class.
-      //case t: DomainFuncApp => t.copy()(pos, t.info, t.typ, t.formalArgs, t.domainName, t.errT)
+      case t: DomainFuncApp => t.updatePosition(pos)//Strangely, the copy method is not a member of the DomainFuncApp case class.
       case t: EmptySeq => t.copy()(pos, t.info, t.errT)
       case t: ExplicitSeq => t.copy()(pos, t.info, t.errT)
       case t: RangeSeq => t.copy()(pos, t.info, t.errT)
@@ -376,12 +375,14 @@ trait ViperFrontend extends SilFrontend {
       case t: SeqUpdate => t.copy()(pos, t.info, t.errT)
       case t: SeqLength => t.copy()(pos, t.info, t.errT)
 
-      //
+      //others
       case t: EmptySet => t.copy()(pos, t.info, t.errT)
       case t: ExplicitSet => t.copy()(pos, t.info, t.errT)
       case t: EmptyMultiset => t.copy()(pos, t.info, t.errT)
       case t: ExplicitMultiset => t.copy()(pos, t.info, t.errT)
-      case t => t
+      case t =>
+        logger.warn("The location was not updated for the node " + t + ". Make sure to handle this type of node")
+        t
     }
   }
 }
