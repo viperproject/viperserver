@@ -8,8 +8,6 @@ import viper.silver.ast.{Forall, Method, Node}
 import viper.silver.verifier.{AbstractVerificationError, VerificationError, errors}
 
 object ViperCache {
-  //TODO: take config.backendSpecificCache() into account
-
   private val cache = collection.mutable.Map[String, collection.mutable.Map[String, CacheEntry]]()
 
   private var _backendSpecificCache: Boolean = false
