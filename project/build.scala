@@ -144,9 +144,9 @@ object ViperServerBuild extends Build {
 
     lazy val silver = "viper" %% "silver" % "0.1-SNAPSHOT"
     lazy val silverSrc = RootProject(new java.io.File("../silver"))
-    lazy val silicon = "viper" %% "silicon" % "0.1-SNAPSHOT"
+    lazy val silicon = "viper" %% "silicon" % "1.1-SNAPSHOT"
     lazy val siliconSrc = RootProject(new java.io.File("../silicon"))
-    lazy val carbon = "viper" %% "carbon" % "0.1-SNAPSHOT"
+    lazy val carbon = "viper" %% "carbon" % "1.0-SNAPSHOT"
     lazy val carbonSrc = RootProject(new java.io.File("../carbon"))
 
     lazy val actors = "com.typesafe.akka" %% "akka-actor" % "2.4.17"
