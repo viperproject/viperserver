@@ -7,12 +7,14 @@
 package viper.server
 
 import java.nio.file.Paths
+
 import com.typesafe.scalalogging.LazyLogging
 import viper.carbon.CarbonFrontend
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
 import viper.silver.frontend.{SilFrontend, TranslatorState}
-import viper.silver.verifier._
+import viper.silver.verifier.errors._
+import viper.silver.verifier.{AbstractVerificationError, _}
 
 import scala.collection.mutable.ListBuffer
 
@@ -74,7 +76,7 @@ trait ViperFrontend extends SilFrontend {
   //  _sender = sender
   //}
 
-  def ideMode: Boolean = config.ideMode()
+  def ideMode: Boolean = config != null && config.ideMode()
 
   def printStopped(): Unit = {
     if (ideMode) {
@@ -113,6 +115,7 @@ trait ViperFrontend extends SilFrontend {
       if (config.disableCaching()) {
         doVerify()
       } else {
+        println("start cached verification")
         doVerifyCached()
       }
     }
@@ -216,7 +219,7 @@ trait ViperFrontend extends SilFrontend {
               errors ++= cachedErrors
               methodsToCache += m
             } catch {
-              case e:Exception =>
+              case e: Exception =>
                 logger.warn("The cache lookup failed:" + e)
                 //Default to verifying the method in case the cache lookup fails.
                 methodsToVerify += m
@@ -249,9 +252,38 @@ trait ViperFrontend extends SilFrontend {
     val updatedReasonOffendingNode = updatePosition(error.error.reason.offendingNode, reasonOffendingNode.get.pos).asInstanceOf[errors.ErrorNode]
     //TODO: how to also update the position of error.error.reason.offendingNode?
     val updatedError = error.error.withNode(updatedOffendingNode).asInstanceOf[AbstractVerificationError]
+    setCached(updatedError)
+  }
 
-    updatedError.cached = true
-    updatedError
+  def setCached(error: AbstractVerificationError): AbstractVerificationError = {
+    error match {
+      case e: Internal => e.copy(cached = true)
+      case e: AssignmentFailed => e.copy(cached = true)
+      case e: CallFailed => e.copy(cached = true)
+      case e: ContractNotWellformed => e.copy(cached = true)
+      case e: PreconditionInCallFalse => e.copy(cached = true)
+      case e: PreconditionInAppFalse => e.copy(cached = true)
+      case e: ExhaleFailed => e.copy(cached = true)
+      case e: InhaleFailed => e.copy(cached = true)
+      case e: IfFailed => e.copy(cached = true)
+      case e: WhileFailed => e.copy(cached = true)
+      case e: AssertFailed => e.copy(cached = true)
+      case e: PostconditionViolated => e.copy(cached = true)
+      case e: FoldFailed => e.copy(cached = true)
+      case e: UnfoldFailed => e.copy(cached = true)
+      case e: PackageFailed => e.copy(cached = true)
+      case e: ApplyFailed => e.copy(cached = true)
+      case e: LoopInvariantNotPreserved => e.copy(cached = true)
+      case e: LoopInvariantNotEstablished => e.copy(cached = true)
+      case e: FunctionNotWellformed => e.copy(cached = true)
+      case e: PredicateNotWellformed => e.copy(cached = true)
+      case e: MagicWandNotWellformed => e.copy(cached = true)
+      case e: LetWandFailed => e.copy(cached = true)
+      case e: HeuristicsFailed => e.copy(cached = true)
+      case e: AbstractVerificationError =>
+        logger.warn("Setting a verification error to cached was not possible for " + e + ". Make sure to handle this types of errors")
+        e
+    }
   }
 
   def updatePosition(n: Node, pos: Position): Node = {
@@ -364,7 +396,7 @@ trait ViperFrontend extends SilFrontend {
       case t: LabelledOld => t.copy()(pos, t.info, t.errT)
       case t: AnySetCardinality => t.copy()(pos, t.info, t.errT)
       case t: FuncApp => t.copy()(pos, t.info, t.typ, t.formalArgs, t.errT)
-      case t: DomainFuncApp => t.updatePosition(pos)//Strangely, the copy method is not a member of the DomainFuncApp case class.
+      case t: DomainFuncApp => t.copy()(pos, t.info, t.typ, t.formalArgs, t.domainName, t.errT)
       case t: EmptySeq => t.copy()(pos, t.info, t.errT)
       case t: ExplicitSeq => t.copy()(pos, t.info, t.errT)
       case t: RangeSeq => t.copy()(pos, t.info, t.errT)
