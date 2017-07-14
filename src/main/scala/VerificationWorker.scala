@@ -146,10 +146,10 @@ trait ViperFrontend extends SilFrontend {
     result.toList
   }
 
-  private def removeBody(m: Method): Unit = {
+  private def removeBody(m: Method): Method = {
     //TODO: how to change the body with m.copy(body = ...) and insert the copied node into the AST
     val node: Stmt = Inhale(FalseLit()())()
-    m.body = Seqn(Seq(node))(m.pos, m.info)
+    m.copy(body = node)(m.pos, m.info, m.errT)
   }
 
   def doVerifyCached(): Unit = {
@@ -157,10 +157,7 @@ trait ViperFrontend extends SilFrontend {
     //fill in the entityHashes into the new AST
     _program.get.computeEntityHashes()
 
-    val (methodsToVerify, methodsToCache, cachedErrors) = consultCache()
-
-    //remove method body of methods to cache
-    methodsToCache.foreach(removeBody)
+    val (methodsToVerify, _, cachedErrors) = consultCache()
 
     val program = _program.get
     val file: String = _config.file()
@@ -217,7 +214,7 @@ trait ViperFrontend extends SilFrontend {
             try {
               val cachedErrors = updateErrorLocation(m, cacheEntry)
               errors ++= cachedErrors
-              methodsToCache += m
+              methodsToCache += removeBody(m)
             } catch {
               case e: Exception =>
                 logger.warn("The cache lookup failed:" + e)
