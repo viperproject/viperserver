@@ -154,8 +154,7 @@ trait ViperFrontend extends SilFrontend {
 
   def doVerifyCached(): Unit = {
 
-    //fill in the entityHashes into the new AST
-    _program.get.computeEntityHashes()
+    // The entityHashes of the new AST are evaluated lazily.
 
     val (methodsToVerify, _, cachedErrors) = consultCache()
 
