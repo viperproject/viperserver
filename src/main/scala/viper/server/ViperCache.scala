@@ -2,10 +2,8 @@ package viper.server
 
 import ch.qos.logback.classic.Logger
 import org.slf4j.LoggerFactory
-import viper.server.ViperServerRunner.getClass
-import viper.silver.ast.pretty.FastPrettyPrinter
 import viper.silver.ast.{Forall, Method, Node}
-import viper.silver.verifier.{AbstractVerificationError, VerificationError, errors}
+import viper.silver.verifier.{AbstractVerificationError, errors}
 
 object ViperCache {
   private val cache = collection.mutable.Map[String, collection.mutable.Map[String, CacheEntry]]()

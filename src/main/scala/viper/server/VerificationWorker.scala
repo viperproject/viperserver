@@ -8,17 +8,32 @@ package viper.server
 
 import java.nio.file.Paths
 
+import akka.actor.ActorRef
 import com.typesafe.scalalogging.LazyLogging
 import viper.carbon.CarbonFrontend
+import viper.server.ViperServerRunner.ReporterActor
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
 import viper.silver.frontend.{SilFrontend, TranslatorState}
+import viper.silver.reporter
+import viper.silver.reporter.Reporter
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, _}
 
 import scala.collection.mutable.ListBuffer
 
-class VerificationWorker(val command: Any) extends Runnable with LazyLogging {
+
+// Implementation of the Reporter interface used by the backend.
+class ActorReporter(private val actor_ref: ActorRef, val tag: String) extends viper.silver.reporter.Reporter {
+
+  val name = s"ViperServer_$tag"
+
+  def report(msg: reporter.Message) = {
+    actor_ref ! ReporterActor.ServerRequest(msg)
+  }
+}
+
+class VerificationWorker(private val listener: ActorRef, val _reporter: ActorRef, val command: List[String]) extends Runnable with LazyLogging {
 
   import ViperServerProtocol._
 
@@ -27,14 +42,13 @@ class VerificationWorker(val command: Any) extends Runnable with LazyLogging {
   def run(): Unit = {
     try {
       command match {
-        case Verify("silicon" :: args) =>
-          startVerification(args, new ViperSiliconFrontend())
-        case Verify("carbon" :: args) =>
-          startVerification(args, new ViperCarbonFrontend())
-        case Verify(args) =>
-          logger.info("invalid arguments: " + args.mkString(" "))
-        case _ =>
-          logger.info("invalid arguments")
+        case "silicon" :: args =>
+          startVerification(args, new ViperSiliconFrontend(new ActorReporter(_reporter, "silicon")))
+        case "carbon" :: args =>
+          startVerification(args, new ViperCarbonFrontend(new ActorReporter(_reporter, "carbon")))
+        case args =>
+          logger.info("invalid arguments: ${args.toString}",
+                      "You need to specify the verification backend, e.g., `silicon [args]`")
       }
     } catch {
       case _: InterruptedException =>
@@ -45,8 +59,9 @@ class VerificationWorker(val command: Any) extends Runnable with LazyLogging {
       if (_frontend != null) {
         _frontend.printStopped()
       } else {
-        ViperFrontend.printStopped()
+        println(s"The command $command did not result in initialization of verification backend.")
       }
+      listener ! Stop
     }
   }
 
@@ -63,10 +78,6 @@ class VerificationWorker(val command: Any) extends Runnable with LazyLogging {
       case _: Throwable =>
     }
   }
-}
-
-object ViperFrontend extends ViperSiliconFrontend {
-  override def ideMode: Boolean = ViperServerRunner.config.ideMode()
 }
 
 trait ViperFrontend extends SilFrontend {
@@ -147,8 +158,7 @@ trait ViperFrontend extends SilFrontend {
   }
 
   private def removeBody(m: Method): Method = {
-    //TODO: how to change the body with m.copy(body = ...) and insert the copied node into the AST
-    val node: Stmt = Inhale(FalseLit()())()
+    val node: Seqn = Seqn(Seq(Inhale(FalseLit()())()), m.scopedDecls)(m.body.pos, m.body.info, m.body.errT)
     m.copy(body = node)(m.pos, m.info, m.errT)
   }
 
@@ -416,6 +426,6 @@ trait ViperFrontend extends SilFrontend {
   }
 }
 
-class ViperCarbonFrontend extends CarbonFrontend with ViperFrontend {}
+class ViperCarbonFrontend(val rep: Reporter) extends CarbonFrontend(rep) with ViperFrontend {}
 
-class ViperSiliconFrontend extends SiliconFrontend with ViperFrontend {}
+class ViperSiliconFrontend(val rep: Reporter) extends SiliconFrontend(rep) with ViperFrontend {}
