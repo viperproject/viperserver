@@ -121,7 +121,8 @@ object ViperServerBuild extends Build {
     dependencies.siliconSrc % "compile->compile;test->test")
 
   def externalDep = (
-    Seq(dependencies.jgrapht, dependencies.commonsIO, dependencies.commonsPool, dependencies.scallop, dependencies.actors)
+    Seq(dependencies.jgrapht, dependencies.commonsIO, dependencies.commonsPool, dependencies.scallop,
+      dependencies.actors, dependencies.akka_testing, dependencies.akka_json)
       ++ dependencies.logging
       ++ (if (isBuildServer) Seq(
       dependencies.silver % "compile->compile;test->test",
@@ -150,6 +151,8 @@ object ViperServerBuild extends Build {
     lazy val carbonSrc = RootProject(new java.io.File("../carbon"))
 
     lazy val actors = "com.typesafe.akka" %% "akka-actor" % "2.4.17"
+    lazy val akka_testing = "com.typesafe.akka" %% "akka-testkit" % "2.4.17" % "test"
+    lazy val akka_json = "com.typesafe.akka" %% "akka-http-spray-json" % "10.0.7"
   }
 
 }
