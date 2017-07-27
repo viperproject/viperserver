@@ -61,6 +61,7 @@ class VerificationWorker(private val listener: ActorRef, val _reporter: ActorRef
       } else {
         println(s"The command $command did not result in initialization of verification backend.")
       }
+      _reporter ! ReporterActor.FinalServerRequest
       listener ! Stop
     }
   }

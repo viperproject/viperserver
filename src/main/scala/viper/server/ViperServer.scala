@@ -29,7 +29,7 @@ import akka.stream.ActorMaterializer
 import akka.util.{ByteString, Timeout}
 import akka.util.Timeout
 
-import scala.concurrent.{Future, Promise}
+import scala.concurrent.{Await, Future, Promise}
 import scala.concurrent.duration._
 import akka.stream.scaladsl.{Sink, Source, SourceQueue, SourceQueueWithComplete}
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity, StatusCodes}
@@ -45,6 +45,7 @@ import java.nio.file.{Path, Paths}
 import scala.language.postfixOps
 import ch.qos.logback.classic.Logger
 import org.slf4j.LoggerFactory
+import viper.server.ViperServerRunner.ReporterActor.FinalServerRequest
 import viper.silver.reporter
 import viper.silver.reporter.Message
 
@@ -120,48 +121,6 @@ object ViperServerRunner {
 
     implicit val executionContext = system.dispatcher
 
-    // The maximum messages in the reporter's message queue is 10.
-    // TODO: parametrize?
-    // TODO: choose the right strategy?
-    // FIXME: the message type is not supposed t be String.
-    //                                            utility.Futures.peekMatValue(Source.queue[String](10, OverflowStrategy.fail))
-
-    private val src: Source[String, SourceQueueWithComplete[String]] = Source.queue[String](10, OverflowStrategy.fail)
-
-    private val (_queueSource, _futureQueue: Future[SourceQueueWithComplete[String]]) = {
-      val p = Promise[SourceQueueWithComplete[String]]()
-      val s = src.mapMaterializedValue { m =>
-        p.trySuccess(m)
-        m
-      }
-      (s, p.future)
-    }
-
-    private var _reporter: ActorRef = null
-
-    println("A")
-    _futureQueue.map { queue =>
-      _reporter = system.actorOf(ReporterActor.props(queue), s"reporter_$id")
-      val tickSchedule = system.scheduler.schedule(
-          0 milliseconds, 1 second,
-          _reporter,
-          ReporterActor.ServerRequest(reporter.PongMessage(s"pong_from_$id")))
-
-      println("B")
-
-      queue.watchCompletion().map { done =>
-        println(s"Client #$id disconnected")
-        tickSchedule.cancel
-        println(s"Scheduler for job $id canceled")
-      }
-
-      println("C")
-    }
-
-    assert(_reporter != null)
-
-    _main_actor(self) = JobHandle(id, _queueSource, _futureQueue)
-
     private var _verificationTask: Thread = null
     private var _args: List[String] = null
 
@@ -192,8 +151,38 @@ object ViperServerRunner {
 
     def verify(args: List[String]): Unit = {
       assert(_verificationTask == null)
-      _verificationTask = new Thread(new VerificationWorker(self, _reporter, args))
-      _verificationTask.start()
+
+      // The maximum messages in the reporter's message queue is 10.
+      // TODO: parametrize?
+      // TODO: choose the right strategy?
+      // FIXME: the message type is not supposed t be String.
+
+      val (queueSource, futureQueue) = utility.Futures.peekMatValue(Source.queue[String](10, OverflowStrategy.fail))
+
+      println("A")
+      futureQueue.map { queue =>
+        val my_reporter = system.actorOf(ReporterActor.props(queue), s"reporter_$id")
+
+        _verificationTask = new Thread(new VerificationWorker(self, my_reporter, args))
+        _verificationTask.start()
+        /*
+        val tickSchedule = system.scheduler.schedule(
+          0 milliseconds, 1 second,
+          my_reporter,
+          ReporterActor.ServerRequest(reporter.PongMessage(s"pong_from_$id")))
+        */
+        println("B")
+
+        queue.watchCompletion().map { done =>
+          println(s"Client #$id disconnected")
+          //tickSchedule.cancel
+          println(s"Scheduler for job $id canceled")
+        }
+
+        println("C")
+      }
+
+      _main_actor(self) = JobHandle(id, queueSource, futureQueue)
     }
   }
 
@@ -203,16 +192,21 @@ object ViperServerRunner {
   object ReporterActor {
     case object ClientRequest
     case class ServerRequest(msg: reporter.Message)
+    case object FinalServerRequest
 
-    def props(bindingFuture: SourceQueue[String]): Props = Props(new ReporterActor(bindingFuture))
+    def props(bindingFuture: SourceQueueWithComplete[String]): Props = Props(new ReporterActor(bindingFuture))
   }
 
-  class ReporterActor(queue: SourceQueue[String]) extends Actor {
+  class ReporterActor(queue: SourceQueueWithComplete[String]) extends Actor {
 
     def receive = {
       case ReporterActor.ClientRequest =>
       case ReporterActor.ServerRequest(msg) =>
         queue.offer(msg.toString)
+      case ReporterActor.FinalServerRequest =>
+        queue.offer(s"""{"type":"Stopped"}""")
+        queue.complete()
+        self ! PoisonPill
       case _ =>
     }
   }
