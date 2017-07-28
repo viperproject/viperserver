@@ -6,8 +6,6 @@
 
 package viper.server
 
-import akka.actor.ActorRef
-
 object ViperServerProtocol {
 
   //Main Actor requests Verification

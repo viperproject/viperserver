@@ -6,52 +6,33 @@
 
 package viper.server
 
+import akka.NotUsed
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
-import com.typesafe.scalalogging.LazyLogging
-import org.rogach.scallop.{ScallopConf, ScallopOption, singleArgConverter}
-import org.slf4j.LoggerFactory
-import viper.carbon.CarbonVerifier
-import viper.server.ViperServerProtocol._
-import viper.silicon.Silicon
-import viper.silver.verifier.Verifier
 
 import scala.collection.mutable.ListBuffer
 import scala.language.postfixOps
-import akka.NotUsed
-import akka.actor.FSM.Failure
-import akka.actor.Status.Success
 import akka.http.scaladsl.Http
+import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSupport}
+import akka.http.scaladsl.marshalling.ToResponseMarshallable
 import akka.http.scaladsl.server.Directives._
-import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
-import akka.pattern.ask
 import akka.stream.ActorMaterializer
 import akka.util.{ByteString, Timeout}
 import akka.util.Timeout
 
-import scala.concurrent.{Await, Future, Promise}
-import scala.concurrent.duration._
+import scala.concurrent.Future
 import akka.stream.scaladsl.{Sink, Source, SourceQueue, SourceQueueWithComplete}
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity, StatusCodes}
-import com.typesafe.scalalogging.LazyLogging
-import spray.json.{DefaultJsonProtocol, JsArray, JsBoolean, JsObject, JsString, JsValue, RootJsonFormat}
-import viper.carbon.CarbonVerifier
+import viper.server.ViperIDEProtocol._
 import viper.server.ViperServerProtocol._
-import viper.silicon.Silicon
-import viper.silver.verifier.{AbstractError, AbstractVerificationError, VerificationResult, Verifier}
-import viper.silver.ast.{AbstractSourcePosition, HasLineColumn, SourcePosition}
-import java.nio.file.{Path, Paths}
 
+import scala.concurrent.duration._
 import scala.language.postfixOps
-import ch.qos.logback.classic.Logger
-import org.slf4j.LoggerFactory
-import viper.server.ViperServerRunner.ReporterActor.FinalServerRequest
 import viper.silver.reporter
-import viper.silver.reporter.Message
+import viper.silver.reporter.{Message, PongMessage, SuccessMessage}
 
 import scala.collection.mutable
 
-//import scala.concurrent.ExecutionContext.Implicits.global
 
 
 object ViperServerRunner {
@@ -94,13 +75,12 @@ object ViperServerRunner {
   //  as well as its unique job_id.
 
   case class JobHandle(job_id: Int,
-                       queueSource: Source[String, SourceQueueWithComplete[String]],
-                       futureQueue: Future[SourceQueueWithComplete[String]])
+                       queueSource: Source[reporter.Message, SourceQueueWithComplete[reporter.Message]],
+                       futureQueue: Future[SourceQueueWithComplete[reporter.Message]])
 
   private var _main_actor = mutable.Map[ActorRef, JobHandle]()
-
   private var _next_job_id: Int = 0
-  private val _max_active_jobs: Int = 1
+  private val _max_active_jobs: Int = 3
 
   def new_jobs_allowed = _main_actor.size < _max_active_jobs
 
@@ -117,6 +97,8 @@ object ViperServerRunner {
     def props(id: Int): Props = Props(new MainActor(id))
   }
 
+
+
   class MainActor(private val id: Int) extends Actor {
 
     implicit val executionContext = system.dispatcher
@@ -124,8 +106,13 @@ object ViperServerRunner {
     private var _verificationTask: Thread = null
     private var _args: List[String] = null
 
+    // Set a timeout for the main actor. Expect the client to request results within this time.
+    private val _timeout = system.scheduler.scheduleOnce(500.seconds, self, Stop)
+
     def receive = {
       case Stop =>
+        _timeout.cancel()
+
         // Can be sent wither from the client for terminating the job,
         // or by the server (indicating that the job has been completed).
         if (_verificationTask != null && _verificationTask.isAlive) {
@@ -157,32 +144,22 @@ object ViperServerRunner {
       // TODO: choose the right strategy?
       // FIXME: the message type is not supposed t be String.
 
-      val (queueSource, futureQueue) = utility.Futures.peekMatValue(Source.queue[String](10, OverflowStrategy.fail))
+      val (queueSource, futureQueue) = utility.Futures.peekMatValue(Source.queue[reporter.Message](10, OverflowStrategy.fail))
 
-      println("A")
       futureQueue.map { queue =>
         val my_reporter = system.actorOf(ReporterActor.props(queue), s"reporter_$id")
 
         _verificationTask = new Thread(new VerificationWorker(self, my_reporter, args))
         _verificationTask.start()
-        /*
-        val tickSchedule = system.scheduler.schedule(
-          0 milliseconds, 1 second,
-          my_reporter,
-          ReporterActor.ServerRequest(reporter.PongMessage(s"pong_from_$id")))
-        */
-        println("B")
 
         queue.watchCompletion().map { done =>
           println(s"Client #$id disconnected")
           //tickSchedule.cancel
-          println(s"Scheduler for job $id canceled")
         }
-
-        println("C")
       }
 
       _main_actor(self) = JobHandle(id, queueSource, futureQueue)
+      _next_job_id = _next_job_id + 1
     }
   }
 
@@ -194,17 +171,17 @@ object ViperServerRunner {
     case class ServerRequest(msg: reporter.Message)
     case object FinalServerRequest
 
-    def props(bindingFuture: SourceQueueWithComplete[String]): Props = Props(new ReporterActor(bindingFuture))
+    def props(bindingFuture: SourceQueueWithComplete[reporter.Message]): Props = Props(new ReporterActor(bindingFuture))
   }
 
-  class ReporterActor(queue: SourceQueueWithComplete[String]) extends Actor {
+  class ReporterActor(queue: SourceQueueWithComplete[reporter.Message]) extends Actor {
 
     def receive = {
       case ReporterActor.ClientRequest =>
       case ReporterActor.ServerRequest(msg) =>
-        queue.offer(msg.toString)
+        queue.offer(msg)
       case ReporterActor.FinalServerRequest =>
-        queue.offer(s"""{"type":"Stopped"}""")
+        queue.offer(reporter.PongMessage("Done"))
         queue.complete()
         self ! PoisonPill
       case _ =>
@@ -212,6 +189,10 @@ object ViperServerRunner {
   }
 
   def main(args: Array[String]): Unit = {
+
+    implicit val executionContext = system.dispatcher
+
+    import spray.json._
 
     try {
       println("This is the Viper Server.")
@@ -224,75 +205,40 @@ object ViperServerRunner {
 
     ViperCache.initialize(config.backendSpecificCache())
 
-    // Normally, the actors can be initialized here.
-    // Only the terminator actor needs to be initialized after the Http handler has been created.
-
-
-
-    /*
-    _futureQueue.map { queue =>
-
-      _reporter_actor = system.actorOf(ReporterActor.props(queue), "reporter")
-      val tickSchedule =
-        system.scheduler.schedule(0.milliseconds,
-          1 second,
-          _reporter_actor,
-          ReporterActor.ServerRequest(reporter.PongMessage("pong")))
-
-      queue.watchCompletion().map{ done =>
-        println("Client disconnected")
-        tickSchedule.cancel
-        println("Scheduler canceled")
-      }
-    }
-*/
-
-
     val routes = {
       path("exit") {
         get {
           _term_actor ! Terminator.Exit
-          complete((StatusCodes.Accepted, "shutting down..."))
+          complete( ServerStopConfirmed("shutting down...") )
         }
       }
-    } ~ path("verify" / IntNumber) { jid =>
+    } ~ path("verify") {
       post {
         entity(as[VerificationRequest]) { r =>
           if ( new_jobs_allowed ) {
-
-            implicit val executionContext = system.dispatcher
-
             val id = _next_job_id
             val main_actor = system.actorOf(MainActor.props(id), s"main_actor_$id")
 
             main_actor ! ViperServerProtocol.Verify(r.arg.split("\\s+").toList)
 
-            println("[Main App] main_actor = ", main_actor)
-
-            // Activate the future queue for the new job.
-            //assert(_main_actor.contains(main_actor))
-
-            complete((StatusCodes.Accepted, s"submitted verification request to main actor #$id: `${r.arg}'."))
+            complete( VerificationRequestAccept(id) )
 
           } else {
-            complete((StatusCodes.Accepted, s"the maximum number of active verification jobs are currently running (${_max_active_jobs})."))
+            complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running (${_max_active_jobs}).") )
           }
         }
-      } ~
+      }
+    } ~ path("verify" / IntNumber) { jid =>
       get {
         find_job(jid) match {
           case Some(handle) =>
             // Found a job with this jid.
-            println(s"[Main App] job_handle(jid=$jid) = ", handle)
-            complete(HttpEntity(
-              ContentTypes.`application/json`,
-              handle.queueSource.map{ e => ByteString(s"$e\n") }
-          ))
+            val src = handle.queueSource.asInstanceOf[ Source[PongMessage, NotUsed] ]
+            complete( src )
           case _ =>
             // Did not find a job with this jid.
-            complete((StatusCodes.NotFound, s"The verification job #$jid does not exist."))
+            complete( VerificationRequestReject(s"The verification job #$jid does not exist.") )
         }
-
       }
     }
 
