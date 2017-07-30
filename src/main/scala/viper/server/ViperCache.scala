@@ -1,12 +1,19 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+
 package viper.server
 
 import ch.qos.logback.classic.Logger
 import org.slf4j.LoggerFactory
-import viper.silver.ast.{Forall, Method, Node}
+import viper.silver.ast.{Forall, Method, Node, Program}
 import viper.silver.verifier.{AbstractVerificationError, errors}
 
 object ViperCache {
   private val cache = collection.mutable.Map[String, collection.mutable.Map[String, CacheEntry]]()
+  override def toString = cache.toString
 
   private var _backendSpecificCache: Boolean = false
 
@@ -30,21 +37,21 @@ object ViperCache {
     }
   }
 
-  def update(backendName: String, file: String, m: Method, errors: List[AbstractVerificationError]): Unit = {
+  def update(backendName: String, file: String, p: Program, m: Method, errors: List[AbstractVerificationError]): Unit = {
     assert(m.entityHash != null)
     val key = getKey(backendName, file)
     cache.get(key) match {
       case Some(fileCache) =>
         try {
           val localizedErrors = errors.map(err => LocalizedError(err, getAccessPath(err.offendingNode, m), getAccessPath(err.reason.offendingNode, m), backendName))
-          fileCache += (m.entityHash -> new CacheEntry(localizedErrors, m.dependencyHash))
+          fileCache += (m.entityHash -> new CacheEntry(localizedErrors, p.dependencyHashMap(m)))
         } catch {
           case e: Exception =>
             logger.warn("Error getting the accessPath, the errors cannot be stored in the cache: " + e )
         }
       case None =>
         cache += (key -> collection.mutable.Map[String, CacheEntry]())
-        update(backendName, file, m, errors)
+        update(backendName, file, p, m, errors)
     }
   }
 
@@ -115,8 +122,14 @@ object ViperCache {
   }
 }
 
-class CacheEntry(val errors: List[LocalizedError], val dependencyHash: String) {}
+class CacheEntry(val errors: List[LocalizedError], val dependencyHash: String) {
+  override def toString = s"CacheEntry(errors=$errors, dependencyHash=$dependencyHash)"
+}
 
-case class LocalizedError(error: AbstractVerificationError, accessPath: List[Int], reasonAccessPath: List[Int], backendName: String) {}
+case class LocalizedError(error: AbstractVerificationError, accessPath: List[Int], reasonAccessPath: List[Int], backendName: String) {
+  override def toString = s"LocalizedError(error=$error, accessPath=$accessPath, reasonAccessPath=$reasonAccessPath, backendName=$backendName)"
+}
 
-class AccessPath(val accessPath: List[Number]) {}
+class AccessPath(val accessPath: List[Number]) {
+  override def toString = s"AccessPath(accessPath=$accessPath)"
+}

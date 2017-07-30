@@ -97,8 +97,6 @@ object ViperServerRunner {
     def props(id: Int): Props = Props(new MainActor(id))
   }
 
-
-
   class MainActor(private val id: Int) extends Actor {
 
     implicit val executionContext = system.dispatcher
@@ -191,8 +189,6 @@ object ViperServerRunner {
   def main(args: Array[String]): Unit = {
 
     implicit val executionContext = system.dispatcher
-
-    import spray.json._
 
     try {
       println("This is the Viper Server.")

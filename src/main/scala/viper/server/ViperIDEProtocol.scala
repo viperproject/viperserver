@@ -6,9 +6,11 @@
 
 package viper.server
 
-import akka.http.scaladsl.common.EntityStreamingSupport
+import akka.NotUsed
+import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSupport}
+import akka.stream.scaladsl.Flow
+import akka.util.ByteString
 import spray.json.{DefaultJsonProtocol, JsValue, JsonWriter}
-import viper.silver.ast.{AbstractSourcePosition, HasLineColumn}
 import viper.silver.reporter._
 
 
@@ -75,5 +77,13 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     }
   })
 
-  implicit val jsonStreamingSupport = EntityStreamingSupport.json()
+  implicit val jsonStreamingSupport: JsonEntityStreamingSupport = {
+    //val start = ByteString("[")
+    val between = ByteString("\n")
+    //val end = ByteString("]")
+
+    val compactArrayRendering: Flow[ByteString, ByteString, NotUsed] = Flow[ByteString].intersperse(between)
+    // Method withFramingRendererFlow: Java DSL overrides Scala DSL. Who knows why? Use .asJava as a workaround.
+    EntityStreamingSupport.json().withFramingRendererFlow( compactArrayRendering.asJava )
+  }
 }

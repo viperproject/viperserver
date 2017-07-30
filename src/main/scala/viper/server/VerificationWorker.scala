@@ -169,7 +169,9 @@ trait ViperFrontend extends SilFrontend {
 
     val (methodsToVerify, _, cachedErrors) = consultCache()
 
-    val program = _program.get
+    val real_program = _program.get
+    val program = Program(real_program.domains, real_program.fields, real_program.functions, real_program.predicates,
+      methodsToVerify) (real_program.pos, real_program.info, real_program.errT)
     val file: String = _config.file()
 
     _verificationResult = Some(mapVerificationResult(_verifier.get.verify(program)))
@@ -182,11 +184,11 @@ trait ViperFrontend extends SilFrontend {
       _verificationResult.get match {
         case Failure(errors) =>
           val errorsToCache = getMethodSpecificErrors(m, errors)
-          ViperCache.update(backendName, file, m, errorsToCache)
+          ViperCache.update(backendName, file, program, m, errorsToCache)
           logger.trace("Store in cache " + m.name + (if (errorsToCache.nonEmpty) ": Error" else ": Success"))
         case Success =>
           logger.trace("Store in cache " + m.name + ": Success")
-          ViperCache.update(backendName, file, m, Nil)
+          ViperCache.update(backendName, file, program, m, Nil)
       }
     })
 
@@ -217,7 +219,7 @@ trait ViperFrontend extends SilFrontend {
         case None =>
           methodsToVerify += m
         case Some(cacheEntry) =>
-          if (m.dependencyHash != cacheEntry.dependencyHash) {
+          if (program.dependencyHashMap(m) != cacheEntry.dependencyHash) {
             //even if the method itself did not change, a re-verification is required if it's dependencies changed
             methodsToVerify += m
           } else {
