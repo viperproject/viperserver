@@ -191,7 +191,6 @@ object ViperServerRunner {
     implicit val executionContext = system.dispatcher
 
     try {
-      println("This is the Viper Server.")
       parseCommandLine(args)
 
     } catch { case e: Throwable =>
@@ -238,10 +237,10 @@ object ViperServerRunner {
       }
     }
 
-    //FIXME: unhardcode the port number!
-    val port = 50424 //viper.server.utility.Sockets.findFreePort
+    val port = viper.server.utility.Sockets.findFreePort
     val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(routes, "localhost", port)
-    println(s"Server online at http://localhost:$port")
+
+    println(s"ViperServer online at http://localhost:$port")
 
     _term_actor = system.actorOf(Terminator.props(bindingFuture), "terminator")
 

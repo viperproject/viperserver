@@ -29,6 +29,7 @@ class ActorReporter(private val actor_ref: ActorRef, val tag: String) extends vi
   val name = s"ViperServer_$tag"
 
   def report(msg: reporter.Message) = {
+    println(s">>> ActorReporter reporting: " + msg.toString)
     actor_ref ! ReporterActor.ServerRequest(msg)
   }
 }
@@ -277,6 +278,7 @@ trait ViperFrontend extends SilFrontend {
       case e: IfFailed => e.copy(cached = true)
       case e: WhileFailed => e.copy(cached = true)
       case e: AssertFailed => e.copy(cached = true)
+      case e: TerminationFailed => e.copy(cached = true)
       case e: PostconditionViolated => e.copy(cached = true)
       case e: FoldFailed => e.copy(cached = true)
       case e: UnfoldFailed => e.copy(cached = true)
@@ -289,6 +291,7 @@ trait ViperFrontend extends SilFrontend {
       case e: MagicWandNotWellformed => e.copy(cached = true)
       case e: LetWandFailed => e.copy(cached = true)
       case e: HeuristicsFailed => e.copy(cached = true)
+      case e: VerificationErrorWithCounterexample => e.copy(cached = true)
       case e: AbstractVerificationError =>
         logger.warn("Setting a verification error to cached was not possible for " + e + ". Make sure to handle this types of errors")
         e
@@ -344,10 +347,7 @@ trait ViperFrontend extends SilFrontend {
       case t: FieldAccess => t.copy()(pos, t.info, t.errT)
       case t: PredicateAccess => t.copy()(pos, t.info, t.errT)
       case t: Unfolding => t.copy()(pos, t.info, t.errT)
-      case t: UnfoldingGhostOp => t.copy()(pos, t.info, t.errT)
-      case t: FoldingGhostOp => t.copy()(pos, t.info, t.errT)
-      case t: ApplyingGhostOp => t.copy()(pos, t.info, t.errT)
-      case t: PackagingGhostOp => t.copy()(pos, t.info, t.errT)
+      case t: Applying => t.copy()(pos, t.info, t.errT)
       case t: Old => t.copy()(pos, t.info, t.errT)
       case t: CondExp => t.copy()(pos, t.info, t.errT)
       case t: Let => t.copy()(pos, t.info, t.errT)
@@ -360,7 +360,6 @@ trait ViperFrontend extends SilFrontend {
       case t: NoPerm => t.copy()(pos, t.info, t.errT)
       case t: EpsilonPerm => t.copy()(pos, t.info, t.errT)
       case t: CurrentPerm => t.copy()(pos, t.info, t.errT)
-      case t: FractionalPerm => t.copy()(pos, t.info, t.errT)
       case t: FieldAccessPredicate => t.copy()(pos, t.info, t.errT)
       case t: PredicateAccessPredicate => t.copy()(pos, t.info, t.errT)
 
@@ -401,7 +400,6 @@ trait ViperFrontend extends SilFrontend {
       case t: Not => t.copy()(pos, t.info, t.errT)
       case t: PermMinus => t.copy()(pos, t.info, t.errT)
       case t: Old => t.copy()(pos, t.info, t.errT)
-      case t: ApplyOld => t.copy()(pos, t.info, t.errT)
       case t: LabelledOld => t.copy()(pos, t.info, t.errT)
       case t: AnySetCardinality => t.copy()(pos, t.info, t.errT)
       case t: FuncApp => t.copy()(pos, t.info, t.typ, t.formalArgs, t.errT)

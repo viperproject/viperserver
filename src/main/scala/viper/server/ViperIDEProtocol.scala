@@ -10,8 +10,10 @@ import akka.NotUsed
 import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSupport}
 import akka.stream.scaladsl.Flow
 import akka.util.ByteString
-import spray.json.{DefaultJsonProtocol, JsValue, JsonWriter}
+import spray.json.{DefaultJsonProtocol, JsValue, JsonWriter, RootJsonFormat}
+import viper.silver.ast.{AbstractSourcePosition, HasLineColumn}
 import viper.silver.reporter._
+import viper.silver.verifier.{AbstractError, Failure}
 
 
 object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
@@ -23,7 +25,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   final case class ServerStopConfirmed(msg: String)
 
 
-  implicit val verReqAccept_format = jsonFormat1(VerificationRequestAccept)
+  implicit val verReqAccept_format: RootJsonFormat[VerificationRequestAccept] = jsonFormat1(VerificationRequestAccept)
   implicit val verReqReject_format = jsonFormat1(VerificationRequestReject)
   implicit val serverStopConfirmed_format = jsonFormat1(ServerStopConfirmed)
 
@@ -40,10 +42,6 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         throw new RuntimeException(s"Invalid file path: `$json`. Cannot convert json format to File.")
     }
   }
-
-  implicit val entity_format = lift(new JsonWriter[Entity] {
-    override def write(obj: Entity): JsValue = obj.name.toJson
-  })
 
   implicit val position_format = lift(new JsonWriter[Position] {
     override def write(obj: Position): JsValue =
@@ -63,9 +61,73 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     }
   })
 
-  implicit val successMessage_format = jsonFormat3(SuccessMessage.apply)
-  implicit val failureMessage_format = jsonFormat4(FailureMessage.apply)
-  implicit val symbExLogReport_format = jsonFormat4(SymbExLogReport.apply)
+  implicit val abstractError_format = lift(new JsonWriter[AbstractError] {
+    override def write(obj: AbstractError) = {
+      val obj_1 = JsObject(
+        "cached" -> JsBoolean(obj.cached),
+        "tag" -> JsString(obj.fullId),
+        "message" -> JsString(obj.readableMessage)
+      )
+      JsObject(
+        obj_1.fields +
+          (obj match {
+            case hlc: HasLineColumn =>
+              "start" -> JsString(s"${hlc.line}:${hlc.column}")
+          }) +
+          (obj match {
+            case abs: AbstractSourcePosition =>
+              abs.end match {
+                case Some(end_pos) =>
+                  "end" -> JsString(s"${end_pos.line}:${end_pos.column}")
+              }
+          }) +
+          (obj match {
+            case abs: AbstractSourcePosition =>
+              "file" -> JsString(abs.file.toAbsolutePath.toString)
+          })
+      )
+    }
+  })
+
+  implicit val entity_format = lift(new JsonWriter[Entity] {
+    override def write(obj: Entity) = JsObject(
+      "type" -> JsString(obj.getClass.toString),
+      "name" -> JsString(obj.name))
+  })
+
+  implicit val failure_format = lift(new JsonWriter[Failure] {
+    override def write(obj: Failure) =
+      JsObject(
+        "type" -> JsString("Error"),
+        "errors" -> JsArray(obj.errors.map(_.toJson).toVector))
+  })
+
+  //implicit val successMessage_format = jsonFormat2(SuccessMessage.apply)
+  implicit val successMessage_format = lift(new JsonWriter[SuccessMessage] {
+    override def write(obj: SuccessMessage) = {
+      JsObject(
+        "entity" -> obj.entity.toJson,
+        "time" -> obj.verificationTime.toJson
+      )
+    }
+  })
+
+  implicit val failureMessage_format = jsonFormat3(FailureMessage.apply)
+  implicit val symbExLogReport_format = lift(new JsonWriter[SymbExLogReport] {
+    override def write(obj: SymbExLogReport) = {
+      val obj_1 = JsObject(
+        "entity" -> obj.entity.toJson,
+        "timestamp" -> obj.timestamp.toJson
+      )
+      JsObject(
+        obj_1.fields +
+          (obj.stuff match {
+            case Some(stuff) =>
+              "stuff" -> JsString("<json transformer not implemented>")
+          })
+      )
+    }
+  })
   implicit val pongMessage_format = jsonFormat1(PongMessage.apply)
 
   implicit val message_format = lift(new JsonWriter[Message] {
