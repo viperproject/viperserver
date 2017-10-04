@@ -348,7 +348,6 @@ trait ViperFrontend extends SilFrontend {
       case t: PredicateAccess => t.copy()(pos, t.info, t.errT)
       case t: Unfolding => t.copy()(pos, t.info, t.errT)
       case t: Applying => t.copy()(pos, t.info, t.errT)
-      case t: Old => t.copy()(pos, t.info, t.errT)
       case t: CondExp => t.copy()(pos, t.info, t.errT)
       case t: Let => t.copy()(pos, t.info, t.errT)
       case t: Exists => t.copy()(pos, t.info, t.errT)

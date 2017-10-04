@@ -29,7 +29,7 @@ import viper.server.ViperServerProtocol._
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import viper.silver.reporter
-import viper.silver.reporter.{Message, PongMessage, SuccessMessage}
+import viper.silver.reporter._
 
 import scala.collection.mutable
 
@@ -44,6 +44,7 @@ object ViperServerRunner {
 
   implicit val system = ActorSystem("Main")
   implicit val materializer = ActorMaterializer()
+  implicit val jsonStreamingSupport = EntityStreamingSupport.json()
 
 
   // --- Actor: Terminator ---
@@ -177,7 +178,12 @@ object ViperServerRunner {
     def receive = {
       case ReporterActor.ClientRequest =>
       case ReporterActor.ServerRequest(msg) =>
-        queue.offer(msg)
+        msg match {
+          case se_report: SymbExLogReport =>
+            queue.offer(se_report)
+          case _ =>
+
+        }
       case ReporterActor.FinalServerRequest =>
         queue.offer(reporter.PongMessage("Done"))
         queue.complete()
@@ -227,9 +233,9 @@ object ViperServerRunner {
       get {
         find_job(jid) match {
           case Some(handle) =>
-            // Found a job with this jid.
-            val src = handle.queueSource.asInstanceOf[ Source[PongMessage, NotUsed] ]
-            complete( src )
+            //Found a job with this jid.
+            val src = handle.queueSource.asInstanceOf[ Source[Message, NotUsed] ]
+            complete{ src }
           case _ =>
             // Did not find a job with this jid.
             complete( VerificationRequestReject(s"The verification job #$jid does not exist.") )

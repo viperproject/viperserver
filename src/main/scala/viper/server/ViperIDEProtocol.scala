@@ -32,7 +32,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
 
   // Implicit conversions for reporter.Message.
 
-  implicit object file_format extends JsonFormat[File] {
+  implicit object file_format extends RootJsonFormat[File] {
     override def write(obj: File): JsValue = obj.getFileName.toJson
 
     override def read(json: JsValue): File = try {
@@ -43,7 +43,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     }
   }
 
-  implicit val position_format = lift(new JsonWriter[Position] {
+  implicit val position_writer = lift(new RootJsonWriter[Position] {
     override def write(obj: Position): JsValue =
       JsObject(
         "file" -> obj.file.toJson,
@@ -54,14 +54,14 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         })
   })
 
-  implicit val optionAny_format = lift(new JsonWriter[Option[Any]] {
+  implicit val optionAny_writer = lift(new RootJsonWriter[Option[Any]] {
     override def write(obj: Option[Any]): JsValue = obj match {
       case Some(stuff) => stuff.toString.toJson
       case _ => JsObject.empty
     }
   })
 
-  implicit val abstractError_format = lift(new JsonWriter[AbstractError] {
+  implicit val abstractError_writer = lift(new RootJsonWriter[AbstractError] {
     override def write(obj: AbstractError) = {
       val obj_1 = JsObject(
         "cached" -> JsBoolean(obj.cached),
@@ -89,13 +89,14 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     }
   })
 
-  implicit val entity_format = lift(new JsonWriter[Entity] {
+  implicit val entity_writer = lift(new RootJsonWriter[Entity] {
     override def write(obj: Entity) = JsObject(
       "type" -> JsString(obj.getClass.toString),
       "name" -> JsString(obj.name))
   })
 
-  implicit val failure_format = lift(new JsonWriter[Failure] {
+  //implicit val failure_format = jsonFormat1(Failure.apply)
+  implicit val failure_writer = lift(new RootJsonWriter[Failure] {
     override def write(obj: Failure) =
       JsObject(
         "type" -> JsString("Error"),
@@ -103,7 +104,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   //implicit val successMessage_format = jsonFormat2(SuccessMessage.apply)
-  implicit val successMessage_format = lift(new JsonWriter[SuccessMessage] {
+  implicit val successMessage_writer = lift(new RootJsonWriter[SuccessMessage] {
     override def write(obj: SuccessMessage) = {
       JsObject(
         "entity" -> obj.entity.toJson,
@@ -113,7 +114,9 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val failureMessage_format = jsonFormat3(FailureMessage.apply)
-  implicit val symbExLogReport_format = lift(new JsonWriter[SymbExLogReport] {
+
+  //implicit val symbExLogReport_format = jsonFormat3(SymbExLogReport.apply)
+  implicit val symbExLogReport_writer = lift(new RootJsonWriter[SymbExLogReport] {
     override def write(obj: SymbExLogReport) = {
       val obj_1 = JsObject(
         "entity" -> obj.entity.toJson,
@@ -128,16 +131,19 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       )
     }
   })
+
   implicit val pongMessage_format = jsonFormat1(PongMessage.apply)
 
-  implicit val message_format = lift(new JsonWriter[Message] {
+  implicit object message_format extends RootJsonFormat[Message] {
     override def write(obj: Message): JsValue = obj match {
-      case a: SuccessMessage  => a.toJson
-      case b: FailureMessage  => b.toJson
+      case a: SuccessMessage => a.toJson
+      case b: FailureMessage => b.toJson
       case c: SymbExLogReport => c.toJson
-      case d: PongMessage     => d.toJson
+      case d: PongMessage => d.toJson
     }
-  })
+
+    override def read(json: JsValue): Message = ???
+  }
 
   implicit val jsonStreamingSupport: JsonEntityStreamingSupport = {
     //val start = ByteString("[")
