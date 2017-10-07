@@ -43,6 +43,6 @@ object Sockets {
         }
       }
     }
-    throw new IllegalStateException ("Could not find a free TCP/IP port to start embedded Jetty HTTP Server on")
+    throw new IllegalStateException ("Could not find a free TCP/IP port to start ViperServer on")
   }
 }
