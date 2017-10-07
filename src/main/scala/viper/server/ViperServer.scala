@@ -6,33 +6,27 @@
 
 package viper.server
 
-import akka.NotUsed
-import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, PoisonPill, Props}
-import akka.stream.{ActorMaterializer, OverflowStrategy}
 
-import scala.collection.mutable.ListBuffer
+import org.reactivestreams.Publisher
+
 import scala.language.postfixOps
-import akka.http.scaladsl.Http
-import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSupport}
-import akka.http.scaladsl.marshalling.ToResponseMarshallable
-import akka.http.scaladsl.server.Directives._
-import akka.stream.ActorMaterializer
-import akka.util.{ByteString, Timeout}
-import akka.util.Timeout
-
 import scala.concurrent.Future
-import akka.stream.scaladsl.{Sink, Source, SourceQueue, SourceQueueWithComplete}
-import akka.http.scaladsl.model.{ContentTypes, HttpEntity, StatusCodes}
-import viper.server.ViperIDEProtocol._
-import viper.server.ViperServerProtocol._
-
-import scala.concurrent.duration._
-import scala.language.postfixOps
-import viper.silver.reporter
-import viper.silver.reporter._
-
 import scala.collection.mutable
 
+import akka.NotUsed
+import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
+
+import akka.stream.{ActorMaterializer, OverflowStrategy}
+import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
+
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.server.Directives._
+
+import viper.server.ViperServerProtocol._
+import viper.server.ViperIDEProtocol._
+
+import viper.silver.reporter
+import viper.silver.reporter._
 
 
 object ViperServerRunner {
@@ -44,7 +38,6 @@ object ViperServerRunner {
 
   implicit val system = ActorSystem("Main")
   implicit val materializer = ActorMaterializer()
-  implicit val jsonStreamingSupport = EntityStreamingSupport.json()
 
 
   // --- Actor: Terminator ---
@@ -76,8 +69,8 @@ object ViperServerRunner {
   //  as well as its unique job_id.
 
   case class JobHandle(job_id: Int,
-                       queueSource: Source[reporter.Message, SourceQueueWithComplete[reporter.Message]],
-                       futureQueue: Future[SourceQueueWithComplete[reporter.Message]])
+                       queue: SourceQueueWithComplete[Message],
+                       publisher: Publisher[Message])
 
   private var _main_actor = mutable.Map[ActorRef, JobHandle]()
   private var _next_job_id: Int = 0
@@ -105,13 +98,9 @@ object ViperServerRunner {
     private var _verificationTask: Thread = null
     private var _args: List[String] = null
 
-    // Set a timeout for the main actor. Expect the client to request results within this time.
-    private val _timeout = system.scheduler.scheduleOnce(500.seconds, self, Stop)
 
     def receive = {
       case Stop =>
-        _timeout.cancel()
-
         // Can be sent wither from the client for terminating the job,
         // or by the server (indicating that the job has been completed).
         if (_verificationTask != null && _verificationTask.isAlive) {
@@ -138,26 +127,20 @@ object ViperServerRunner {
     def verify(args: List[String]): Unit = {
       assert(_verificationTask == null)
 
-      // The maximum messages in the reporter's message queue is 10.
-      // TODO: parametrize?
-      // TODO: choose the right strategy?
-      // FIXME: the message type is not supposed t be String.
+      // TODO: reimplement with [[SourceQueue]]s and backpressure strategies.
 
-      val (queueSource, futureQueue) = utility.Futures.peekMatValue(Source.queue[reporter.Message](10, OverflowStrategy.fail))
+      // The maximum number of messages in the reporter's message buffer is 1000.
+      // TODO: try with Sink.asPublisher(false)
+      val (queue, publisher) = Source.queue[Message](1000, OverflowStrategy.backpressure).toMat(Sink.asPublisher(false))(Keep.both).run()
 
-      futureQueue.map { queue =>
-        val my_reporter = system.actorOf(ReporterActor.props(queue), s"reporter_$id")
+      val my_reporter = system.actorOf(ReporterActor.props(queue), s"reporter_$id")
 
-        _verificationTask = new Thread(new VerificationWorker(self, my_reporter, args))
-        _verificationTask.start()
+      _verificationTask = new Thread(new VerificationWorker(self, my_reporter, args))
+      _verificationTask.start()
 
-        queue.watchCompletion().map { done =>
-          println(s"Client #$id disconnected")
-          //tickSchedule.cancel
-        }
-      }
+      //println(s"Client #$id disconnected")
 
-      _main_actor(self) = JobHandle(id, queueSource, futureQueue)
+      _main_actor(self) = JobHandle(id, queue, publisher)
       _next_job_id = _next_job_id + 1
     }
   }
@@ -170,20 +153,15 @@ object ViperServerRunner {
     case class ServerRequest(msg: reporter.Message)
     case object FinalServerRequest
 
-    def props(bindingFuture: SourceQueueWithComplete[reporter.Message]): Props = Props(new ReporterActor(bindingFuture))
+    def props(queue: SourceQueueWithComplete[Message]): Props = Props(new ReporterActor(queue))
   }
 
-  class ReporterActor(queue: SourceQueueWithComplete[reporter.Message]) extends Actor {
+  class ReporterActor(queue: SourceQueueWithComplete[Message]) extends Actor {
 
     def receive = {
       case ReporterActor.ClientRequest =>
       case ReporterActor.ServerRequest(msg) =>
-        msg match {
-          case se_report: SymbExLogReport =>
-            queue.offer(se_report)
-          case _ =>
-
-        }
+        queue.offer(msg)
       case ReporterActor.FinalServerRequest =>
         queue.offer(reporter.PongMessage("Done"))
         queue.complete()
@@ -216,7 +194,7 @@ object ViperServerRunner {
     } ~ path("verify") {
       post {
         entity(as[VerificationRequest]) { r =>
-          if ( new_jobs_allowed ) {
+          if (new_jobs_allowed) {
             val id = _next_job_id
             val main_actor = system.actorOf(MainActor.props(id), s"main_actor_$id")
 
@@ -234,8 +212,8 @@ object ViperServerRunner {
         find_job(jid) match {
           case Some(handle) =>
             //Found a job with this jid.
-            val src = handle.queueSource.asInstanceOf[ Source[Message, NotUsed] ]
-            complete{ src }
+            val src: Source[Message, NotUsed] = Source.fromPublisher(handle.publisher)
+            complete(src)
           case _ =>
             // Did not find a job with this jid.
             complete( VerificationRequestReject(s"The verification job #$jid does not exist.") )
@@ -249,8 +227,6 @@ object ViperServerRunner {
     println(s"ViperServer online at http://localhost:$port")
 
     _term_actor = system.actorOf(Terminator.props(bindingFuture), "terminator")
-
-
 
   } // method main
 

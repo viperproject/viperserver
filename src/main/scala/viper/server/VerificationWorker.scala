@@ -29,7 +29,7 @@ class ActorReporter(private val actor_ref: ActorRef, val tag: String) extends vi
   val name = s"ViperServer_$tag"
 
   def report(msg: reporter.Message) = {
-    println(s">>> ActorReporter reporting: " + msg.toString)
+    //println(s">>> ActorReporter reporting: " + msg.toString)
     actor_ref ! ReporterActor.ServerRequest(msg)
   }
 }
