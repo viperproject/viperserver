@@ -11,9 +11,8 @@ import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSup
 import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import spray.json.{DefaultJsonProtocol, JsValue, JsonWriter, RootJsonFormat}
-import viper.silver.ast.{AbstractSourcePosition, HasLineColumn}
 import viper.silver.reporter._
-import viper.silver.verifier.{AbstractError, Failure}
+import viper.silver.verifier.{AbstractError, Failure, Success, VerificationResult}
 
 
 object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
@@ -33,7 +32,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   // Implicit conversions for reporter.Message.
 
   implicit object file_format extends RootJsonFormat[File] {
-    override def write(obj: File): JsValue = obj.getFileName.toJson
+    override def write(obj: File): JsValue = JsString(obj.getFileName.toString)
 
     override def read(json: JsValue): File = try {
       java.nio.file.Paths.get(json.toString)
@@ -44,14 +43,15 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   }
 
   implicit val position_writer = lift(new RootJsonWriter[Position] {
-    override def write(obj: Position): JsValue =
-      JsObject(
+    override def write(obj: Position): JsValue = JsObject(
         "file" -> obj.file.toJson,
         "start" -> JsString(s"${obj.line}:${obj.column}"),
-        obj.end match {
+        "end" -> (obj.end match {
           case Some(end_pos) =>
-            "end" -> JsString(s"${end_pos.line}:${end_pos.column}")
-        })
+            JsString(s"${end_pos.line}:${end_pos.column}")
+          case _ =>
+            JsString(s"<undefined>")
+        }))
   })
 
   implicit val optionAny_writer = lift(new RootJsonWriter[Option[Any]] {
@@ -61,94 +61,131 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     }
   })
 
-  implicit val abstractError_writer = lift(new RootJsonWriter[AbstractError] {
-    override def write(obj: AbstractError) = {
-      val obj_1 = JsObject(
-        "cached" -> JsBoolean(obj.cached),
-        "tag" -> JsString(obj.fullId),
-        "message" -> JsString(obj.readableMessage)
-      )
+  implicit val entity_writer = lift(new RootJsonWriter[Entity] {
+    import viper.silver.ast._
+
+    override def write(obj: Entity) = {
+      val entity_type = obj match {
+        case fi: Field => "field"
+        case d: Domain => "domain"
+        case p: Predicate => "predicate"
+        case fu: Function => "function"
+        case m: Method => "method"
+        case _ => s"<not a Viper top-lever entity: ${obj.getClass.getCanonicalName}>"
+      }
       JsObject(
-        obj_1.fields +
-          (obj match {
-            case hlc: HasLineColumn =>
-              "start" -> JsString(s"${hlc.line}:${hlc.column}")
-          }) +
-          (obj match {
-            case abs: AbstractSourcePosition =>
-              abs.end match {
-                case Some(end_pos) =>
-                  "end" -> JsString(s"${end_pos.line}:${end_pos.column}")
-              }
-          }) +
-          (obj match {
-            case abs: AbstractSourcePosition =>
-              "file" -> JsString(abs.file.toAbsolutePath.toString)
-          })
-      )
+        "type" -> JsString(entity_type),
+        "name" -> JsString(obj.name))
     }
   })
 
-  implicit val entity_writer = lift(new RootJsonWriter[Entity] {
-    override def write(obj: Entity) = JsObject(
-      "type" -> JsString(obj.getClass.toString),
-      "name" -> JsString(obj.name))
+  implicit val abstractError_writer = lift(new RootJsonWriter[AbstractError] {
+    override def write(obj: AbstractError) = JsObject(
+      "cached" -> JsBoolean(obj.cached),
+      "tag" -> JsString(obj.fullId),
+      "text" -> JsString(obj.readableMessage),
+      "position" -> (obj.pos match {
+        case src_pos: Position => src_pos.toJson
+        case no_pos => JsString(no_pos.toString)
+      }))
   })
 
-  //implicit val failure_format = jsonFormat1(Failure.apply)
   implicit val failure_writer = lift(new RootJsonWriter[Failure] {
     override def write(obj: Failure) =
       JsObject(
-        "type" -> JsString("Error"),
+        "type" -> JsString("error"),
         "errors" -> JsArray(obj.errors.map(_.toJson).toVector))
   })
 
-  //implicit val successMessage_format = jsonFormat2(SuccessMessage.apply)
-  implicit val successMessage_writer = lift(new RootJsonWriter[SuccessMessage] {
-    override def write(obj: SuccessMessage) = {
+  implicit val entitySuccessMessage_writer = lift(new RootJsonWriter[EntitySuccessMessage] {
+    override def write(obj: EntitySuccessMessage) = {
       JsObject(
-        "entity" -> obj.entity.toJson,
-        "time" -> obj.verificationTime.toJson
-      )
+        "entity" -> obj.concerning.toJson,
+        "time" -> obj.verificationTime.toJson)
     }
   })
 
-  implicit val failureMessage_format = jsonFormat3(FailureMessage.apply)
+  implicit val entityFailureMessage_format = lift(new RootJsonWriter[EntityFailureMessage] {
+    override def write(obj: EntityFailureMessage): JsValue = JsObject(
+      "entity" -> obj.entity.toJson,
+      "time" -> obj.verificationTime.toJson,
+      "result" -> obj.result.toJson)
+  })
 
-  //implicit val symbExLogReport_format = jsonFormat3(SymbExLogReport.apply)
-  implicit val symbExLogReport_writer = lift(new RootJsonWriter[SymbExLogReport] {
-    override def write(obj: SymbExLogReport) = {
-      val obj_1 = JsObject(
-        "entity" -> obj.entity.toJson,
-        "timestamp" -> obj.timestamp.toJson
-      )
+  implicit val overallSuccessMessage_writer = lift(new RootJsonWriter[OverallSuccessMessage] {
+    override def write(obj: OverallSuccessMessage) = {
       JsObject(
-        obj_1.fields +
-          (obj.stuff match {
-            case Some(stuff) =>
-              "stuff" -> JsString("<json transformer not implemented>")
-          })
-      )
+        "time" -> obj.verificationTime.toJson)
     }
+  })
+
+  implicit val overallFailureMessage_writer = lift(new RootJsonWriter[OverallFailureMessage] {
+    override def write(obj: OverallFailureMessage): JsValue = JsObject(
+      "time" -> obj.verificationTime.toJson,
+      "result" -> obj.result.toJson
+    )
+  })
+
+  implicit val verificationResult_writer = lift(new RootJsonWriter[VerificationResult] {
+    override def write(obj: VerificationResult): JsValue = obj match {
+      case Success => JsObject("type" -> JsString("success"))
+      case f@ Failure(_) => f.toJson
+    }
+  })
+
+  implicit val verifResultMessage_writer = lift(new RootJsonWriter[VerificationResultMessage] {
+    override def write(obj: VerificationResultMessage): JsValue = {
+      val is_overall = obj match {
+        case o: OverallFailureMessage => true
+        case o: OverallSuccessMessage => true
+        case _ => false
+      }
+      JsObject(
+        "status" -> (obj.result match {
+          case viper.silver.verifier.Success => JsString("success")
+          case _ => JsString("failure")
+        }),
+        "kind" -> (is_overall match {
+          case true => JsString("overall")
+          case false => JsString("for_entity")
+        }),
+        "details" -> (obj match {
+          case a: OverallFailureMessage => a.toJson
+          case b: OverallSuccessMessage => b.toJson
+          case c: EntityFailureMessage => c.toJson
+          case d: EntitySuccessMessage => d.toJson
+        }))
+    }
+  })
+
+  implicit val symbExLogReport_writer = lift(new RootJsonWriter[SymbExLogReport] {
+    override def write(obj: SymbExLogReport) = JsObject(
+      "entity" -> obj.entity.toJson,
+      "timestamp" -> obj.timestamp.toJson,
+      obj.stuff match {
+        case Some(stuff) =>
+          "stuff" -> JsString(s"<json transformer not implemented for attachment ${stuff.toString}>")
+        case _ =>
+          "stuff" -> JsString(s"<empty attachment>")
+      })
   })
 
   implicit val pongMessage_format = jsonFormat1(PongMessage.apply)
 
-  implicit object message_format extends RootJsonFormat[Message] {
-    override def write(obj: Message): JsValue = obj match {
-      case a: SuccessMessage => a.toJson
-      case b: FailureMessage => b.toJson
-      case c: SymbExLogReport => c.toJson
-      case d: PongMessage => d.toJson
-    }
-
-    override def read(json: JsValue): Message = ???
-  }
+  implicit val message_writer = lift(new RootJsonWriter[Message] {
+    override def write(obj: Message): JsValue = JsObject(
+      "msg_type" -> JsString(obj.toString),
+      "msg_body" -> (obj match {
+        case a: VerificationResultMessage => a.toJson
+        case e: SymbExLogReport => e.toJson
+        case f: PongMessage => f.toJson
+      }))
+  })
 
   implicit val jsonStreamingSupport: JsonEntityStreamingSupport = {
-    //val start = ByteString("[")
+    val start = ByteString("")
     val between = ByteString("\n")
-    //val end = ByteString("]")
+    val end = ByteString("")
 
     val compactArrayRendering: Flow[ByteString, ByteString, NotUsed] = Flow[ByteString].intersperse(between)
     // Method withFramingRendererFlow: Java DSL overrides Scala DSL. Who knows why? Use .asJava as a workaround.
