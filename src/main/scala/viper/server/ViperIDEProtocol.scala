@@ -22,11 +22,15 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   final case class VerificationRequestAccept(id: Int)
   final case class VerificationRequestReject(msg: String)
   final case class ServerStopConfirmed(msg: String)
+  final case class JobDiscardAccept(msg: String)
+  final case class JobDiscardReject(msg: String)
 
 
-  implicit val verReqAccept_format: RootJsonFormat[VerificationRequestAccept] = jsonFormat1(VerificationRequestAccept)
+  implicit val verReqAccept_format = jsonFormat1(VerificationRequestAccept)
   implicit val verReqReject_format = jsonFormat1(VerificationRequestReject)
   implicit val serverStopConfirmed_format = jsonFormat1(ServerStopConfirmed)
+  implicit val jobDiscardAccept_format = jsonFormat1(JobDiscardAccept)
+  implicit val jobDiscardReject_format = jsonFormat1(JobDiscardReject)
 
 
   // Implicit conversions for reporter.Message.

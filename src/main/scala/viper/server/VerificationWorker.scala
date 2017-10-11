@@ -6,10 +6,15 @@
 
 package viper.server
 
+
 import java.nio.file.Paths
 
+import scala.collection.mutable.ListBuffer
+
 import akka.actor.ActorRef
+
 import com.typesafe.scalalogging.LazyLogging
+
 import viper.carbon.CarbonFrontend
 import viper.server.ViperServerRunner.ReporterActor
 import viper.silicon.SiliconFrontend
@@ -20,7 +25,7 @@ import viper.silver.reporter.Reporter
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, _}
 
-import scala.collection.mutable.ListBuffer
+
 
 
 // Implementation of the Reporter interface used by the backend.
@@ -34,10 +39,7 @@ class ActorReporter(private val actor_ref: ActorRef, val tag: String) extends vi
   }
 }
 
-class VerificationWorker(private val listener: ActorRef, val _reporter: ActorRef, val command: List[String]) extends Runnable with LazyLogging {
-
-  import ViperServerProtocol._
-
+class VerificationWorker(val _reporter: ActorRef, val command: List[String]) extends Runnable with LazyLogging {
   private var _frontend: ViperFrontend = null
 
   def run(): Unit = {
@@ -53,6 +55,7 @@ class VerificationWorker(private val listener: ActorRef, val _reporter: ActorRef
       }
     } catch {
       case _: InterruptedException =>
+      case _: java.nio.channels.ClosedByInterruptException =>
       case e: Exception =>
         e.printStackTrace(System.err)
     } finally {
@@ -63,7 +66,6 @@ class VerificationWorker(private val listener: ActorRef, val _reporter: ActorRef
         println(s"The command $command did not result in initialization of verification backend.")
       }
       _reporter ! ReporterActor.FinalServerRequest
-      listener ! Stop
     }
   }
 

@@ -11,22 +11,23 @@ import org.reactivestreams.Publisher
 
 import scala.language.postfixOps
 import scala.concurrent.Future
+import scala.concurrent.duration._
 import scala.collection.mutable
-
+import scala.util.{ Failure, Success, Try }
 import akka.NotUsed
+import akka.pattern.ask
+import akka.util.Timeout
 import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
-
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
-
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.server.Directives._
-
 import viper.server.ViperServerProtocol._
 import viper.server.ViperIDEProtocol._
-
 import viper.silver.reporter
 import viper.silver.reporter._
+
+import scala.util.Try
 
 
 object ViperServerRunner {
@@ -78,14 +79,6 @@ object ViperServerRunner {
 
   def new_jobs_allowed = _job_handles.size < _max_active_jobs
 
-  /*
-  def find_job(jid: Int): Option[JobHandle] = _job_handles.find( _._2.job_id == jid ) match {
-    case Some((a_ref: ActorRef, j_handle: JobHandle)) =>
-      Some(j_handle)
-    case _ =>
-      None
-  }*/
-
   // (See model description in ViperServerProtocol.scala)
 
   object MainActor {
@@ -99,19 +92,28 @@ object ViperServerRunner {
     private var _verificationTask: Thread = null
     private var _args: List[String] = null
 
+    // blocking
+    private def interrupt: Boolean = {
+      if (_verificationTask != null && _verificationTask.isAlive) {
+        _verificationTask.interrupt()
+        _verificationTask.join()
+        println(s"Job #${id} has been successfully interrupted.")
+        return true
+      }
+      else return false
+    }
 
     def receive = {
-      case Stop =>
-        // Can be sent whether from the client for terminating the job,
-        // or by the server (indicating that the job has been completed).
-        if (_verificationTask != null && _verificationTask.isAlive) {
-          _verificationTask.interrupt()
-          _verificationTask.join()
-        } else {
-          // The backend has already stopped.
-          //TODO: send appropriate message to client.
+      case Stop(call_back_needed) =>
+        val did_I_interrupt = interrupt
+        if (call_back_needed) {
+          // If a callback is expected, then the caller must decide when to kill the actor.
+          if (did_I_interrupt) {
+            sender ! s"Job #${id} has been successfully interrupted."
+          } else {
+            sender ! s"Job #${id} has already been finalized."
+          }
         }
-        self ! PoisonPill
       case Verify(args) =>
         if (_verificationTask != null && _verificationTask.isAlive) {
           _args = args
@@ -124,7 +126,7 @@ object ViperServerRunner {
         throw new Exception("Main Actor: unexpected message received: " + msg)
     }
 
-    def verify(args: List[String]): Unit = {
+    private def verify(args: List[String]): Unit = {
       assert(_verificationTask == null)
 
       // TODO: reimplement with [[SourceQueue]]s and backpressure strategies.
@@ -134,7 +136,7 @@ object ViperServerRunner {
 
       val my_reporter = system.actorOf(ReporterActor.props(queue), s"reporter_$id")
 
-      _verificationTask = new Thread(new VerificationWorker(self, my_reporter, args))
+      _verificationTask = new Thread(new VerificationWorker(my_reporter, args))
       _verificationTask.start()
 
       //println(s"Client #$id disconnected")
@@ -164,6 +166,7 @@ object ViperServerRunner {
       case ReporterActor.FinalServerRequest =>
         queue.offer(reporter.PongMessage("Done"))
         queue.complete()
+        println(s"Job has been successfully completed.")
         self ! PoisonPill
       case _ =>
     }
@@ -186,8 +189,23 @@ object ViperServerRunner {
     val routes = {
       path("exit") {
         get {
-          _term_actor ! Terminator.Exit
-          complete( ServerStopConfirmed("shutting down...") )
+          val interrupt_future_list: List[Future[String]] = _job_handles map { case (jid, handle@JobHandle(actor, _, _)) =>
+            implicit val askTimeout = Timeout(5000 milliseconds)
+            (actor ? Stop(true)).mapTo[String]
+          } toList
+          val overall_interupt_future: Future[List[String]] = Future.sequence(interrupt_future_list)
+
+          onComplete(overall_interupt_future) { (err: Try[List[String]]) =>
+            err match {
+              case Success(_) =>
+                _term_actor ! Terminator.Exit
+                complete( ServerStopConfirmed("shutting down...") )
+              case Failure(err) =>
+                println(s"Interrupting one of the verification threads timed out: ${err}")
+                _term_actor ! Terminator.Exit
+                complete( ServerStopConfirmed("forcibly shutting down...") )
+            }
+          }
         }
       }
     } ~ path("verify") {
@@ -196,11 +214,8 @@ object ViperServerRunner {
           if (new_jobs_allowed) {
             val id = _next_job_id
             val main_actor = system.actorOf(MainActor.props(id), s"main_actor_$id")
-
             var arg_list = getArgListFromArgString(r.arg)
-
             main_actor ! ViperServerProtocol.Verify(arg_list)
-
             complete( VerificationRequestAccept(id) )
 
           } else {
@@ -219,6 +234,21 @@ object ViperServerRunner {
           case _ =>
             // Did not find a job with this jid.
             complete( VerificationRequestReject(s"The verification job #$jid does not exist.") )
+        }
+      }
+    } ~ path("discard" / IntNumber) { jid =>
+      get {
+        _job_handles.get(jid) match {
+          case Some(handle) =>
+            implicit val askTimeout = Timeout(5 seconds)
+            val interrupt_done: Future[String] = (handle.controller_actor ? Stop(true)).mapTo[String]
+            onSuccess(interrupt_done) { msg =>
+                handle.controller_actor ! PoisonPill // the actor played its part.
+                complete( JobDiscardAccept(msg) )
+            }
+          case _ =>
+            // Did not find a job with this jid.
+            complete( JobDiscardReject(s"The verification job #$jid does not exist.") )
         }
       }
     }

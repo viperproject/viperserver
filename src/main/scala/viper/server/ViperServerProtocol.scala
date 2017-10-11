@@ -8,15 +8,12 @@ package viper.server
 
 object ViperServerProtocol {
 
-  //Main Actor requests Verification
+  // Main Actor requests Verification
   case class Verify(args: List[String])
 
-  //VerificationActor sends backend to Main Actor
+  // VerificationActor sends backend to Main Actor
   case class Backend(backend: viper.silver.verifier.Verifier)
 
-  //Main Actor requests verification stop
-  case object Stop
-
-  //Verification Actor reports end of verification
-  case object Stopped
+  // Verification interrupt request to Main Actor
+  case class Stop(call_me_back: Boolean)
 }
