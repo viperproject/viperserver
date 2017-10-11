@@ -68,22 +68,23 @@ object ViperServerRunner {
   // A verification task is distinguished via the corresponding ActorRef,
   //  as well as its unique job_id.
 
-  case class JobHandle(job_id: Int,
+  case class JobHandle(controller_actor: ActorRef,
                        queue: SourceQueueWithComplete[Message],
                        publisher: Publisher[Message])
 
-  private var _main_actor = mutable.Map[ActorRef, JobHandle]()
+  private var _job_handles = mutable.Map[Int, JobHandle]()
   private var _next_job_id: Int = 0
   private val _max_active_jobs: Int = 3
 
-  def new_jobs_allowed = _main_actor.size < _max_active_jobs
+  def new_jobs_allowed = _job_handles.size < _max_active_jobs
 
-  def find_job(jid: Int): Option[JobHandle] = _main_actor.find( _._2.job_id == jid ) match {
+  /*
+  def find_job(jid: Int): Option[JobHandle] = _job_handles.find( _._2.job_id == jid ) match {
     case Some((a_ref: ActorRef, j_handle: JobHandle)) =>
       Some(j_handle)
     case _ =>
       None
-  }
+  }*/
 
   // (See model description in ViperServerProtocol.scala)
 
@@ -101,7 +102,7 @@ object ViperServerRunner {
 
     def receive = {
       case Stop =>
-        // Can be sent wither from the client for terminating the job,
+        // Can be sent whether from the client for terminating the job,
         // or by the server (indicating that the job has been completed).
         if (_verificationTask != null && _verificationTask.isAlive) {
           _verificationTask.interrupt()
@@ -110,7 +111,6 @@ object ViperServerRunner {
           // The backend has already stopped.
           //TODO: send appropriate message to client.
         }
-        _main_actor -= self
         self ! PoisonPill
       case Verify(args) =>
         if (_verificationTask != null && _verificationTask.isAlive) {
@@ -130,7 +130,6 @@ object ViperServerRunner {
       // TODO: reimplement with [[SourceQueue]]s and backpressure strategies.
 
       // The maximum number of messages in the reporter's message buffer is 1000.
-      // TODO: try with Sink.asPublisher(false)
       val (queue, publisher) = Source.queue[Message](1000, OverflowStrategy.backpressure).toMat(Sink.asPublisher(false))(Keep.both).run()
 
       val my_reporter = system.actorOf(ReporterActor.props(queue), s"reporter_$id")
@@ -140,7 +139,7 @@ object ViperServerRunner {
 
       //println(s"Client #$id disconnected")
 
-      _main_actor(self) = JobHandle(id, queue, publisher)
+      _job_handles(id) = JobHandle(self, queue, publisher)
       _next_job_id = _next_job_id + 1
     }
   }
@@ -198,7 +197,9 @@ object ViperServerRunner {
             val id = _next_job_id
             val main_actor = system.actorOf(MainActor.props(id), s"main_actor_$id")
 
-            main_actor ! ViperServerProtocol.Verify(r.arg.split("\\s+").toList)
+            var arg_list = getArgListFromArgString(r.arg)
+
+            main_actor ! ViperServerProtocol.Verify(arg_list)
 
             complete( VerificationRequestAccept(id) )
 
@@ -209,10 +210,11 @@ object ViperServerRunner {
       }
     } ~ path("verify" / IntNumber) { jid =>
       get {
-        find_job(jid) match {
+        _job_handles.get(jid) match {
           case Some(handle) =>
             //Found a job with this jid.
             val src: Source[Message, NotUsed] = Source.fromPublisher(handle.publisher)
+            _job_handles -= jid
             complete(src)
           case _ =>
             // Did not find a job with this jid.
@@ -235,4 +237,14 @@ object ViperServerRunner {
     _config.verify()
   }
 
+  private def getArgListFromArgString(arg_str: String): List[String] = {
+    val possibly_quoted_string = raw"""[^\s"']+|"[^"]*"|'[^']*'""".r
+    val quoted_string = """^["'](.*)["']$""".r
+    possibly_quoted_string.findAllIn(arg_str).toList.map {
+      case quoted_string(noqt_a) => noqt_a
+      case a => a
+    }
+  }
+
 } // object ViperServerRunner
+
