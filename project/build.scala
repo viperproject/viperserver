@@ -21,6 +21,8 @@ object ViperServerBuild extends Build {
         "-unchecked",
         "-feature"
         /*"-Xfatal-warnings"*/),
+      unmanagedResourceDirectories in Compile := Seq(baseDirectory.value / "src/main/resources"),
+      includeFilter in unmanagedResources := "jawr.properties",
       resolvers += "Sonatype OSS Snapshots" at "http://oss.sonatype.org/content/repositories/snapshots/",
       traceLevel := 10,
       maxErrors := 6))
@@ -36,6 +38,11 @@ object ViperServerBuild extends Build {
           ++ Seq(
           name := "ViperServer",
           mainClass in assembly := Some("viper.server.ViperServerRunner"),
+          assemblyMergeStrategy in assembly := {
+            case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+            case "reference.conf" => MergeStrategy.concat
+            case x => MergeStrategy.first
+          },
           jarName in assembly := "viper.jar",
           test in assembly := {},
           /* Skip tests before assembling fat jar. Assembling stops if tests fails. */

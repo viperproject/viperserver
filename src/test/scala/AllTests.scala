@@ -9,6 +9,7 @@ import java.nio.file.Path
 import viper.carbon.CarbonVerifier
 import viper.server.ViperCarbonFrontend
 import viper.silver.frontend.Frontend
+import viper.silver.reporter.StdIOReporter
 import viper.silver.testing.SilSuite
 import viper.silver.verifier.Verifier
 
@@ -24,7 +25,7 @@ class AllTests extends SilSuite {
 
   override def frontend(verifier: Verifier, files: Seq[Path]): Frontend = {
     require(files.length == 1, "tests should consist of exactly one file")
-    val fe = new ViperCarbonFrontend()
+    val fe = new ViperCarbonFrontend(new StdIOReporter("carbon_tests_reporter"))
     fe.init(verifier)
     fe.reset(files.head)
     fe

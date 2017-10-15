@@ -6,38 +6,51 @@
 
 package viper.server
 
+
 import java.nio.file.Paths
 
+import scala.collection.mutable.ListBuffer
+import akka.actor.ActorRef
 import com.typesafe.scalalogging.LazyLogging
 import viper.carbon.CarbonFrontend
+import viper.server.ViperServerRunner.ReporterActor
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
 import viper.silver.frontend.{SilFrontend, TranslatorState}
+import viper.silver.reporter
+import viper.silver.reporter.{ProgramOutlineReport, Reporter, StatisticsReport}
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, _}
 
-import scala.collection.mutable.ListBuffer
 
-class VerificationWorker(val command: Any) extends Runnable with LazyLogging {
 
-  import ViperServerProtocol._
+// Implementation of the Reporter interface used by the backend.
+class ActorReporter(private val actor_ref: ActorRef, val tag: String) extends viper.silver.reporter.Reporter {
 
+  val name = s"ViperServer_$tag"
+
+  def report(msg: reporter.Message) = {
+    actor_ref ! ReporterActor.ServerRequest(msg)
+  }
+}
+
+class VerificationWorker(val _reporter: ActorRef, val command: List[String]) extends Runnable with LazyLogging {
   private var _frontend: ViperFrontend = null
 
   def run(): Unit = {
     try {
       command match {
-        case Verify("silicon" :: args) =>
-          startVerification(args, new ViperSiliconFrontend())
-        case Verify("carbon" :: args) =>
-          startVerification(args, new ViperCarbonFrontend())
-        case Verify(args) =>
-          logger.info("invalid arguments: " + args.mkString(" "))
-        case _ =>
-          logger.info("invalid arguments")
+        case "silicon" :: args =>
+          startVerification(args, new ViperSiliconFrontend(new ActorReporter(_reporter, "silicon")))
+        case "carbon" :: args =>
+          startVerification(args, new ViperCarbonFrontend(new ActorReporter(_reporter, "carbon")))
+        case args =>
+          logger.info("invalid arguments: ${args.toString}",
+                      "You need to specify the verification backend, e.g., `silicon [args]`")
       }
     } catch {
       case _: InterruptedException =>
+      case _: java.nio.channels.ClosedByInterruptException =>
       case e: Exception =>
         e.printStackTrace(System.err)
     } finally {
@@ -45,8 +58,9 @@ class VerificationWorker(val command: Any) extends Runnable with LazyLogging {
       if (_frontend != null) {
         _frontend.printStopped()
       } else {
-        ViperFrontend.printStopped()
+        println(s"The command $command did not result in initialization of verification backend.")
       }
+      _reporter ! ReporterActor.FinalServerRequest
     }
   }
 
@@ -65,16 +79,7 @@ class VerificationWorker(val command: Any) extends Runnable with LazyLogging {
   }
 }
 
-object ViperFrontend extends ViperSiliconFrontend {
-  override def ideMode: Boolean = ViperServerRunner.config.ideMode()
-}
-
 trait ViperFrontend extends SilFrontend {
-  //protected var _sender: ActorRef = null
-
-  //def setSender(sender: ActorRef): Unit = {
-  //  _sender = sender
-  //}
 
   def ideMode: Boolean = config != null && config.ideMode()
 
@@ -86,13 +91,22 @@ trait ViperFrontend extends SilFrontend {
     }
   }
 
+  private def countInstances(p: Program): Map[String, Int] = {
+    p.members.groupBy({
+      case m: Method => "method"
+      case fu: Function => "function"
+      case p: Predicate => "predicate"
+      case d: Domain => "domain"
+      case fi: Field => "field"
+      case _ => "other"
+    }).mapValues(_.size)
+  }
+
   override def execute(args: Seq[String]) {
     setStartTime()
 
     /* Create the verifier */
     _ver = createVerifier(args.mkString(" "))
-
-    //_sender ! Backend(_ver)
 
     if (!prepare(args)) return
 
@@ -109,9 +123,20 @@ trait ViperFrontend extends SilFrontend {
 
     if (_errors.nonEmpty) {
       _state = TranslatorState.Verified
+
     } else {
-      printOutline(_program.get)
-      printDefinitions(_program.get)
+      val prog: Program = _program.get
+      val stats = countInstances(prog)
+
+      reporter.report(new ProgramOutlineReport(prog.members.toList))
+      reporter.report(new StatisticsReport(
+        stats.getOrElse("method", 0),
+        stats.getOrElse("function", 0),
+        stats.getOrElse("predicate", 0),
+        stats.getOrElse("domain", 0),
+        stats.getOrElse("field", 0)
+      ))
+
       if (config.disableCaching()) {
         doVerify()
       } else {
@@ -147,8 +172,7 @@ trait ViperFrontend extends SilFrontend {
   }
 
   private def removeBody(m: Method): Method = {
-    //TODO: how to change the body with m.copy(body = ...) and insert the copied node into the AST
-    val node: Stmt = Inhale(FalseLit()())()
+    val node: Seqn = Seqn(Seq(Inhale(FalseLit()())()), m.scopedDecls)(m.body.pos, m.body.info, m.body.errT)
     m.copy(body = node)(m.pos, m.info, m.errT)
   }
 
@@ -158,7 +182,9 @@ trait ViperFrontend extends SilFrontend {
 
     val (methodsToVerify, _, cachedErrors) = consultCache()
 
-    val program = _program.get
+    val real_program = _program.get
+    val program = Program(real_program.domains, real_program.fields, real_program.functions, real_program.predicates,
+      methodsToVerify) (real_program.pos, real_program.info, real_program.errT)
     val file: String = _config.file()
 
     _verificationResult = Some(mapVerificationResult(_verifier.get.verify(program)))
@@ -171,11 +197,11 @@ trait ViperFrontend extends SilFrontend {
       _verificationResult.get match {
         case Failure(errors) =>
           val errorsToCache = getMethodSpecificErrors(m, errors)
-          ViperCache.update(backendName, file, m, errorsToCache)
+          ViperCache.update(backendName, file, program, m, errorsToCache)
           logger.trace("Store in cache " + m.name + (if (errorsToCache.nonEmpty) ": Error" else ": Success"))
         case Success =>
           logger.trace("Store in cache " + m.name + ": Success")
-          ViperCache.update(backendName, file, m, Nil)
+          ViperCache.update(backendName, file, program, m, Nil)
       }
     })
 
@@ -206,7 +232,7 @@ trait ViperFrontend extends SilFrontend {
         case None =>
           methodsToVerify += m
         case Some(cacheEntry) =>
-          if (m.dependencyHash != cacheEntry.dependencyHash) {
+          if (program.dependencyHashMap(m) != cacheEntry.dependencyHash) {
             //even if the method itself did not change, a re-verification is required if it's dependencies changed
             methodsToVerify += m
           } else {
@@ -264,6 +290,7 @@ trait ViperFrontend extends SilFrontend {
       case e: IfFailed => e.copy(cached = true)
       case e: WhileFailed => e.copy(cached = true)
       case e: AssertFailed => e.copy(cached = true)
+      case e: TerminationFailed => e.copy(cached = true)
       case e: PostconditionViolated => e.copy(cached = true)
       case e: FoldFailed => e.copy(cached = true)
       case e: UnfoldFailed => e.copy(cached = true)
@@ -276,6 +303,7 @@ trait ViperFrontend extends SilFrontend {
       case e: MagicWandNotWellformed => e.copy(cached = true)
       case e: LetWandFailed => e.copy(cached = true)
       case e: HeuristicsFailed => e.copy(cached = true)
+      case e: VerificationErrorWithCounterexample => e.copy(cached = true)
       case e: AbstractVerificationError =>
         logger.warn("Setting a verification error to cached was not possible for " + e + ". Make sure to handle this types of errors")
         e
@@ -331,11 +359,7 @@ trait ViperFrontend extends SilFrontend {
       case t: FieldAccess => t.copy()(pos, t.info, t.errT)
       case t: PredicateAccess => t.copy()(pos, t.info, t.errT)
       case t: Unfolding => t.copy()(pos, t.info, t.errT)
-      case t: UnfoldingGhostOp => t.copy()(pos, t.info, t.errT)
-      case t: FoldingGhostOp => t.copy()(pos, t.info, t.errT)
-      case t: ApplyingGhostOp => t.copy()(pos, t.info, t.errT)
-      case t: PackagingGhostOp => t.copy()(pos, t.info, t.errT)
-      case t: Old => t.copy()(pos, t.info, t.errT)
+      case t: Applying => t.copy()(pos, t.info, t.errT)
       case t: CondExp => t.copy()(pos, t.info, t.errT)
       case t: Let => t.copy()(pos, t.info, t.errT)
       case t: Exists => t.copy()(pos, t.info, t.errT)
@@ -347,7 +371,6 @@ trait ViperFrontend extends SilFrontend {
       case t: NoPerm => t.copy()(pos, t.info, t.errT)
       case t: EpsilonPerm => t.copy()(pos, t.info, t.errT)
       case t: CurrentPerm => t.copy()(pos, t.info, t.errT)
-      case t: FractionalPerm => t.copy()(pos, t.info, t.errT)
       case t: FieldAccessPredicate => t.copy()(pos, t.info, t.errT)
       case t: PredicateAccessPredicate => t.copy()(pos, t.info, t.errT)
 
@@ -388,7 +411,6 @@ trait ViperFrontend extends SilFrontend {
       case t: Not => t.copy()(pos, t.info, t.errT)
       case t: PermMinus => t.copy()(pos, t.info, t.errT)
       case t: Old => t.copy()(pos, t.info, t.errT)
-      case t: ApplyOld => t.copy()(pos, t.info, t.errT)
       case t: LabelledOld => t.copy()(pos, t.info, t.errT)
       case t: AnySetCardinality => t.copy()(pos, t.info, t.errT)
       case t: FuncApp => t.copy()(pos, t.info, t.typ, t.formalArgs, t.errT)
@@ -416,6 +438,6 @@ trait ViperFrontend extends SilFrontend {
   }
 }
 
-class ViperCarbonFrontend extends CarbonFrontend with ViperFrontend {}
+class ViperCarbonFrontend(val rep: Reporter) extends CarbonFrontend(rep) with ViperFrontend {}
 
-class ViperSiliconFrontend extends SiliconFrontend with ViperFrontend {}
+class ViperSiliconFrontend(val rep: Reporter) extends SiliconFrontend(rep) with ViperFrontend {}
