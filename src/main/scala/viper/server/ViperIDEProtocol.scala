@@ -10,7 +10,7 @@ import akka.NotUsed
 import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSupport}
 import akka.stream.scaladsl.Flow
 import akka.util.ByteString
-import spray.json.{DefaultJsonProtocol, JsValue, JsonWriter, RootJsonFormat}
+import spray.json.DefaultJsonProtocol
 import viper.silver.reporter._
 import viper.silver.verifier.{AbstractError, Failure, Success, VerificationResult}
 
@@ -66,20 +66,22 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val entity_writer = lift(new RootJsonWriter[Entity] {
-    import viper.silver.ast._
-
     override def write(obj: Entity) = {
       val entity_type = obj match {
-        case fi: Field => "field"
-        case d: Domain => "domain"
-        case p: Predicate => "predicate"
-        case fu: Function => "function"
-        case m: Method => "method"
+        case m: viper.silver.ast.Method => "method"
+        case fu: viper.silver.ast.Function => "function"
+        case p: viper.silver.ast.Predicate => "predicate"
+        case d: viper.silver.ast.Domain => "domain"
+        case fi: viper.silver.ast.Field => "field"
         case _ => s"<not a Viper top-lever entity: ${obj.getClass.getCanonicalName}>"
       }
       JsObject(
         "type" -> JsString(entity_type),
-        "name" -> JsString(obj.name))
+        "name" -> JsString(obj.name),
+        "position" -> (obj.pos match {
+          case src_pos: Position => src_pos.toJson
+          case no_pos => JsString(no_pos.toString)
+        }))
     }
   })
 
@@ -109,9 +111,9 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     }
   })
 
-  implicit val entityFailureMessage_format = lift(new RootJsonWriter[EntityFailureMessage] {
+  implicit val entityFailureMessage_writer = lift(new RootJsonWriter[EntityFailureMessage] {
     override def write(obj: EntityFailureMessage): JsValue = JsObject(
-      "entity" -> obj.entity.toJson,
+      "entity" -> obj.concerning.toJson,
       "time" -> obj.verificationTime.toJson,
       "result" -> obj.result.toJson)
   })
@@ -145,6 +147,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case _ => false
       }
       JsObject(
+        "verifier" -> JsString(obj.verifier),
         "status" -> (obj.result match {
           case viper.silver.verifier.Success => JsString("success")
           case _ => JsString("failure")
@@ -162,6 +165,19 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     }
   })
 
+  implicit val statisticsReport_writer = lift(new RootJsonWriter[StatisticsReport] {
+    override def write(obj: StatisticsReport) = JsObject(
+      "methods" -> JsNumber(obj.nOfMethods),
+      "functions"  -> JsNumber(obj.nOfFunctions),
+      "predicates"  -> JsNumber(obj.nOfPredicates),
+      "domains" -> JsNumber(obj.nOfDomains),
+      "fields"  -> JsNumber(obj.nOfFields))
+  })
+
+  implicit val programOutlineReport_writer = lift(new RootJsonWriter[ProgramOutlineReport] {
+    override def write(obj: ProgramOutlineReport) = JsObject("members" -> JsArray(obj.members.map(_.toJson).toVector))
+  })
+
   implicit val symbExLogReport_writer = lift(new RootJsonWriter[SymbExLogReport] {
     override def write(obj: SymbExLogReport) = JsObject(
       "entity" -> obj.entity.toJson,
@@ -174,13 +190,17 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       })
   })
 
-  implicit val pongMessage_format = jsonFormat1(PongMessage.apply)
+  implicit val pongMessage_writer = lift(new RootJsonWriter[PongMessage] {
+    override def write(obj: PongMessage) = JsObject("msg" -> JsString(obj.msg))
+  })
 
   implicit val message_writer = lift(new RootJsonWriter[Message] {
     override def write(obj: Message): JsValue = JsObject(
-      "msg_type" -> JsString(obj.toString),
+      "msg_type" -> JsString(obj.name),
       "msg_body" -> (obj match {
         case a: VerificationResultMessage => a.toJson
+        case s: StatisticsReport => s.toJson
+        case o: ProgramOutlineReport => o.toJson
         case e: SymbExLogReport => e.toJson
         case f: PongMessage => f.toJson
       }))

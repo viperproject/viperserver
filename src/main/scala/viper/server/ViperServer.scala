@@ -13,8 +13,8 @@ import scala.language.postfixOps
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.collection.mutable
-import scala.util.{ Failure, Success, Try }
-import akka.NotUsed
+import scala.util.{Failure, Success, Try}
+import akka.{Done, NotUsed}
 import akka.pattern.ask
 import akka.util.Timeout
 import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
@@ -47,6 +47,7 @@ object ViperServerRunner {
 
   object Terminator {
     case object Exit
+    case class WatchJob(jid: Int)
 
     def props(bindingFuture: Future[Http.ServerBinding]): Props = Props(new Terminator(bindingFuture))
   }
@@ -59,6 +60,17 @@ object ViperServerRunner {
         bindingFuture
           .flatMap(_.unbind()) // trigger unbinding from the port
           .onComplete(_ => system.terminate()) // and shutdown when done
+      case Terminator.WatchJob(jid) =>
+        _job_handles.get(jid) match {
+          case Some(handle@JobHandle(controller, queue, _)) =>
+            val queue_completion_future: Future[Done] = queue.watchCompletion()
+            queue_completion_future.onSuccess({ case _ =>
+              _job_handles -= jid
+              println(s"Terminator deleted job #${jid}")
+            })
+          case _ =>
+            println(s"Terminator: job #${jid} does not exist anymore.")
+        }
     }
   }
 
@@ -141,6 +153,7 @@ object ViperServerRunner {
 
       //println(s"Client #$id disconnected")
 
+      assert(_job_handles.get(id).isEmpty)
       _job_handles(id) = JobHandle(self, queue, publisher)
       _next_job_id = _next_job_id + 1
     }
@@ -164,7 +177,6 @@ object ViperServerRunner {
       case ReporterActor.ServerRequest(msg) =>
         queue.offer(msg)
       case ReporterActor.FinalServerRequest =>
-        queue.offer(reporter.PongMessage("Done"))
         queue.complete()
         println(s"Job has been successfully completed.")
         self ! PoisonPill
@@ -193,9 +205,9 @@ object ViperServerRunner {
             implicit val askTimeout = Timeout(5000 milliseconds)
             (actor ? Stop(true)).mapTo[String]
           } toList
-          val overall_interupt_future: Future[List[String]] = Future.sequence(interrupt_future_list)
+          val overall_interrupt_future: Future[List[String]] = Future.sequence(interrupt_future_list)
 
-          onComplete(overall_interupt_future) { (err: Try[List[String]]) =>
+          onComplete(overall_interrupt_future) { (err: Try[List[String]]) =>
             err match {
               case Success(_) =>
                 _term_actor ! Terminator.Exit
@@ -229,7 +241,10 @@ object ViperServerRunner {
           case Some(handle) =>
             //Found a job with this jid.
             val src: Source[Message, NotUsed] = Source.fromPublisher(handle.publisher)
-            _job_handles -= jid
+            // We do not remove the current entry from [[_job_handles]] because the handle is
+            //  needed in order to terminate the job before streaming is completed.
+            //  The Terminator actor will delete the entry upon completion of the stream.
+            _term_actor ! Terminator.WatchJob(jid)
             complete(src)
           case _ =>
             // Did not find a job with this jid.

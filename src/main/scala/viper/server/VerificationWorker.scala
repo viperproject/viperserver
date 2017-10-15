@@ -10,21 +10,17 @@ package viper.server
 import java.nio.file.Paths
 
 import scala.collection.mutable.ListBuffer
-
 import akka.actor.ActorRef
-
 import com.typesafe.scalalogging.LazyLogging
-
 import viper.carbon.CarbonFrontend
 import viper.server.ViperServerRunner.ReporterActor
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
 import viper.silver.frontend.{SilFrontend, TranslatorState}
 import viper.silver.reporter
-import viper.silver.reporter.Reporter
+import viper.silver.reporter.{ProgramOutlineReport, Reporter, StatisticsReport}
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, _}
-
 
 
 
@@ -34,7 +30,6 @@ class ActorReporter(private val actor_ref: ActorRef, val tag: String) extends vi
   val name = s"ViperServer_$tag"
 
   def report(msg: reporter.Message) = {
-    //println(s">>> ActorReporter reporting: " + msg.toString)
     actor_ref ! ReporterActor.ServerRequest(msg)
   }
 }
@@ -85,11 +80,6 @@ class VerificationWorker(val _reporter: ActorRef, val command: List[String]) ext
 }
 
 trait ViperFrontend extends SilFrontend {
-  //protected var _sender: ActorRef = null
-
-  //def setSender(sender: ActorRef): Unit = {
-  //  _sender = sender
-  //}
 
   def ideMode: Boolean = config != null && config.ideMode()
 
@@ -101,13 +91,22 @@ trait ViperFrontend extends SilFrontend {
     }
   }
 
+  private def countInstances(p: Program): Map[String, Int] = {
+    p.members.groupBy({
+      case m: Method => "method"
+      case fu: Function => "function"
+      case p: Predicate => "predicate"
+      case d: Domain => "domain"
+      case fi: Field => "field"
+      case _ => "other"
+    }).mapValues(_.size)
+  }
+
   override def execute(args: Seq[String]) {
     setStartTime()
 
     /* Create the verifier */
     _ver = createVerifier(args.mkString(" "))
-
-    //_sender ! Backend(_ver)
 
     if (!prepare(args)) return
 
@@ -124,9 +123,20 @@ trait ViperFrontend extends SilFrontend {
 
     if (_errors.nonEmpty) {
       _state = TranslatorState.Verified
+
     } else {
-      printOutline(_program.get)
-      printDefinitions(_program.get)
+      val prog: Program = _program.get
+      val stats = countInstances(prog)
+
+      reporter.report(new ProgramOutlineReport(prog.members.toList))
+      reporter.report(new StatisticsReport(
+        stats.getOrElse("method", 0),
+        stats.getOrElse("function", 0),
+        stats.getOrElse("predicate", 0),
+        stats.getOrElse("domain", 0),
+        stats.getOrElse("field", 0)
+      ))
+
       if (config.disableCaching()) {
         doVerify()
       } else {
