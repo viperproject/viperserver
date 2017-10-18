@@ -178,6 +178,32 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: ProgramOutlineReport) = JsObject("members" -> JsArray(obj.members.map(_.toJson).toVector))
   })
 
+  /** Legacy marshaller format. Using three different position types in one case class is ugly, but a valid
+    * workaround for handling all cases of AST construction. If you want to try to improve/refactor, see
+    * [[ViperFrontend.collectDefinitions]] for the usage Definition.
+    */
+  implicit val definition_writer = lift(new RootJsonWriter[Definition] {
+    override def write(obj: Definition) = JsObject(
+      "name" -> JsString(obj.name),
+      "type" -> JsString(obj.typ),
+      "location" -> (obj.location match {
+        case p:Position => p.toJson
+        case _ => JsString("<undefined>")
+      }),
+      "scopeStart" -> (obj.scope match {
+        case Some(s) => JsString(s.start.line + ":" + s.start.column)
+        case _ => JsString("global")
+      }),
+      "scopeEnd" -> (obj.scope match {
+        case Some(s) if s.end.isDefined => JsString(s.end.get.line + ":" + s.end.get.column)
+        case _ => JsString("global")
+      }))
+  })
+
+  implicit val programDefinitionsReport_writer = lift(new RootJsonWriter[ProgramDefinitionsReport] {
+    override def write(obj: ProgramDefinitionsReport) = JsObject("definitions" -> JsArray(obj.definitions.map(_.toJson).toVector))
+  })
+
   implicit val symbExLogReport_writer = lift(new RootJsonWriter[SymbExLogReport] {
     override def write(obj: SymbExLogReport) = JsObject(
       "entity" -> obj.entity.toJson,
@@ -201,6 +227,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case a: VerificationResultMessage => a.toJson
         case s: StatisticsReport => s.toJson
         case o: ProgramOutlineReport => o.toJson
+        case d: ProgramDefinitionsReport => d.toJson
         case e: SymbExLogReport => e.toJson
         case f: PongMessage => f.toJson
       }))

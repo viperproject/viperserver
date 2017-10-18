@@ -15,17 +15,20 @@ import com.typesafe.scalalogging.LazyLogging
 import viper.carbon.CarbonFrontend
 import viper.server.ViperServerRunner.ReporterActor
 import viper.silicon.SiliconFrontend
-import viper.silver.ast._
+import viper.silver.ast.{Position, _}
 import viper.silver.frontend.{SilFrontend, TranslatorState}
 import viper.silver.reporter
-import viper.silver.reporter.{ProgramOutlineReport, Reporter, StatisticsReport}
+import viper.silver.reporter._
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, _}
+
+import scala.collection.mutable
 
 
 
 // Implementation of the Reporter interface used by the backend.
-class ActorReporter(private val actor_ref: ActorRef, val tag: String) extends viper.silver.reporter.Reporter {
+class ActorReporter(private val actor_ref: ActorRef, val tag: String)
+  extends viper.silver.reporter.Reporter {
 
   val name = s"ViperServer_$tag"
 
@@ -34,19 +37,23 @@ class ActorReporter(private val actor_ref: ActorRef, val tag: String) extends vi
   }
 }
 
-class VerificationWorker(val _reporter: ActorRef, val command: List[String]) extends Runnable with LazyLogging {
+class VerificationWorker(val _reporter: ActorRef, val command: List[String])
+  extends Runnable with LazyLogging {
+
   private var _frontend: ViperFrontend = null
 
   def run(): Unit = {
     try {
       command match {
         case "silicon" :: args =>
-          startVerification(args, new ViperSiliconFrontend(new ActorReporter(_reporter, "silicon")))
+          _frontend = new ViperSiliconFrontend(new ActorReporter(_reporter, "silicon"))
+          _frontend.execute(args)
         case "carbon" :: args =>
-          startVerification(args, new ViperCarbonFrontend(new ActorReporter(_reporter, "carbon")))
+          _frontend = new ViperCarbonFrontend(new ActorReporter(_reporter, "carbon"))
+          _frontend.execute(args)
         case args =>
           logger.info("invalid arguments: ${args.toString}",
-                      "You need to specify the verification backend, e.g., `silicon [args]`")
+            "You need to specify the verification backend, e.g., `silicon [args]`")
       }
     } catch {
       case _: InterruptedException =>
@@ -54,45 +61,105 @@ class VerificationWorker(val _reporter: ActorRef, val command: List[String]) ext
       case e: Exception =>
         e.printStackTrace(System.err)
     } finally {
-      stop()
-      if (_frontend != null) {
-        _frontend.printStopped()
-      } else {
-        println(s"The command $command did not result in initialization of verification backend.")
+      try {
+        _frontend.verifier.stop()
+      } catch {
+        case _: Throwable =>
       }
-      _reporter ! ReporterActor.FinalServerRequest
     }
-  }
-
-  private def startVerification(args: List[String], frontend: ViperFrontend): Unit = {
-    //frontend.setSender(sender)
-    _frontend = frontend
-    frontend.execute(args)
-  }
-
-  private def stop(): Unit = {
-    try {
-      _frontend.verifier.stop()
-    } catch {
-      case _: Throwable =>
+    if (_frontend != null) {
+      _reporter ! ReporterActor.FinalServerRequest
+    } else {
+      println(s"The command $command did not result in initialization of verification backend.")
     }
   }
 }
 
 trait ViperFrontend extends SilFrontend {
 
-  def ideMode: Boolean = config != null && config.ideMode()
+  private def collectDefinitions(program: Program): List[Definition] = (program.members.collect {
+    case t: Method =>
+      (Definition(t.name, "Method", t.pos) +: (t.pos match {
+        case p: AbstractSourcePosition =>
+          t.formalArgs.map { arg => Definition(arg.name, "Argument", arg.pos, Some(p)) } ++
+            t.formalReturns.map { arg => Definition(arg.name, "Return", arg.pos, Some(p)) }
+        case _ => Seq()
+      })) ++ t.body.deepCollect {
+        case scope: Scope with Positioned =>
+          scope.pos match {
+            case p: AbstractSourcePosition =>
+              scope.scopedDecls.map { local_decl => Definition(local_decl.name, "Local", local_decl.pos, Some(p)) }
+            case _ => Seq()
+          }
+      }.flatten
 
-  def printStopped(): Unit = {
-    if (ideMode) {
-      loggerForIde.info(s"""{"type":"Stopped"}\r\n""")
-    } else {
-      logger.info(s"${_ver.name} stopped")
-    }
-  }
+    case t: Function =>
+      (Definition(t.name, "Function", t.pos) +: (t.pos match {
+        case p: AbstractSourcePosition =>
+          t.formalArgs.map { arg => Definition(arg.name, "Argument", arg.pos, Some(p)) }
+        case _ => Seq()
+      })) ++ (t.body match {
+        case Some(exp) =>
+          exp.deepCollect {
+            case scope:Scope with Positioned =>
+              scope.pos match {
+                case p: AbstractSourcePosition =>
+                  scope.scopedDecls.map { local_decl => Definition(local_decl.name, "Local", local_decl.pos, Some(p)) }
+                case _ => Seq()
+              }
+          } flatten
+        case _ => Seq()
+      })
 
-  private def countInstances(p: Program): Map[String, Int] = {
-    p.members.groupBy({
+    case t: Predicate =>
+      (Definition(t.name, "Predicate", t.pos) +: (t.pos match {
+        case p: AbstractSourcePosition =>
+          t.formalArgs.map { arg => Definition(arg.name, "Argument", arg.pos, Some(p)) }
+        case _ => Seq()
+      })) ++ (t.body match {
+        case Some(exp) =>
+          exp.deepCollect {
+            case scope:Scope with Positioned =>
+              scope.pos match {
+                case p: AbstractSourcePosition =>
+                  scope.scopedDecls.map { local_decl => Definition(local_decl.name, "Local", local_decl.pos, Some(p)) }
+                case _ => Seq()
+              }
+          } flatten
+        case _ => Seq()
+      })
+
+    case t: Domain =>
+      (Definition(t.name, "Domain", t.pos) +: (t.pos match {
+        case p: AbstractSourcePosition =>
+          t.functions.flatMap { func =>
+            Definition(func.name, "Function", func.pos, Some(p)) +: (func.pos match {
+              case func_p: AbstractSourcePosition =>
+                func.formalArgs.map { arg => Definition(arg.name, "Argument", arg.pos, Some(func_p)) }
+              case _ => Seq()
+            })
+          } ++ t.axioms.flatMap { ax =>
+            Definition(ax.name, "Axiom", ax.pos, Some(p)) +: (ax.pos match {
+              case ax_p: AbstractSourcePosition =>
+                ax.exp.deepCollect {
+                  case scope:Scope with Positioned =>
+                    scope.pos match {
+                      case p: AbstractSourcePosition =>
+                        scope.scopedDecls.map { local_decl => Definition(local_decl.name, "Local", local_decl.pos, Some(p)) }
+                      case _ => Seq()
+                    }
+                } flatten
+              case _ => Seq()
+            }) }
+        case _ => Seq()
+      })) ++ Seq()
+
+    case t: Field =>
+      Seq(Definition(t.name, "Field", t.pos))
+
+  } flatten) toList
+
+  private def countInstances(p: Program): Map[String, Int] = p.members.groupBy({
       case m: Method => "method"
       case fu: Function => "function"
       case p: Predicate => "predicate"
@@ -100,12 +167,11 @@ trait ViperFrontend extends SilFrontend {
       case fi: Field => "field"
       case _ => "other"
     }).mapValues(_.size)
-  }
 
   override def execute(args: Seq[String]) {
     setStartTime()
 
-    /* Create the verifier */
+    // create the verifier
     _ver = createVerifier(args.mkString(" "))
 
     if (!prepare(args)) return
@@ -136,6 +202,7 @@ trait ViperFrontend extends SilFrontend {
         stats.getOrElse("domain", 0),
         stats.getOrElse("field", 0)
       ))
+      reporter.report(new ProgramDefinitionsReport(collectDefinitions(prog)))
 
       if (config.disableCaching()) {
         doVerify()
@@ -147,7 +214,19 @@ trait ViperFrontend extends SilFrontend {
 
     _ver.stop()
 
-    finish()
+    // finish by reporting the overall outcome
+
+    result match {
+      case Success => {
+        printSuccess();
+        reporter.report(OverallSuccessMessage(getVerifierName, System.currentTimeMillis() - _startTime))
+      }
+      case f@Failure(errors) => {
+        printErrors(errors: _*);
+        reporter.report(OverallFailureMessage(getVerifierName, System.currentTimeMillis() - _startTime, f))
+      }
+
+    }
   }
 
   private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): List[AbstractVerificationError] = {
