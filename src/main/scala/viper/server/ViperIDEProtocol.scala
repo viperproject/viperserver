@@ -36,7 +36,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   // Implicit conversions for reporter.Message.
 
   implicit object file_format extends RootJsonFormat[File] {
-    override def write(obj: File): JsValue = JsString(obj.getFileName.toString)
+    override def write(obj: File): JsValue = JsString(obj.toAbsolutePath.toString)
 
     override def read(json: JsValue): File = try {
       java.nio.file.Paths.get(json.toString)

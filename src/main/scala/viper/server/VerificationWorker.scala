@@ -78,6 +78,7 @@ class VerificationWorker(val _reporter: ActorRef, val command: List[String])
 trait ViperFrontend extends SilFrontend {
 
   private def collectDefinitions(program: Program): List[Definition] = (program.members.collect {
+
     case t: Method =>
       (Definition(t.name, "Method", t.pos) +: (t.pos match {
         case p: AbstractSourcePosition =>
