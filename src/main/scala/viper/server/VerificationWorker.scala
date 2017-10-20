@@ -85,7 +85,7 @@ trait ViperFrontend extends SilFrontend {
           t.formalArgs.map { arg => Definition(arg.name, "Argument", arg.pos, Some(p)) } ++
             t.formalReturns.map { arg => Definition(arg.name, "Return", arg.pos, Some(p)) }
         case _ => Seq()
-      })) ++ t.body.deepCollect {
+      })) ++ t.deepCollectInBody {
         case scope: Scope with Positioned =>
           scope.pos match {
             case p: AbstractSourcePosition =>
@@ -251,10 +251,8 @@ trait ViperFrontend extends SilFrontend {
     result.toList
   }
 
-  private def removeBody(m: Method): Method = {
-    val node: Seqn = Seqn(Seq(Inhale(FalseLit()())()), m.scopedDecls)(m.body.pos, m.body.info, m.body.errT)
-    m.copy(body = node)(m.pos, m.info, m.errT)
-  }
+  private def removeBody(m: Method): Method =
+    m.copy(body = None)(m.pos, m.info, m.errT)
 
   def doVerifyCached(): Unit = {
 
