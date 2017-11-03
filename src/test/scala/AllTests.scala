@@ -6,16 +6,13 @@
 
 import java.nio.file.Path
 
-import viper.carbon.CarbonVerifier
 import viper.server.ViperCarbonFrontend
 import viper.silver.frontend.Frontend
 import viper.silver.reporter.StdIOReporter
 import viper.silver.testing.SilSuite
 import viper.silver.verifier.Verifier
 
-/** All tests for the viperServer.
-  * TODO: implement tests, as this is only a method stub
-  */
+/*
 class AllTests extends SilSuite {
   override def testDirectories: Seq[String] = Vector(
     "local"
@@ -32,4 +29,43 @@ class AllTests extends SilSuite {
   }
 
   lazy val verifiers = List(CarbonVerifier())
+}
+*/
+
+import org.scalatest.{ Matchers, WordSpec }
+import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.testkit.ScalatestRouteTest
+import akka.http.scaladsl.server._
+import akka.http.scaladsl.model._
+import Directives._
+
+class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
+
+  val emptyRoute =
+    get {
+      path("/") {
+        complete("OK")
+      }
+    }
+
+  val exitRoute =
+    get {
+      path("exit") {
+        complete("")
+      }
+    }
+
+  "ViperServer" should {
+    "stop all running executions and terminate self" in {
+      // tests:
+      Get("/exit") ~> exitRoute ~> check {
+        status should ===(StatusCodes.OK)
+
+        contentType should ===(ContentTypes.`text/plain(UTF-8)`)
+
+
+      }
+    }
+  }
+
 }
