@@ -69,7 +69,7 @@ object ViperServerRunner {
               println(s"Terminator deleted job #${jid}")
             })
           case _ =>
-            println(s"Terminator: job #${jid} does not exist anymore.")
+            println(s"Terminator: job #${jid} does not exist.")
         }
     }
   }
@@ -199,6 +199,22 @@ object ViperServerRunner {
     ViperCache.initialize(config.backendSpecificCache())
 
     val routes = {
+      /**
+        * Send GET request to "/exit".
+        *
+        * This will do the following:
+        * 1. Map all existing jobs from [[_job_handles]] to a list of futures based on the responses of instances of
+        *    [[MainActor]] from [[ViperServerProtocol.Stop]] messages (with a 5 second timeout)
+        * 2. Merge the list into an overall future
+        * 3. Wait for the overall future to complete or timeout
+        * 4. Send [[Terminator.Exit]] message to the [[Terminator]] actor
+        * 5. Complete the request with an appropriate message
+        *
+        * Some use cases:
+        * - The IDE is being shut down
+        * - ViperServer receives a deadly signal and needs to kill the running verification jobs
+        *
+        * */
       path("exit") {
         get {
           val interrupt_future_list: List[Future[String]] = _job_handles map { case (jid, handle@JobHandle(actor, _, _)) =>
@@ -221,6 +237,21 @@ object ViperServerRunner {
         }
       }
     } ~ path("verify") {
+      /**
+        * Send POST request to "/verify".
+        *
+        * This will do the following:
+        * 1. If the limit for allowed active verification jobs has been reached, complete with an appropriate reject message
+        * 2. Otherwise, create an actor with a fresh ID and pass the arguments provided by the client
+        * 3. Send [[ViperServerProtocol.Verify]] message to the newly created instance of [[MainActor]]
+        *   (the actor will add itself as an entry to the [[_job_handles]] collection)
+        * 4. Complete request with accepting message with the ID of the new verification job
+        *
+        * Use case:
+        * - Send a request to verify a specific Viper file from the IDE
+        * - Send a request to verify a specific Viper file from any other Viper client implementation,
+        *   such as <a href="https://bitbucket.org/viperproject/viper_client">viper_client</a> (written in Python)
+        */
       post {
         entity(as[VerificationRequest]) { r =>
           if (new_jobs_allowed) {
@@ -236,6 +267,23 @@ object ViperServerRunner {
         }
       }
     } ~ path("verify" / IntNumber) { jid =>
+
+      /**
+        * Send GET request to "/verify/<jid>" where <jid> is a non-negative integer.
+        * <jid> must be an ID of an existing verification job.
+        *
+        * This will do the following:
+        * 1. If no job handle with ID equal to <jid> exists in [[_job_handles]], complete with an appropriate reject message
+        * 2. Otherwise:
+        *   - Create a [[Source]] <src> full of [[viper.silver.reporter.Message]]s
+        *   - Send [[Terminator.WatchJob]] message to the [[Terminator]] actor, awaiting
+        *     [[SourceQueueWithComplete.watchCompletion]] future before removing current job handle from [[_job_handles]]
+        *   - Complete request with <src>
+        *
+        * Use case:
+        * - Ask ViperServer to begin streaming the results corresponding to the verification job with provided <jid>
+        *
+        */
       get {
         _job_handles.get(jid) match {
           case Some(handle) =>
@@ -252,10 +300,26 @@ object ViperServerRunner {
         }
       }
     } ~ path("discard" / IntNumber) { jid =>
+
+      /**
+        * Send GET request to "/discard/<jid>" where <jid> is a non-negative integer.
+        * <jid> must be an ID of an existing verification job.
+        *
+        * This will do the following:
+        * 1. If no job handle with ID equal to <jid> exists in [[_job_handles]], complete with an appropriate reject message
+        * 2. Otherwise:
+        *   - Create a new future based on response from a the current instance of [[MainActor]] to a
+        *   [[ViperServerProtocol.Stop]] message (with a 5 second timeout)
+        *   - Send a [[PoisonPill]] message to the current instance of [[MainActor]]
+        *   - Complete request with accepting message
+        *
+        *  Use case:
+        *  - Client decided to kill a verification job it no linger cares about
+        */
       get {
         _job_handles.get(jid) match {
           case Some(handle) =>
-            implicit val askTimeout = Timeout(5 seconds)
+            implicit val askTimeout = Timeout(5000 milliseconds)
             val interrupt_done: Future[String] = (handle.controller_actor ? Stop(true)).mapTo[String]
             onSuccess(interrupt_done) { msg =>
                 handle.controller_actor ! PoisonPill // the actor played its part.
