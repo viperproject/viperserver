@@ -1,0 +1,35 @@
+import "importable.vpr"
+
+method foo()
+{
+    assert forall x:Int :: x+x == 2*x
+}
+
+field cell:Ref
+
+function f0(): Bool
+    requires forall r:Ref :: acc(r.cell)
+    ensures  exists r:Ref :: result <==> r.cell == r
+
+function f1(): Ref
+    requires forall b:Bool :: b || !b
+{
+    let o==(null) in ( (forall i:Int :: i < i+1 ==> i+2 < i+i+2) ? o : null )
+}
+
+predicate foobar(p:Ref, q:Ref) {
+    acc(p.cell) && acc(q.cell)
+    && (q.cell != null ==> acc(q.cell.cell))
+}
+
+domain Bar {
+
+    function f(): Bool
+
+
+    axiom ax_Test {
+        exists b:Bool :: b == f()
+    }
+
+}
+
