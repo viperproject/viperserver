@@ -22,7 +22,7 @@ import viper.silver.reporter._
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, _}
 
-import scala.collection.mutable
+import scala.language.postfixOps
 
 
 
@@ -33,6 +33,7 @@ class ActorReporter(private val actor_ref: ActorRef, val tag: String)
   val name = s"ViperServer_$tag"
 
   def report(msg: reporter.Message) = {
+    //println(s"ActorReporter reporting >>> ${msg}")
     actor_ref ! ReporterActor.ServerRequest(msg)
   }
 }
@@ -219,11 +220,11 @@ trait ViperFrontend extends SilFrontend {
 
     result match {
       case Success => {
-        printSuccess();
+        //printSuccess();
         reporter.report(OverallSuccessMessage(getVerifierName, System.currentTimeMillis() - _startTime))
       }
       case f@Failure(errors) => {
-        printErrors(errors: _*);
+        //printErrors(errors: _*);
         reporter.report(OverallFailureMessage(getVerifierName, System.currentTimeMillis() - _startTime, f))
       }
 

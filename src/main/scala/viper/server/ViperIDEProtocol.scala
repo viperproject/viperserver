@@ -48,7 +48,12 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
 
   implicit val position_writer = lift(new RootJsonWriter[Position] {
     override def write(obj: Position): JsValue = JsObject(
-        "file" -> obj.file.toJson,
+        "file" -> (if (obj.file != null) {
+          //FIXME this hack is needed due to the following bug in Silver: https://bitbucket.org/viperproject/silver/issues/232
+          obj.file.toJson
+        } else {
+          JsString("<undefined>")
+        }),
         "start" -> JsString(s"${obj.line}:${obj.column}"),
         "end" -> (obj.end match {
           case Some(end_pos) =>
