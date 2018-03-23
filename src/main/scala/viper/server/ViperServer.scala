@@ -149,8 +149,8 @@ object ViperServerRunner {
 
       // TODO: reimplement with [[SourceQueue]]s and backpressure strategies.
 
-      // The maximum number of messages in the reporter's message buffer is 1000.
-      val (queue, publisher) = Source.queue[Message](1000, OverflowStrategy.backpressure).toMat(Sink.asPublisher(false))(Keep.both).run()
+      // The maximum number of messages in the reporter's message buffer is 10000.
+      val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure).toMat(Sink.asPublisher(false))(Keep.both).run()
 
       val my_reporter = system.actorOf(ReporterActor.props(id, queue), s"reporter_$id")
 
