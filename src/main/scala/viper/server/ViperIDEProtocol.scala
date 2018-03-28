@@ -185,7 +185,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
 
   /** Legacy marshaller format. Using three different position types in one case class is ugly, but a valid
     * workaround for handling all cases of AST construction. If you want to try to improve/refactor, see
-    * [[ViperFrontend.collectDefinitions]] for the usage Definition.
+    * [[ViperBackend.collectDefinitions]] for the usage Definition.
     */
   implicit val definition_writer = lift(new RootJsonWriter[Definition] {
     override def write(obj: Definition) = JsObject(
@@ -221,6 +221,16 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       })
   })
 
+  implicit val stackTraceElement_writer = lift(new RootJsonWriter[java.lang.StackTraceElement] {
+    override def write(obj: java.lang.StackTraceElement) = JsString(obj.toString)
+  })
+
+  implicit val exceptionReport_writer = lift(new RootJsonWriter[ExceptionReport] {
+    override def write(obj: ExceptionReport) = JsObject(
+      "message" -> JsString(obj.e.getMessage),
+      "stacktrace" -> JsArray(obj.e.getStackTrace.map(_.toJson).toVector))
+  })
+
   implicit val pongMessage_writer = lift(new RootJsonWriter[PongMessage] {
     override def write(obj: PongMessage) = JsObject("msg" -> JsString(obj.msg))
   })
@@ -234,6 +244,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case o: ProgramOutlineReport => o.toJson
         case d: ProgramDefinitionsReport => d.toJson
         case e: SymbExLogReport => e.toJson
+        case x: ExceptionReport => x.toJson
         case f: PongMessage => f.toJson
       }))
   })

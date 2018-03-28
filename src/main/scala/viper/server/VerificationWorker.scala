@@ -7,6 +7,7 @@
 package viper.server
 
 
+import java.lang.reflect.Constructor
 import java.nio.file.Paths
 
 import scala.collection.mutable.ListBuffer
@@ -18,13 +19,11 @@ import viper.silicon.SiliconFrontend
 import viper.silver.ast.{Position, _}
 import viper.silver.frontend.{SilFrontend, TranslatorState}
 import viper.silver.reporter
-import viper.silver.reporter._
+import viper.silver.reporter.{Reporter, _}
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, _}
 
 import scala.language.postfixOps
-
-
 
 // Implementation of the Reporter interface used by the backend.
 class ActorReporter(private val actor_ref: ActorRef, val tag: String)
@@ -38,45 +37,80 @@ class ActorReporter(private val actor_ref: ActorRef, val tag: String)
   }
 }
 
+class ViperServerException extends Exception
+
+case class ViperServerWrongTypeException(name: String) extends ViperServerException {
+  override def toString: String = s"Verification backend (a.k.a. SiliconFrontend) $name."
+}
+
+case class ViperServerBackendNotFoundException(name: String) extends ViperServerException {
+  override def toString: String = s"Verification backend (a.k.a. SiliconFrontend) $name could not be not found."
+}
+
 class VerificationWorker(val _reporter: ActorRef, val command: List[String])
   extends Runnable with LazyLogging {
 
-  private var _frontend: ViperFrontend = null
+
+  private def resolveCustomBackend(clazzName: String, rep: Reporter): Option[SilFrontend] = {
+    (try {
+      //val clazz: Class[_] = Class.forName(clazzName)
+      //val arg_decls = Array[Class[_]](classOf[Reporter])
+      val constructor = Class.forName(clazzName).getConstructor(classOf[viper.silver.reporter.Reporter])
+      //Class.forName("viper.silicon.SiliconFrontend").getConstructors()(0)
+      Some(constructor.newInstance(rep))
+    } catch {
+      case e: ClassNotFoundException => None
+    }) match {
+      case Some(instance) if instance.isInstanceOf[SilFrontend] =>
+        Some(instance.asInstanceOf[SilFrontend])
+      case Some(instance) =>
+        throw ViperServerWrongTypeException(instance.getClass.getName)
+      case _ =>
+        throw ViperServerBackendNotFoundException(clazzName)
+    }
+  }
+
+  private var _backend: ViperBackend = _
 
   def run(): Unit = {
     try {
       command match {
         case "silicon" :: args =>
-          _frontend = new ViperSiliconFrontend(new ActorReporter(_reporter, "silicon"))
-          _frontend.execute(args)
+          _backend = new ViperBackend(new SiliconFrontend(new ActorReporter(_reporter, "silicon")))
+          _backend.execute(args)
         case "carbon" :: args =>
-          _frontend = new ViperCarbonFrontend(new ActorReporter(_reporter, "carbon"))
-          _frontend.execute(args)
+          _backend = new ViperBackend(new CarbonFrontend(new ActorReporter(_reporter, "carbon")))
+          _backend.execute(args)
+        case custom :: args =>
+          _backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(_reporter, custom)).get)
+          _backend.execute(args)
         case args =>
           logger.info("invalid arguments: ${args.toString}",
             "You need to specify the verification backend, e.g., `silicon [args]`")
       }
     } catch {
-      case _: InterruptedException =>
-      case _: java.nio.channels.ClosedByInterruptException =>
+      //case _: InterruptedException =>
+      //case _: java.nio.channels.ClosedByInterruptException =>
       case e: Exception =>
-        e.printStackTrace(System.err)
+        _reporter ! ReporterActor.ServerRequest(reporter.ExceptionReport(e))
+        //e.printStackTrace(System.err)
     } finally {
       try {
-        _frontend.verifier.stop()
+        _backend.stop
       } catch {
         case _: Throwable =>
       }
     }
-    if (_frontend != null) {
+    if (_backend != null) {
       _reporter ! ReporterActor.FinalServerRequest
     } else {
+      _reporter ! ReporterActor.FinalServerRequest
       println(s"The command $command did not result in initialization of verification backend.")
     }
   }
 }
 
-trait ViperFrontend extends SilFrontend {
+class ViperBackend(private val _frontend: SilFrontend) {
 
   private def collectDefinitions(program: Program): List[Definition] = (program.members.collect {
 
@@ -170,64 +204,61 @@ trait ViperFrontend extends SilFrontend {
       case _ => "other"
     }).mapValues(_.size)
 
-  override def execute(args: Seq[String]) {
-    setStartTime()
+  def execute(args: Seq[String]) {
+    _frontend.setStartTime()
 
     // create the verifier
-    _ver = createVerifier(args.mkString(" "))
+    _frontend.setVerifier( _frontend.createVerifier(args.mkString(" ")) )
 
-    if (!prepare(args)) return
+    if (!_frontend.prepare(args)) return
 
     // initialize the translator
-    init(_ver)
+    _frontend.init( _frontend.verifier )
 
     // set the file we want to verify
-    reset(Paths.get(config.file()))
+    _frontend.reset( Paths.get(_frontend.config.file()) )
 
     // run the parser, typechecker, and verifier
-    parse()
-    typecheck()
-    translate()
+    _frontend.parse()
+    _frontend.typecheck()
+    _frontend.translate()
 
-    if (_errors.nonEmpty) {
-      _state = TranslatorState.Verified
+    if (_frontend.errors.nonEmpty) {
+      _frontend.setState( TranslatorState.Verified )
 
     } else {
-      val prog: Program = _program.get
+      val prog: Program = _frontend.program.get
       val stats = countInstances(prog)
 
-      reporter.report(new ProgramOutlineReport(prog.members.toList))
-      reporter.report(new StatisticsReport(
+      _frontend.reporter.report(new ProgramOutlineReport(prog.members.toList))
+      _frontend.reporter.report(new StatisticsReport(
         stats.getOrElse("method", 0),
         stats.getOrElse("function", 0),
         stats.getOrElse("predicate", 0),
         stats.getOrElse("domain", 0),
         stats.getOrElse("field", 0)
       ))
-      reporter.report(new ProgramDefinitionsReport(collectDefinitions(prog)))
+      _frontend.reporter.report(new ProgramDefinitionsReport(collectDefinitions(prog)))
 
-      if (config.disableCaching()) {
-        doVerify()
+      if (_frontend.config.disableCaching()) {
+        _frontend.doVerify()
       } else {
         println("start cached verification")
         doVerifyCached()
       }
     }
 
-    _ver.stop()
+    _frontend.verifier.stop()
 
     // finish by reporting the overall outcome
 
-    result match {
-      case Success => {
+    _frontend.result match {
+      case Success =>
         //printSuccess();
-        reporter.report(OverallSuccessMessage(getVerifierName, System.currentTimeMillis() - _startTime))
-      }
-      case f@Failure(errors) => {
+        _frontend.reporter.report(OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime))
+      case f@Failure(_) =>
         //printErrors(errors: _*);
-        reporter.report(OverallFailureMessage(getVerifierName, System.currentTimeMillis() - _startTime, f))
-      }
-
+        _frontend.reporter.report(OverallFailureMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime, f))
     }
   }
 
@@ -261,57 +292,56 @@ trait ViperFrontend extends SilFrontend {
 
     val (methodsToVerify, _, cachedErrors) = consultCache()
 
-    val real_program = _program.get
-    val program = Program(real_program.domains, real_program.fields, real_program.functions, real_program.predicates,
+    val real_program = _frontend.program.get
+    val prog: Program = Program(real_program.domains, real_program.fields, real_program.functions, real_program.predicates,
       methodsToVerify) (real_program.pos, real_program.info, real_program.errT)
-    val file: String = _config.file()
+    val file: String = _frontend.config.file()
 
-    _verificationResult = Some(mapVerificationResult(_verifier.get.verify(program)))
-    assert(_verificationResult != null)
+    _frontend.setVerificationResult( _frontend.mapVerificationResult(_frontend.verifier.verify(prog)) )
 
-    _state = TranslatorState.Verified
+    _frontend.setState( TranslatorState.Verified )
 
     //update cache
     methodsToVerify.foreach(m => {
-      _verificationResult.get match {
+      _frontend.getVerificationResult.get match {
         case Failure(errors) =>
           val errorsToCache = getMethodSpecificErrors(m, errors)
-          ViperCache.update(backendName, file, program, m, errorsToCache)
-          logger.trace("Store in cache " + m.name + (if (errorsToCache.nonEmpty) ": Error" else ": Success"))
+          ViperCache.update(backendName, file, prog, m, errorsToCache)
+          _frontend.logger.trace("Store in cache " + m.name + (if (errorsToCache.nonEmpty) ": Error" else ": Success"))
         case Success =>
-          logger.trace("Store in cache " + m.name + ": Success")
-          ViperCache.update(backendName, file, program, m, Nil)
+          _frontend.logger.trace("Store in cache " + m.name + ": Success")
+          ViperCache.update(backendName, file, prog, m, Nil)
       }
     })
 
     //combine errors:
     if (cachedErrors.nonEmpty) {
-      _verificationResult.get match {
+      _frontend.getVerificationResult.get match {
         case Failure(errorList) =>
-          _verificationResult = Some(Failure(errorList ++ cachedErrors))
+          _frontend.setVerificationResult(Failure(errorList ++ cachedErrors))
         case Success =>
-          _verificationResult = Some(Failure(cachedErrors))
+          _frontend.setVerificationResult(Failure(cachedErrors))
       }
     }
   }
 
-  def backendName: String = _ver.getClass.getName
+  def backendName: String = _frontend.verifier.getClass.getName
 
   def consultCache(): (List[Method], List[Method], List[VerificationError]) = {
     val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
     val methodsToVerify: collection.mutable.ListBuffer[Method] = ListBuffer()
     val methodsToCache: collection.mutable.ListBuffer[Method] = ListBuffer()
 
-    val file: String = _config.file()
-    val program = _program.get
+    val file: String = _frontend.config.file()
 
     //read errors from cache
-    program.methods.foreach((m: Method) => {
+    val prog: Program = _frontend.program.get
+    prog.methods.foreach((m: Method) => {
       ViperCache.get(backendName, file, m) match {
         case None =>
           methodsToVerify += m
         case Some(cacheEntry) =>
-          if (program.dependencyHashMap(m) != cacheEntry.dependencyHash) {
+          if (prog.dependencyHashMap(m) != cacheEntry.dependencyHash) {
             //even if the method itself did not change, a re-verification is required if it's dependencies changed
             methodsToVerify += m
           } else {
@@ -321,8 +351,8 @@ trait ViperFrontend extends SilFrontend {
               methodsToCache += removeBody(m)
             } catch {
               case e: Exception =>
-                logger.warn("The cache lookup failed:" + e)
-                //Default to verifying the method in case the cache lookup fails.
+                _frontend.logger.warn("The cache lookup failed:" + e)
+                //Defaults to verifying the method in case the cache lookup fails.
                 methodsToVerify += m
             }
           }
@@ -384,7 +414,7 @@ trait ViperFrontend extends SilFrontend {
       case e: HeuristicsFailed => e.copy(cached = true)
       case e: VerificationErrorWithCounterexample => e.copy(cached = true)
       case e: AbstractVerificationError =>
-        logger.warn("Setting a verification error to cached was not possible for " + e + ". Make sure to handle this types of errors")
+        _frontend.logger.warn("Setting a verification error to cached was not possible for " + e + ". Make sure to handle this types of errors")
         e
     }
   }
@@ -511,12 +541,58 @@ trait ViperFrontend extends SilFrontend {
       case t: EmptyMultiset => t.copy()(pos, t.info, t.errT)
       case t: ExplicitMultiset => t.copy()(pos, t.info, t.errT)
       case t =>
-        logger.warn("The location was not updated for the node " + t + ". Make sure to handle this type of node")
+        _frontend.logger.warn("The location was not updated for the node " + t + ". Make sure to handle this type of node")
         t
     }
   }
+
+  def stop = _frontend.verifier.stop()
+
+  /** The operations below are borrowed from whatever implementation of SilFrontend is the _frontend field. */
+  /*
+  val logger: Logger = _frontend.logger
+  def createVerifier(fullCmd: String): Verifier = _frontend.createVerifier(fullCmd)
+  def configureVerifier(args: Seq[String]): SilFrontendConfig = _frontend.configureVerifier(args)
+  def verifier: Verifier = _frontend.verifier
+  def ver: Verifier = _frontend.ver
+  def config: SilFrontendConfig = _frontend.config
+  def program: Option[Program] = _frontend.program // this one comes all the way from DefaultFrontend
+  */
+
+  /** The operations below are not supposed to be used by instances of ViperFrontend. */
+  /*
+  protected var _ver: Verifier =
+
+
+  def config =
+  protected var _plugins: SilverPluginManager =
+  protected var _config: SilFrontendConfig =
+  def plugins =
+  protected var _startTime: Long =
+  def startTime =
+  def resetMessages() =
+  def setVerifier(verifier:Verifier): Unit =
+  def prepare(args: Seq[String]): Boolean =
+  def execute(args: Seq[String])
+  override def reset(input: Path): Unit =
+  def setStartTime(): Unit =
+  protected def getVerifierName: String =
+
+  def finish(): Unit =
+  protected def parseCommandLine(args: Seq[String]) =
+  protected def printFallbackHeader() =
+  protected def printHeader() =
+  protected def printFinishHeader() =
+
+  protected def printFinishHeaderWithTime() = frontend.printFinishHeaderWithTime()
+
+  override def printErrors(errors: AbstractError*) = frontend.printErrors()
+  override def printSuccess() = frontend.printSuccess()
+  override def doParse(input: String): Result[ParserResult] = frontend.doParse(input)
+  override def doTypecheck(input: ParserResult): Result[TypecheckerResult] = frontend.doTypecheck(input)
+  override def doTranslate(input: TypecheckerResult): Result[Program] = frontend.doTranslate(input)
+
+  override def mapVerificationResult(in: VerificationResult): VerificationResult = frontend.mapVerificationResult(in)
+  */
 }
 
-class ViperCarbonFrontend(val rep: Reporter) extends CarbonFrontend(rep) with ViperFrontend {}
-
-class ViperSiliconFrontend(val rep: Reporter) extends SiliconFrontend(rep) with ViperFrontend {}

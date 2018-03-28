@@ -181,6 +181,7 @@ object ViperServerRunner {
     override def receive: PartialFunction[Any, Unit] = {
       case ReporterActor.ClientRequest =>
       case ReporterActor.ServerRequest(msg) =>
+        println(msg)
         queue.offer(msg)
       case ReporterActor.FinalServerRequest =>
         queue.complete()
