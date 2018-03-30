@@ -173,10 +173,10 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   implicit val statisticsReport_writer = lift(new RootJsonWriter[StatisticsReport] {
     override def write(obj: StatisticsReport) = JsObject(
       "methods" -> JsNumber(obj.nOfMethods),
-      "functions"  -> JsNumber(obj.nOfFunctions),
-      "predicates"  -> JsNumber(obj.nOfPredicates),
+      "functions" -> JsNumber(obj.nOfFunctions),
+      "predicates" -> JsNumber(obj.nOfPredicates),
       "domains" -> JsNumber(obj.nOfDomains),
-      "fields"  -> JsNumber(obj.nOfFields))
+      "fields" -> JsNumber(obj.nOfFields))
   })
 
   implicit val programOutlineReport_writer = lift(new RootJsonWriter[ProgramOutlineReport] {
@@ -226,9 +226,11 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val exceptionReport_writer = lift(new RootJsonWriter[ExceptionReport] {
-    override def write(obj: ExceptionReport) = JsObject(
-      "message" -> JsString(obj.e.getMessage),
-      "stacktrace" -> JsArray(obj.e.getStackTrace.map(_.toJson).toVector))
+    override def write(obj: ExceptionReport) = {
+      JsObject(
+        "message" -> JsString(obj.e.toString),
+        "stacktrace" -> JsArray(obj.e.getStackTrace.map(_.toJson).toVector))
+    }
   })
 
   implicit val pongMessage_writer = lift(new RootJsonWriter[PongMessage] {
