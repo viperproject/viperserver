@@ -22,6 +22,7 @@ import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.server.Directives._
+import ch.qos.logback.classic.Logger
 import viper.server.ViperServerProtocol._
 import viper.server.ViperIDEProtocol._
 import viper.silver.reporter
@@ -36,6 +37,8 @@ object ViperServerRunner {
 
   private var _config: ViperConfig = _
   final def config: ViperConfig = _config
+  private var _logger: Logger = _
+  private def logger = _logger
 
   implicit val system: ActorSystem = ActorSystem("Main")
   implicit val materializer: ActorMaterializer = ActorMaterializer()
@@ -154,7 +157,7 @@ object ViperServerRunner {
 
       val my_reporter = system.actorOf(ReporterActor.props(id, queue), s"reporter_$id")
 
-      _verificationTask = new Thread(new VerificationWorker(my_reporter, args))
+      _verificationTask = new Thread(new VerificationWorker(my_reporter, _logger, args))
       _verificationTask.start()
 
       assert(_job_handles.get(id).isEmpty)
@@ -170,8 +173,8 @@ object ViperServerRunner {
 
   object ReporterActor {
     case object ClientRequest
-    case class ServerRequest(msg: reporter.Message)
-    case object FinalServerRequest
+    case class ServerReport(msg: reporter.Message)
+    case class FinalServerReport(success: Boolean)
 
     def props(jid: Int, queue: SourceQueueWithComplete[Message]): Props = Props(new ReporterActor(jid, queue))
   }
@@ -180,12 +183,15 @@ object ViperServerRunner {
 
     override def receive: PartialFunction[Any, Unit] = {
       case ReporterActor.ClientRequest =>
-      case ReporterActor.ServerRequest(msg) =>
-        println(msg)
+      case ReporterActor.ServerReport(msg) =>
+        //println(msg)
         queue.offer(msg)
-      case ReporterActor.FinalServerRequest =>
+      case ReporterActor.FinalServerReport(success) =>
         queue.complete()
-        println(s"Job #$jid has been successfully completed.")
+        if ( success )
+          println(s"Job #$jid has been completed successfully.")
+        else
+          println(s"Job #$jid has been completed ERRONEOUSLY.")
         self ! PoisonPill
       case _ =>
     }
@@ -203,6 +209,8 @@ object ViperServerRunner {
       sys.exit(1)
     }
 
+    _logger = new ViperServerLogger(config.canonizedLogFile(), config.logLevel()).get
+    println(s"Writing [level ${config.logLevel()}] logs to ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${config.canonizedLogFile()}")
     ViperCache.initialize(config.backendSpecificCache())
 
     val routes = {

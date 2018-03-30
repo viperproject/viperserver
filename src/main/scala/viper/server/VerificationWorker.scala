@@ -12,7 +12,7 @@ import java.nio.file.Paths
 
 import scala.collection.mutable.ListBuffer
 import akka.actor.ActorRef
-import com.typesafe.scalalogging.LazyLogging
+import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperServerRunner.ReporterActor
 import viper.silicon.SiliconFrontend
@@ -33,23 +33,23 @@ class ActorReporter(private val actor_ref: ActorRef, val tag: String)
 
   def report(msg: reporter.Message) = {
     //println(s"ActorReporter reporting >>> ${msg}")
-    actor_ref ! ReporterActor.ServerRequest(msg)
+    actor_ref ! ReporterActor.ServerReport(msg)
   }
 }
 
 class ViperServerException extends Exception
 
 case class ViperServerWrongTypeException(name: String) extends ViperServerException {
-  override def toString: String = s"Verification backend (a.k.a. SiliconFrontend) $name."
+  override def toString: String = s"Verification backend (<: SilFrontend) `$name`."
 }
 
 case class ViperServerBackendNotFoundException(name: String) extends ViperServerException {
-  override def toString: String = s"Verification backend (a.k.a. SiliconFrontend) $name could not be not found."
+  override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be not found."
 }
 
-class VerificationWorker(val _reporter: ActorRef, val command: List[String])
-  extends Runnable with LazyLogging {
-
+class VerificationWorker(private val _reporter: ActorRef,
+                         private val logger: Logger,
+                         private val command: List[String]) extends Runnable {
 
   private def resolveCustomBackend(clazzName: String, rep: Reporter): Option[SilFrontend] = {
     (try {
@@ -58,9 +58,11 @@ class VerificationWorker(val _reporter: ActorRef, val command: List[String])
       val constructor = Class.forName(clazzName).getConstructor(classOf[viper.silver.reporter.Reporter])
       //Class.forName("viper.silicon.SiliconFrontend").getConstructors()(0)
       Some(constructor.newInstance(rep))
-    } catch {
+    }
+    catch {
       case e: ClassNotFoundException => None
-    }) match {
+    })
+    match {
       case Some(instance) if instance.isInstanceOf[SilFrontend] =>
         Some(instance.asInstanceOf[SilFrontend])
       case Some(instance) =>
@@ -70,47 +72,63 @@ class VerificationWorker(val _reporter: ActorRef, val command: List[String])
     }
   }
 
-  private var _backend: ViperBackend = _
+  private var backend: ViperBackend = _
 
   def run(): Unit = {
     try {
       command match {
         case "silicon" :: args =>
-          _backend = new ViperBackend(new SiliconFrontend(new ActorReporter(_reporter, "silicon")))
-          _backend.execute(args)
+          logger.info("Creating new Silicon verification backend.")
+          backend = new ViperBackend(new SiliconFrontend(new ActorReporter(_reporter, "silicon"))(logger))
+          backend.execute(args)
         case "carbon" :: args =>
-          _backend = new ViperBackend(new CarbonFrontend(new ActorReporter(_reporter, "carbon")))
-          _backend.execute(args)
+          logger.info("Creating new Carbon verification backend.")
+          backend = new ViperBackend(new CarbonFrontend(new ActorReporter(_reporter, "carbon"))(logger))
+          backend.execute(args)
         case custom :: args =>
-          _backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(_reporter, custom)).get)
-          _backend.execute(args)
+          logger.info(s"Creating new verification backend based on class ${custom}.")
+          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(_reporter, custom)).get)
+          backend.execute(args)
         case args =>
-          logger.info("invalid arguments: ${args.toString}",
+          logger.error("invalid arguments: ${args.toString}",
             "You need to specify the verification backend, e.g., `silicon [args]`")
       }
-    } catch {
-      //case _: InterruptedException =>
-      //case _: java.nio.channels.ClosedByInterruptException =>
-      case e: Exception =>
-        _reporter ! ReporterActor.ServerRequest(reporter.ExceptionReport(e))
-        //e.printStackTrace(System.err)
-    } finally {
+    }
+    catch {
+      case _: InterruptedException =>
+      case _: java.nio.channels.ClosedByInterruptException =>
+      case e: Throwable =>
+        _reporter ! ReporterActor.ServerReport(reporter.ExceptionReport(e))
+        logger.trace(s"Creation/Execution of the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
+    }
+    finally {
       try {
-        _backend.stop
-      } catch {
-        case _: Throwable =>
+        backend.stop
+      }
+      catch {
+        case e: Throwable =>
+          logger.trace(s"Stopping the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
       }
     }
-    if (_backend != null) {
-      _reporter ! ReporterActor.FinalServerRequest
+
+    if (backend != null) {
+      logger.info(s"The command `${command.mkString(" ")}` has been executed.")
+      _reporter ! ReporterActor.FinalServerReport(true)
     } else {
-      _reporter ! ReporterActor.FinalServerRequest
-      println(s"The command $command did not result in initialization of verification backend.")
+      logger.error(s"The command `${command.mkString(" ")}` did not result in initialization of verification backend.")
+      _reporter ! ReporterActor.FinalServerReport(false)
     }
   }
 }
 
 class ViperBackend(private val _frontend: SilFrontend) {
+
+  override def toString: String = {
+    if ( _frontend.verifier == null )
+      s"ViperBackend( ${_frontend.getClass.getName} /with uninitialized verifier/ )"
+    else
+      s"ViperBackend( ${_frontend.verifier.name} )"
+  }
 
   private def collectDefinitions(program: Program): List[Definition] = (program.members.collect {
 
@@ -547,52 +565,5 @@ class ViperBackend(private val _frontend: SilFrontend) {
   }
 
   def stop = _frontend.verifier.stop()
-
-  /** The operations below are borrowed from whatever implementation of SilFrontend is the _frontend field. */
-  /*
-  val logger: Logger = _frontend.logger
-  def createVerifier(fullCmd: String): Verifier = _frontend.createVerifier(fullCmd)
-  def configureVerifier(args: Seq[String]): SilFrontendConfig = _frontend.configureVerifier(args)
-  def verifier: Verifier = _frontend.verifier
-  def ver: Verifier = _frontend.ver
-  def config: SilFrontendConfig = _frontend.config
-  def program: Option[Program] = _frontend.program // this one comes all the way from DefaultFrontend
-  */
-
-  /** The operations below are not supposed to be used by instances of ViperFrontend. */
-  /*
-  protected var _ver: Verifier =
-
-
-  def config =
-  protected var _plugins: SilverPluginManager =
-  protected var _config: SilFrontendConfig =
-  def plugins =
-  protected var _startTime: Long =
-  def startTime =
-  def resetMessages() =
-  def setVerifier(verifier:Verifier): Unit =
-  def prepare(args: Seq[String]): Boolean =
-  def execute(args: Seq[String])
-  override def reset(input: Path): Unit =
-  def setStartTime(): Unit =
-  protected def getVerifierName: String =
-
-  def finish(): Unit =
-  protected def parseCommandLine(args: Seq[String]) =
-  protected def printFallbackHeader() =
-  protected def printHeader() =
-  protected def printFinishHeader() =
-
-  protected def printFinishHeaderWithTime() = frontend.printFinishHeaderWithTime()
-
-  override def printErrors(errors: AbstractError*) = frontend.printErrors()
-  override def printSuccess() = frontend.printSuccess()
-  override def doParse(input: String): Result[ParserResult] = frontend.doParse(input)
-  override def doTypecheck(input: ParserResult): Result[TypecheckerResult] = frontend.doTypecheck(input)
-  override def doTranslate(input: TypecheckerResult): Result[Program] = frontend.doTranslate(input)
-
-  override def mapVerificationResult(in: VerificationResult): VerificationResult = frontend.mapVerificationResult(in)
-  */
 }
 
