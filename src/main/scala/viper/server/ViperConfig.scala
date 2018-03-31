@@ -9,7 +9,7 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
   private val logging_levels = Array("ALL", "TRACE", "DEBUG", "INFO", "WARN", "ERROR", "OFF")
 
   val logLevel: ScallopOption[String] = opt[String]("logLevel",
-    descr = s"One of the log levels: ${logging_levels.mkString(",")}",
+    descr = s"One of the log levels: ${logging_levels.mkString(",")}.",
     default = Some("ALL"),
     validate = (ll: String) => logging_levels.contains(ll.toUpperCase),
     noshort = true,
@@ -24,22 +24,29 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
       Some(temp.getAbsolutePath)
     },
     validate = (path: String) => {
-      val f = new File(canonizedLogFile(path))
-      f.isFile && f.canWrite || f.getParentFile.canWrite
+      val f = canonizedLogFile(path)
+      (f.isFile || f.isDirectory) && f.canWrite || f.getParentFile.canWrite
     },
     noshort = true,
     hidden = false)
 
-  def canonizedLogFile(some_file_path: String): String = {
+  private def canonizedLogFile(some_file_path: String): File = {
     val f = new File(some_file_path)
     if (f.isAbsolute) {
-      some_file_path
+      f
     } else {
-      java.nio.file.Paths.get(System.getProperty("user.dir"), some_file_path).toAbsolutePath.toString
+      java.nio.file.Paths.get(System.getProperty("user.dir"), some_file_path).toFile
     }
   }
-
-  def canonizedLogFile(): String = canonizedLogFile(logFile())
+  def getLogFileWithGuarantee(): String = {
+    val cf: File = canonizedLogFile(logFile())
+    if ( cf.isDirectory ) {
+      val log: File = java.io.File.createTempFile("viperserver_journal_" + System.currentTimeMillis(), ".log", cf)
+      log.toString
+    } else {
+      cf.toString
+    }
+  }
 
   val ideMode: ScallopOption[Boolean] = opt[Boolean]("ideMode",
     descr = ("Used for VS Code IDE. Report errors in json format, and write"
