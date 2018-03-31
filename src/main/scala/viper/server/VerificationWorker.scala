@@ -78,11 +78,11 @@ class VerificationWorker(private val reporter: ActorRef,
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
-          backend = new ViperBackend(new SiliconFrontend(new ActorReporter(reporter, "silicon"))(logger))
+          backend = new ViperBackend(new SiliconFrontend(new ActorReporter(reporter, "silicon"), logger))
           backend.execute(args)
         case "carbon" :: args =>
           logger.info("Creating new Carbon verification backend.")
-          backend = new ViperBackend(new CarbonFrontend(new ActorReporter(reporter, "carbon"))(logger))
+          backend = new ViperBackend(new CarbonFrontend(new ActorReporter(reporter, "carbon"), logger))
           backend.execute(args)
         case custom :: args =>
           logger.info(s"Creating new verification backend based on class ${custom}.")

@@ -22,11 +22,12 @@ import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.server.Directives._
-import ch.qos.logback.classic.Logger
+
 import viper.server.ViperServerProtocol._
 import viper.server.ViperIDEProtocol._
 import viper.silver.reporter
 import viper.silver.reporter._
+import viper.silver.logger.ViperLogger
 
 import scala.util.Try
 
@@ -55,7 +56,6 @@ object ViperServerRunner {
   }
 
   class Terminator(bindingFuture: Future[Http.ServerBinding]) extends Actor {
-    implicit val executionContext: ExecutionContextExecutor = system.dispatcher
 
     override def receive: PartialFunction[Any, Unit] = {
       case Terminator.Exit =>
@@ -102,12 +102,10 @@ object ViperServerRunner {
   // (See model description in ViperServerProtocol.scala)
 
   object MainActor {
-    def props(id: Int, logger: ViperServerLogger): Props = Props(new MainActor(id, logger))
+    def props(id: Int, logger: ViperLogger): Props = Props(new MainActor(id, logger))
   }
 
-  class MainActor(private val id: Int, private val logger: ViperServerLogger) extends Actor {
-
-    implicit val executionContext: ExecutionContextExecutor = system.dispatcher
+  class MainActor(private val id: Int, private val logger: ViperLogger) extends Actor {
 
     private var _verificationTask: Thread = _
     private var _args: List[String] = _
@@ -196,7 +194,7 @@ object ViperServerRunner {
     }
   }
 
-  protected def routes(logger: ViperServerLogger) = {
+  protected def routes(logger: ViperLogger) = {
     /**
       * Send GET request to "/exit".
       *
@@ -340,7 +338,7 @@ object ViperServerRunner {
       sys.exit(1)
     }
 
-    val logger = new ViperServerLogger(config.getLogFileWithGuarantee(), config.logLevel())
+    val logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
 
     ViperCache.initialize(config.backendSpecificCache())
 
@@ -348,9 +346,8 @@ object ViperServerRunner {
     val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(routes(logger), "localhost", port)
     _term_actor = system.actorOf(Terminator.props(bindingFuture), "terminator")
 
-    println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file}")
+    println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
     println(s"ViperServer online at http://localhost:$port")
-
 
   } // method main
 

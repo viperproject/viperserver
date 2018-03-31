@@ -10,7 +10,7 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
 
   val logLevel: ScallopOption[String] = opt[String]("logLevel",
     descr = s"One of the log levels: ${logging_levels.mkString(",")}.",
-    default = Some("ALL"),
+    default = Some("ERROR"),
     validate = (ll: String) => logging_levels.contains(ll.toUpperCase),
     noshort = true,
     hidden = false
@@ -38,7 +38,7 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
       java.nio.file.Paths.get(System.getProperty("user.dir"), some_file_path).toFile
     }
   }
-  def getLogFileWithGuarantee(): String = {
+  def getLogFileWithGuarantee: String = {
     val cf: File = canonizedLogFile(logFile())
     if ( cf.isDirectory ) {
       val log: File = java.io.File.createTempFile("viperserver_journal_" + System.currentTimeMillis(), ".log", cf)
