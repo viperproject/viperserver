@@ -44,20 +44,19 @@ case class ViperServerWrongTypeException(name: String) extends ViperServerExcept
 }
 
 case class ViperServerBackendNotFoundException(name: String) extends ViperServerException {
-  override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be not found."
+  override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be found."
 }
 
-class VerificationWorker(private val _reporter: ActorRef,
+class VerificationWorker(private val reporter: ActorRef,
                          private val logger: Logger,
                          private val command: List[String]) extends Runnable {
 
   private def resolveCustomBackend(clazzName: String, rep: Reporter): Option[SilFrontend] = {
     (try {
-      //val clazz: Class[_] = Class.forName(clazzName)
-      //val arg_decls = Array[Class[_]](classOf[Reporter])
-      val constructor = Class.forName(clazzName).getConstructor(classOf[viper.silver.reporter.Reporter])
-      //Class.forName("viper.silicon.SiliconFrontend").getConstructors()(0)
-      Some(constructor.newInstance(rep))
+      val constructor = Class.forName(clazzName).getConstructor(
+        classOf[viper.silver.reporter.Reporter],
+        classOf[ch.qos.logback.classic.Logger])
+      Some(constructor.newInstance(rep, logger))
     }
     catch {
       case e: ClassNotFoundException => None
@@ -79,15 +78,15 @@ class VerificationWorker(private val _reporter: ActorRef,
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
-          backend = new ViperBackend(new SiliconFrontend(new ActorReporter(_reporter, "silicon"))(logger))
+          backend = new ViperBackend(new SiliconFrontend(new ActorReporter(reporter, "silicon"))(logger))
           backend.execute(args)
         case "carbon" :: args =>
           logger.info("Creating new Carbon verification backend.")
-          backend = new ViperBackend(new CarbonFrontend(new ActorReporter(_reporter, "carbon"))(logger))
+          backend = new ViperBackend(new CarbonFrontend(new ActorReporter(reporter, "carbon"))(logger))
           backend.execute(args)
         case custom :: args =>
           logger.info(s"Creating new verification backend based on class ${custom}.")
-          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(_reporter, custom)).get)
+          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(reporter, custom)).get)
           backend.execute(args)
         case args =>
           logger.error("invalid arguments: ${args.toString}",
@@ -98,7 +97,7 @@ class VerificationWorker(private val _reporter: ActorRef,
       case _: InterruptedException =>
       case _: java.nio.channels.ClosedByInterruptException =>
       case e: Throwable =>
-        _reporter ! ReporterActor.ServerReport(reporter.ExceptionReport(e))
+        reporter ! ReporterActor.ServerReport(ExceptionReport(e))
         logger.trace(s"Creation/Execution of the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
     }
     finally {
@@ -113,10 +112,10 @@ class VerificationWorker(private val _reporter: ActorRef,
 
     if (backend != null) {
       logger.info(s"The command `${command.mkString(" ")}` has been executed.")
-      _reporter ! ReporterActor.FinalServerReport(true)
+      reporter ! ReporterActor.FinalServerReport(true)
     } else {
       logger.error(s"The command `${command.mkString(" ")}` did not result in initialization of verification backend.")
-      _reporter ! ReporterActor.FinalServerReport(false)
+      reporter ! ReporterActor.FinalServerReport(false)
     }
   }
 }
