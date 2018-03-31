@@ -348,8 +348,9 @@ object ViperServerRunner {
     val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(routes(logger), "localhost", port)
     _term_actor = system.actorOf(Terminator.props(bindingFuture), "terminator")
 
-    println(s"ViperServer online at http://localhost:$port")
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file}")
+    println(s"ViperServer online at http://localhost:$port")
+
 
   } // method main
 
