@@ -227,7 +227,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val pongMessage_writer: RootJsonFormat[PongMessage] = lift(new RootJsonWriter[PongMessage] {
-    override def write(obj: PongMessage) = JsObject("msg" -> JsString(obj.msg))
+    override def write(obj: PongMessage) = JsObject("msg" -> JsString(obj.text))
   })
 
   implicit val message_writer: RootJsonFormat[Message] = lift(new RootJsonWriter[Message] {
