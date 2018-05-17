@@ -11,8 +11,8 @@ import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSup
 import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import spray.json.DefaultJsonProtocol
-import viper.silver.reporter._
-import viper.silver.verifier.{AbstractError, Failure, Success, VerificationResult}
+import viper.silver.reporter.{InvalidArgumentsReport, _}
+import viper.silver.verifier._
 
 
 object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
@@ -219,11 +219,30 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val exceptionReport_writer: RootJsonFormat[ExceptionReport] = lift(new RootJsonWriter[ExceptionReport] {
-    override def write(obj: ExceptionReport): JsObject = {
-      JsObject(
+    override def write(obj: ExceptionReport) = JsObject(
         "message" -> JsString(obj.e.toString),
         "stacktrace" -> JsArray(obj.e.getStackTrace.map(_.toJson).toVector))
-    }
+  })
+
+  implicit val invalidArgumentsReport_writer: RootJsonFormat[InvalidArgumentsReport] = lift(new RootJsonWriter[InvalidArgumentsReport] {
+    override def write(obj: InvalidArgumentsReport) = JsObject(
+      "tool" -> JsString(obj.tool_signature),
+      "errors" -> JsArray(obj.errors.map(_.toJson).toVector))
+  })
+
+  implicit val dependency_writer: RootJsonFormat[Dependency] = lift(new RootJsonWriter[Dependency] {
+    override def write(obj: Dependency) = JsObject(
+      "name" -> JsString(obj.name),
+      "version" -> JsString(obj.version),
+      "location" -> JsString(obj.location))
+  })
+
+  implicit val externalDependenciesReport_writer: RootJsonFormat[ExternalDependenciesReport] = lift(new RootJsonWriter[ExternalDependenciesReport] {
+    override def write(obj: ExternalDependenciesReport) = JsArray(obj.deps.map(_.toJson).toVector)
+  })
+
+  implicit val simpleMessage_writer: RootJsonFormat[SimpleMessage] = lift(new RootJsonWriter[SimpleMessage] {
+    override def write(obj: SimpleMessage) = JsObject("text" -> JsString(obj.text))
   })
 
   implicit val pongMessage_writer: RootJsonFormat[PongMessage] = lift(new RootJsonWriter[PongMessage] {
@@ -240,7 +259,9 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case d: ProgramDefinitionsReport => d.toJson
         case e: SymbExLogReport => e.toJson
         case x: ExceptionReport => x.toJson
-        case f: PongMessage => f.toJson
+        case i: InvalidArgumentsReport => i.toJson
+        case r: ExternalDependenciesReport => r.toJson
+        case m: SimpleMessage => m.toJson
       }))
   })
 
