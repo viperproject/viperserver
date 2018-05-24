@@ -6,7 +6,7 @@
 
 import java.nio.file.Path
 
-import viper.server.ViperCarbonFrontend
+//import viper.server.ViperCarbonFrontend
 import viper.silver.frontend.Frontend
 import viper.silver.reporter.StdIOReporter
 import viper.silver.testing.SilSuite

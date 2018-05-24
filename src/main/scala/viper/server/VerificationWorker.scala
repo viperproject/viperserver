@@ -13,7 +13,7 @@ import akka.actor.ActorRef
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperServerRunner.ReporterActor
-import viper.silicon.SiliconFrontend
+import viper.silicon.{SiliconFrontend, SymbExLogger}
 import viper.silver.ast.{Position, _}
 import viper.silver.frontend.{SilFrontend, TranslatorState}
 import viper.silver.reporter
@@ -267,13 +267,21 @@ class ViperBackend(private val _frontend: SilFrontend) {
 
     // finish by reporting the overall outcome
 
+    val endTime = System.currentTimeMillis();
     _frontend.result match {
       case Success =>
         //printSuccess();
-        _frontend.reporter.report(OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime))
+        _frontend.reporter.report(OverallSuccessMessage(_frontend.getVerifierName, endTime - _frontend.startTime))
+        // TODO: Think again about where to detect and trigger SymbExLogging
+        if (SymbExLogger.enabled) {
+          _frontend.reporter.report(SymbExLogReport(endTime, Some(SymbExLogger.toJSString())));
+        }
       case f@Failure(_) =>
         //printErrors(errors: _*);
-        _frontend.reporter.report(OverallFailureMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime, f))
+        _frontend.reporter.report(OverallFailureMessage(_frontend.getVerifierName, endTime - _frontend.startTime, f))
+        if (SymbExLogger.enabled) {
+          _frontend.reporter.report(SymbExLogReport(endTime, None));
+        }
     }
   }
 

@@ -204,11 +204,12 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
 
   implicit val symbExLogReport_writer: RootJsonFormat[SymbExLogReport] = lift(new RootJsonWriter[SymbExLogReport] {
     override def write(obj: SymbExLogReport) = JsObject(
-      "entity" -> obj.entity.toJson,
+      //"entity" -> obj.entity.toJson,
       "timestamp" -> obj.timestamp.toJson,
       obj.stuff match {
         case Some(stuff) =>
-          "stuff" -> JsString(s"<json transformer not implemented for attachment ${stuff.toString}>")
+          //"stuff" -> JsString(s"<json transformer not implemented for attachment ${stuff.toString}>")
+          "stuff" -> JsString(stuff.toString)
         case _ =>
           "stuff" -> JsString(s"<empty attachment>")
       })
