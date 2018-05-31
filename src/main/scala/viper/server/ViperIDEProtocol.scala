@@ -206,13 +206,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: SymbExLogReport) = JsObject(
       //"entity" -> obj.entity.toJson,
       "timestamp" -> obj.timestamp.toJson,
-      obj.stuff match {
-        case Some(stuff) =>
-          //"stuff" -> JsString(s"<json transformer not implemented for attachment ${stuff.toString}>")
-          "stuff" -> JsString(stuff.toString)
-        case _ =>
-          "stuff" -> JsString(s"<empty attachment>")
-      })
+      "log" -> JsString(obj.log)
+    )
   })
 
   implicit val stackTraceElement_writer: RootJsonFormat[StackTraceElement] = lift(new RootJsonWriter[java.lang.StackTraceElement] {
