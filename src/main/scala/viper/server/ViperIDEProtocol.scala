@@ -11,6 +11,8 @@ import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSup
 import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import spray.json.DefaultJsonProtocol
+import viper.SymbExLogReportWriter
+import viper.silicon.SymbExLogger
 import viper.silver.reporter.{InvalidArgumentsReport, _}
 import viper.silver.verifier._
 
@@ -202,11 +204,11 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: ProgramDefinitionsReport) = JsObject("definitions" -> JsArray(obj.definitions.map(_.toJson).toVector))
   })
 
-  implicit val symbExLogReport_writer: RootJsonFormat[SymbExLogReport] = lift(new RootJsonWriter[SymbExLogReport] {
+  implicit val symbeExLogReport_writer: RootJsonFormat[SymbExLogReport] = lift(new RootJsonWriter[SymbExLogReport] {
+
     override def write(obj: SymbExLogReport) = JsObject(
-      //"entity" -> obj.entity.toJson,
       "timestamp" -> obj.timestamp.toJson,
-      "log" -> JsString(obj.log)
+      "log" -> JsArray(SymbExLogger.memberList.map(m => SymbExLogReportWriter.toJSON(m.main)).toVector)
     )
   })
 

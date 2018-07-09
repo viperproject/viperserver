@@ -278,7 +278,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
     }
 
     if (SymbExLogger.enabled) {
-      _frontend.reporter.report(SymbExLogReport(System.currentTimeMillis(), SymbExLogger.toJSString()))
+      _frontend.reporter.report(SymbExLogReport(System.currentTimeMillis()))
     }
   }
 
