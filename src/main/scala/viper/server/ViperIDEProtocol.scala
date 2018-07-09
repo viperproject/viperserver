@@ -11,7 +11,6 @@ import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSup
 import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import spray.json.DefaultJsonProtocol
-import viper.SymbExLogReportWriter
 import viper.silicon.SymbExLogger
 import viper.silver.reporter.{InvalidArgumentsReport, _}
 import viper.silver.verifier._
