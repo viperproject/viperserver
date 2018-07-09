@@ -203,7 +203,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: ProgramDefinitionsReport) = JsObject("definitions" -> JsArray(obj.definitions.map(_.toJson).toVector))
   })
 
-  implicit val symbeExLogReport_writer: RootJsonFormat[SymbExLogReport] = lift(new RootJsonWriter[SymbExLogReport] {
+  implicit val symbExLogReport_writer: RootJsonFormat[SymbExLogReport] = lift(new RootJsonWriter[SymbExLogReport] {
 
     override def write(obj: SymbExLogReport) = JsObject(
       "timestamp" -> obj.timestamp.toJson,
