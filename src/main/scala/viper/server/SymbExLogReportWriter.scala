@@ -1,6 +1,6 @@
 package viper.server
 
-import viper.silicon.state.terms.{BuiltinEquals, Combine}
+import viper.silicon.state.terms.{BuiltinEquals, Combine, Unit}
 import viper.silicon.verifier.Verifier
 import viper.silicon._
 
@@ -27,10 +27,13 @@ object SymbExLogReportWriter {
       case Some(h) => JsArray(h.values.map(v => JsString(v.toString)).toVector)
       case _ => JsArray()
     }
-    val pathConditions = JsArray(pcs.filterNot {
-        case c: BuiltinEquals if c.p0.isInstanceOf[Combine] || c.p1.isInstanceOf[Combine] => true
+
+    // Ignore empty combines
+    val filteredPcs = pcs.filterNot {
+        case BuiltinEquals(_, Combine(Unit, Unit)) => true
         case _ => false
-      }.map(pc => JsString(pc.toString)).toVector)
+      }
+    val pathConditions = JsArray(filteredPcs.map(TermWriter.toJSON).toVector)
 
     JsObject(
       "store" -> store,
@@ -168,10 +171,7 @@ object SymbExLogReportWriter {
       if (r.lastFailedProverQuery.isDefined) {
         members += ("lastSMTQuery" -> JsString(r.lastFailedProverQuery.get.toString))
       }
-
-      if (r.subs.nonEmpty) {
-        members += ("children" -> JsArray(r.subs.map(toJSON).toVector))
-      }
+      members += ("children" -> JsArray(r.subs.map(toJSON).toVector))
 
       JsObject(members.result():_*)
   }
