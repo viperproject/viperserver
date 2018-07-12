@@ -11,7 +11,7 @@ import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSup
 import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import spray.json.DefaultJsonProtocol
-import viper.silicon.SymbExLogger
+import viper.silicon.SymbLog
 import viper.silver.reporter.{InvalidArgumentsReport, _}
 import viper.silver.verifier._
 
@@ -203,12 +203,21 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: ProgramDefinitionsReport) = JsObject("definitions" -> JsArray(obj.definitions.map(_.toJson).toVector))
   })
 
-  implicit val symbExLogReport_writer: RootJsonFormat[SymbExLogReport] = lift(new RootJsonWriter[SymbExLogReport] {
+  implicit val symbExLogReport_writer: RootJsonFormat[ExecutionTraceReport] = lift(new RootJsonWriter[ExecutionTraceReport] {
 
-    override def write(obj: SymbExLogReport) = JsObject(
-      "timestamp" -> obj.timestamp.toJson,
-      "log" -> JsArray(SymbExLogger.memberList.map(m => SymbExLogReportWriter.toJSON(m.main)).toVector)
-    )
+    override def write(obj: ExecutionTraceReport) = obj match {
+      case ExecutionTraceReport(timestamp, members: List[SymbLog]) =>
+        JsObject(
+          "timestamp" -> timestamp.toJson,
+          "log" -> JsArray(members.map(m => SymbExLogReportWriter.toJSON(m.main)).toVector)
+        )
+
+      case ExecutionTraceReport(timestamp, members) =>
+        JsObject(
+          "timestamp" -> timestamp.toJson,
+          "log" -> JsArray(members.map(m => JsString(m.toString)).toVector)
+        )
+    }
   })
 
   implicit val stackTraceElement_writer: RootJsonFormat[StackTraceElement] = lift(new RootJsonWriter[java.lang.StackTraceElement] {
@@ -254,7 +263,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case s: StatisticsReport => s.toJson
         case o: ProgramOutlineReport => o.toJson
         case d: ProgramDefinitionsReport => d.toJson
-        case e: SymbExLogReport => e.toJson
+        case e: ExecutionTraceReport => e.toJson
         case x: ExceptionReport => x.toJson
         case i: InvalidArgumentsReport => i.toJson
         case r: ExternalDependenciesReport => r.toJson
