@@ -277,8 +277,8 @@ class ViperBackend(private val _frontend: SilFrontend) {
         _frontend.reporter.report(OverallFailureMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime, f))
     }
 
-    if (SymbExLogger.enabled) {
-      _frontend.reporter.report(SymbExLogReport(System.currentTimeMillis()))
+    if (_frontend.config.ideModeAdvanced()) {
+      _frontend.reporter.report(ExecutionTraceReport(System.currentTimeMillis(), SymbExLogger.memberList))
     }
   }
 
