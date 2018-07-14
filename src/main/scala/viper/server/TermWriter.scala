@@ -72,8 +72,8 @@ object TermWriter {
         "args" -> JsArray((args map toJSON).toVector)
       )
 
-    case And(terms) => JsObject("type" -> JsString("and"), "elems" -> JsArray((terms map toJSON).toVector))
-    case Or(terms) => JsObject("type" -> JsString("or"), "elems" -> JsArray((terms map toJSON).toVector))
+    case And(terms) => JsObject("type" -> JsString("and"), "terms" -> JsArray((terms map toJSON).toVector))
+    case Or(terms) => JsObject("type" -> JsString("or"), "terms" -> JsArray((terms map toJSON).toVector))
 
     case Distinct(symbols) =>
       JsObject(
@@ -106,10 +106,12 @@ object TermWriter {
         "value" -> JsString(l.toString)
       )
 
-    // PermLiteral is not actually a Literal. This case can actually be reached.
+    // PermLiteral is not actually a Literal. This case can actually be reached
+    // and we map PermLiterals to normal literals.
     case p: PermLiteral =>
       JsObject(
-        "type" -> JsString("permLiteral"),
+        "type" -> JsString("literal"),
+        "sort" -> JsString(sorts.Perm.toString),
         "value" -> JsString(p.toString)
       )
 
