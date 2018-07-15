@@ -5,13 +5,87 @@ import viper.silicon.verifier.Verifier
 import viper.silicon._
 
 import scala.collection.immutable.VectorBuilder
-
 import spray.json._
+import viper.silicon.interfaces.state.Chunk
+import viper.silicon.resources.{FieldID, PredicateID}
+import viper.silicon.state.{utils => _, _}
 
 
 // TODO: Clean this up
 /** Wrapper for the SymbExLogReport conversion to JSON. */
 object SymbExLogReportWriter {
+
+  private def heapChunkToJSON(chunk: Chunk) = chunk match {
+    case BasicChunk(PredicateID(), id, args, snap, perm) =>
+      JsObject(
+        "type" -> JsString("basic_predicate_chunk"),
+        "predicate" -> JsString(id.toString),
+        "args" -> JsArray(args.map(TermWriter.toJSON).toVector),
+        "snap" -> TermWriter.toJSON(snap),
+        "perm" -> TermWriter.toJSON(perm)
+      )
+
+    case BasicChunk(FieldID(), id, Seq(receiver), snap, perm) =>
+      JsObject(
+        "type" -> JsString("basic_field_chunk"),
+        "field" -> JsString(id.toString),
+        "receiver" -> TermWriter.toJSON(receiver),
+        "snap" -> TermWriter.toJSON(snap),
+        "perm" -> TermWriter.toJSON(perm)
+      )
+
+    // TODO: Are ID and bindings needed?
+    case MagicWandChunk(id, bindings, args, snap, perm) =>
+      JsObject(
+        "type" -> JsString("basic_magic_wand_chunk"),
+        "args" -> JsArray(args.map(TermWriter.toJSON).toVector),
+        "snap" -> TermWriter.toJSON(snap),
+        "perm" -> TermWriter.toJSON(perm)
+      )
+
+    case QuantifiedFieldChunk(id, fvf, perm, invs, cond, receiver, hints) =>
+      JsObject(
+        "type" -> JsString("quantified_field_chunk"),
+        "field" -> JsString(id.toString),
+        "field_value_function" -> TermWriter.toJSON(fvf),
+        "perm" -> TermWriter.toJSON(perm),
+        "invs" -> invs.map(i => JsString(i.toString)).getOrElse(JsNull),
+        "cond" -> cond.map(TermWriter.toJSON).getOrElse(JsNull),
+        "receiver" -> receiver.map(TermWriter.toJSON).getOrElse(JsNull),
+        "hints" -> (if (hints != Nil) JsArray(hints.map(TermWriter.toJSON).toVector) else JsNull)
+      )
+
+    case QuantifiedPredicateChunk(id, vars, psf, perm, invs, cond, singletonArgs, hints) =>
+      JsObject(
+        "type" -> JsString("quantified_predicate_chunk"),
+        "vars" -> JsArray(vars.map(TermWriter.toJSON).toVector),
+        "predicate" -> JsString(id.toString),
+        "predicate_snap_function" -> TermWriter.toJSON(psf),
+        "perm" -> TermWriter.toJSON(perm),
+        "invs" -> invs.map(i => JsString(i.toString)).getOrElse(JsNull),
+        "cond" -> cond.map(TermWriter.toJSON).getOrElse(JsNull),
+        "singleton_args" -> singletonArgs.map(as => JsArray(as.map(TermWriter.toJSON).toVector)).getOrElse(JsNull),
+        "hints" -> (if (hints != Nil) JsArray(hints.map(TermWriter.toJSON).toVector) else JsNull)
+      )
+
+    case QuantifiedMagicWandChunk(id, vars, wsf, perm, invs, cond, singletonArgs, hints) =>
+      JsObject(
+        "type" -> JsString("quantified_magic_wand_chunk"),
+        "vars" -> JsArray(vars.map(TermWriter.toJSON).toVector),
+        "predicate" -> JsString(id.toString),
+        "wand_snap_function" -> TermWriter.toJSON(wsf),
+        "perm" -> TermWriter.toJSON(perm),
+        "invs" -> invs.map(i => JsString(i.toString)).getOrElse(JsNull),
+        "cond" -> cond.map(TermWriter.toJSON).getOrElse(JsNull),
+        "singleton_args" -> singletonArgs.map(as => JsArray(as.map(TermWriter.toJSON).toVector)).getOrElse(JsNull),
+        "hints" -> (if (hints != Nil) JsArray(hints.map(TermWriter.toJSON).toVector) else JsNull)
+      )
+
+    case other => JsObject(
+      "type" -> JsString("unstructrured_chunk"),
+      "value" -> JsString(other.toString)
+    )
+  }
 
   // TODO: Implement structured translation of the state (PCs, heap?, store?)
   private def stateToJSON(record: SymbolicRecord) = {
@@ -22,9 +96,9 @@ object SymbExLogReportWriter {
       "value" -> JsString(v._1.toString() + " -> " + v._2.toString),
       "type" -> JsString(v._1.typ.toString())
     )).toVector)
-    val heap = JsArray(state.h.values.map(v => JsString(v.toString)).toVector)
+    val heap = JsArray(state.h.values.map(heapChunkToJSON).toVector)
     val oldHeap = state.oldHeaps.get(Verifier.PRE_STATE_LABEL) match {
-      case Some(h) => JsArray(h.values.map(v => JsString(v.toString)).toVector)
+      case Some(h) => JsArray(h.values.map(heapChunkToJSON).toVector)
       case _ => JsArray()
     }
 
