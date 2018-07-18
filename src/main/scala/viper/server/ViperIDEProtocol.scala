@@ -206,7 +206,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: SymbExLogReport) = JsObject(
       //"entity" -> obj.entity.toJson,
       "timestamp" -> obj.timestamp.toJson,
-      "log" -> JsString(obj.log)
+      "log" -> JsString("<omitted>")
     )
   })
 

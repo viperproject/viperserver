@@ -29,7 +29,7 @@ class ActorReporter(private val actor_ref: ActorRef, val tag: String)
 
   val name = s"ViperServer_$tag"
 
-  def report(msg: reporter.Message) = {
+  def report(msg: reporter.Message): Unit = {
     //println(s"ActorReporter reporting >>> ${msg}")
     actor_ref ! ReporterActor.ServerReport(msg)
   }
@@ -83,7 +83,7 @@ class VerificationWorker(private val reporter: ActorRef,
           backend = new ViperBackend(new CarbonFrontend(new ActorReporter(reporter, "carbon"), logger))
           backend.execute(args)
         case custom :: args =>
-          logger.info(s"Creating new verification backend based on class ${custom}.")
+          logger.info(s"Creating new verification backend based on class $custom.")
           backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(reporter, custom)).get)
           backend.execute(args)
         case args =>
@@ -100,7 +100,7 @@ class VerificationWorker(private val reporter: ActorRef,
     }
     finally {
       try {
-        backend.stop
+        backend.stop()
       }
       catch {
         case e: Throwable =>
@@ -245,15 +245,15 @@ class ViperBackend(private val _frontend: SilFrontend) {
       val prog: Program = _frontend.program.get
       val stats = countInstances(prog)
 
-      _frontend.reporter.report(new ProgramOutlineReport(prog.members.toList))
-      _frontend.reporter.report(new StatisticsReport(
+      _frontend.reporter.report(ProgramOutlineReport(prog.members.toList))
+      _frontend.reporter.report(StatisticsReport(
         stats.getOrElse("method", 0),
         stats.getOrElse("function", 0),
         stats.getOrElse("predicate", 0),
         stats.getOrElse("domain", 0),
         stats.getOrElse("field", 0)
       ))
-      _frontend.reporter.report(new ProgramDefinitionsReport(collectDefinitions(prog)))
+      _frontend.reporter.report(ProgramDefinitionsReport(collectDefinitions(prog)))
 
       if (_frontend.config.disableCaching()) {
         _frontend.doVerify()
@@ -278,7 +278,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
     }
 
     if (SymbExLogger.enabled) {
-      _frontend.reporter.report(SymbExLogReport(System.currentTimeMillis(), SymbExLogger.toJSString()))
+      _frontend.reporter.report(PongMessage("<Stub SymbExLoggerReport>"))
     }
   }
 
@@ -366,9 +366,15 @@ class ViperBackend(private val _frontend: SilFrontend) {
             methodsToVerify += m
           } else {
             try {
-              val cachedErrors = updateErrorLocation(m, cacheEntry)
+              val cachedErrors: Seq[VerificationError] = updateErrorLocation(m, cacheEntry)
               errors ++= cachedErrors
               methodsToCache += removeBody(m)
+              //Send the intermediate results to the user as soon as they are available. Approximate the time with zero.
+              if ( cachedErrors.isEmpty ) {
+                _frontend.reporter.report(EntitySuccessMessage(_frontend.getVerifierName, m, 0))
+              } else {
+                _frontend.reporter.report(EntityFailureMessage(_frontend.getVerifierName, m, 0, Failure(cachedErrors)))
+              }
             } catch {
               case e: Exception =>
                 _frontend.logger.warn("The cache lookup failed:" + e)
@@ -566,6 +572,6 @@ class ViperBackend(private val _frontend: SilFrontend) {
     }
   }
 
-  def stop = _frontend.verifier.stop()
+  def stop(): Unit = _frontend.verifier.stop()
 }
 
