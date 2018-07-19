@@ -48,6 +48,7 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     }
   }
 
+  @deprecated
   val ideMode: ScallopOption[Boolean] = opt[Boolean]("ideMode",
     descr = ("Used for VS Code IDE. Report errors in json format, and write"
       + "errors in the format '<file>,<line>:<col>,<line>:<col>,<message>' to"
@@ -64,6 +65,7 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     hidden = false
   )
 
+  @deprecated
   val ideModeAdvanced: ScallopOption[Boolean] = opt[Boolean]("ideModeAdvanced",
     descr = ("Used for VS Code IDE. Write symbolic execution log into .vscode/executionTreeData.js file, "
       + "write execution tree graph into .vscode/dot_input.dot, "

@@ -13,7 +13,7 @@ import viper.silver.verifier.{AbstractVerificationError, errors}
 
 object ViperCache {
   private val cache = collection.mutable.Map[String, collection.mutable.Map[String, CacheEntry]]()
-  override def toString = cache.toString
+  override def toString: String = cache.toString
 
   private var _backendSpecificCache: Boolean = false
 
@@ -55,9 +55,12 @@ object ViperCache {
     }
   }
 
-  def forgetFile(backendName: String, file: String): Unit = {
+  def forgetFile(backendName: String, file: String): Option[String] = {
     val key = getKey(backendName, file)
-    cache.remove(key)
+    cache.remove(key) match {
+      case Some(_) => Some(key)
+      case None => None
+    }
   }
 
   private def getKey(backendName: String, file: String): String = (if (_backendSpecificCache) backendName else "") + file
