@@ -310,11 +310,16 @@ class ViperBackend(private val _frontend: SilFrontend) {
 
     // The entityHashes of the new AST are evaluated lazily.
 
-    val (methodsToVerify, _, cachedErrors) = consultCache()
+    val (methodsToVerify, methodsToCache, cachedErrors) = consultCache()
+    _frontend.logger.debug(
+      s"Retrieved data from cache..." +
+      s" methodsToCache: ${methodsToCache.map(_.name)};" +
+      s" cachedErrors: ${cachedErrors.map(_.readableMessage)};" +
+      s" methodsToVerify: ${methodsToVerify.map(_.name)}.")
 
     val real_program = _frontend.program.get
     val prog: Program = Program(real_program.domains, real_program.fields, real_program.functions, real_program.predicates,
-      methodsToVerify) (real_program.pos, real_program.info, real_program.errT)
+      methodsToVerify ++ methodsToCache) (real_program.pos, real_program.info, real_program.errT)
     val file: String = _frontend.config.file()
 
     _frontend.setVerificationResult( _frontend.mapVerificationResult(_frontend.verifier.verify(prog)) )
