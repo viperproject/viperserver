@@ -50,11 +50,12 @@ object TermWriter {
         "name" -> (if (name != null) JsString(name) else JsNull)
       )
 
-    case App(applicable, args) =>
+    case a @ App(applicable, args) =>
       JsObject(
         "type" -> JsString("application"),
         "applicable" -> JsString(applicable.id.name),
-        "args" -> JsArray((args map toJSON).toVector)
+        "args" -> JsArray((args map toJSON).toVector),
+        "sort" -> JsString(a.sort.toString)
       )
 
     case Lookup(field, fieldValueFunction, receiver) =>
