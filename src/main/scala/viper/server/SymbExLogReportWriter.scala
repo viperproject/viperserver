@@ -9,6 +9,7 @@ import spray.json._
 import viper.silicon.interfaces.state.Chunk
 import viper.silicon.resources.{FieldID, PredicateID}
 import viper.silicon.state.{utils => _, _}
+import viper.silver.ast.AbstractLocalVar
 
 
 // TODO: Clean this up
@@ -92,10 +93,16 @@ object SymbExLogReportWriter {
     val state = record.state
     val pcs = record.pcs
 
-    val store = JsArray(state.g.values.map(v => JsObject(
-      "value" -> JsString(v._1.toString() + " -> " + v._2.toString),
-      "type" -> JsString(v._1.typ.toString())
-    )).toVector)
+    val store = JsArray(state.g.values.map({
+      case (v @ AbstractLocalVar(name), value) =>
+        JsObject(
+          "name" -> JsString(name),
+          "value" -> TermWriter.toJSON(value),
+          "sort" -> JsString(v.typ.toString())
+        )
+      case other =>
+        JsString(s"Unexpected variable in store '$other'")
+    }).toVector)
     val heap = JsArray(state.h.values.map(heapChunkToJSON).toVector)
     val oldHeap = state.oldHeaps.get(Verifier.PRE_STATE_LABEL) match {
       case Some(h) => JsArray(h.values.map(heapChunkToJSON).toVector)
