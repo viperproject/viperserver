@@ -250,7 +250,7 @@ object SymbExLogReportWriter {
       }
 
       if (r.lastFailedProverQuery.isDefined) {
-        members += ("lastSMTQuery" -> JsString(r.lastFailedProverQuery.get.toString))
+        members += ("lastSMTQuery" -> TermWriter.toJSON(r.lastFailedProverQuery.get))
       }
       members += ("children" -> JsArray(r.subs.map(toJSON).toVector))
 
