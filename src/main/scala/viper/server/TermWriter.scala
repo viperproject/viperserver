@@ -28,10 +28,27 @@ object TermWriter {
     JsObject(
       "type" -> JsString("variable"),
       "id" -> JsString(id.name),
-      "sort" -> JsString(sort.toString)
+      "sort" -> toJSON(sort)
     )
 
-  // TODO: Might have to also structure Sorts, because of parametric types such as Set[...]
+  private def toJSON(sort: Sort): JsValue = {
+    def s(name: String, elementsSort: Sort) = JsObject(
+      "id" -> JsString(name),
+      "elementsSort" -> toJSON(elementsSort)
+    )
+
+    sort match {
+      case sorts.Unit => JsObject("id" -> JsString("Unit"))
+      case sorts.Seq(elementsSort) => s("Seq", elementsSort)
+      case sorts.Set(elementsSort) => s("Set", elementsSort)
+      case sorts.Multiset(elementsSort) => s("Multiset", elementsSort)
+      case sorts.UserSort(id) => JsObject("id" -> JsString("UserSort"), "name" -> JsString(id.name))
+      case sorts.FieldValueFunction(codomainSort) => s("FVF", codomainSort)
+      case sorts.PredicateSnapFunction(codomainSort) => s("PSF", codomainSort)
+      case simple => JsObject("id" -> JsString(simple.id.name))
+    }
+  }
+
   def toJSON(term: Term): JsValue = term match {
 
     case Combine(p0, Unit) => toJSON(p0)
@@ -55,7 +72,7 @@ object TermWriter {
         "type" -> JsString("application"),
         "applicable" -> JsString(applicable.id.name),
         "args" -> JsArray((args map toJSON).toVector),
-        "sort" -> JsString(a.sort.toString)
+        "sort" -> toJSON(a.sort)
       )
 
     case Lookup(field, fieldValueFunction, receiver) =>
@@ -91,7 +108,13 @@ object TermWriter {
       )
 
     case Var(id, sort) => variable(id, sort)
-    case SortWrapper(t, sorts.Snap) => toJSON(t)
+    case SortWrapper(t, sort) =>
+      JsObject(
+        "type" -> JsString("sortWrapper"),
+        "term" -> toJSON(t),
+        "sort" -> toJSON(sort)
+      )
+
     case Let(bindings, body) =>
       val bs = bindings map { case (v, t) => JsObject("var" -> toJSON(v), "value" -> toJSON(t)) }
       JsObject(
@@ -103,7 +126,7 @@ object TermWriter {
     case l: Literal =>
       JsObject(
         "type" -> JsString("literal"),
-        "sort" -> JsString(l.sort.toString),
+        "sort" -> toJSON(l.sort),
         "value" -> JsString(l.toString)
       )
 
@@ -112,7 +135,7 @@ object TermWriter {
     case p: PermLiteral =>
       JsObject(
         "type" -> JsString("literal"),
-        "sort" -> JsString(sorts.Perm.toString),
+        "sort" -> toJSON(sorts.Perm),
         "value" -> JsString(p.toString)
       )
 
