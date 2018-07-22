@@ -96,7 +96,7 @@ object TermWriter {
     case Distinct(symbols) =>
       JsObject(
         "type" -> JsString("distinct"),
-        "terms" -> JsArray((symbols map (s => JsString(s.id.name))).toVector)
+        "symbols" -> JsArray((symbols map (s => JsString(s.id.name))).toVector)
       )
 
     case Ite(cond, thenBranch, elseBranch) =>
