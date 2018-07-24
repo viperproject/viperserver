@@ -98,7 +98,7 @@ object SymbExLogReportWriter {
         JsObject(
           "name" -> JsString(name),
           "value" -> TermWriter.toJSON(value),
-          "sort" -> JsString(v.typ.toString())
+          "sort" -> TermWriter.toJSON(value.sort)
         )
       case other =>
         JsString(s"Unexpected variable in store '$other'")

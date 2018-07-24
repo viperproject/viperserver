@@ -31,7 +31,7 @@ object TermWriter {
       "sort" -> toJSON(sort)
     )
 
-  private def toJSON(sort: Sort): JsValue = {
+  def toJSON(sort: Sort): JsValue = {
     def s(name: String, elementsSort: Sort) = JsObject(
       "id" -> JsString(name),
       "elementsSort" -> toJSON(elementsSort)
