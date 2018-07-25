@@ -25,6 +25,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   final case class ServerStopConfirmed(msg: String)
   final case class JobDiscardAccept(msg: String)
   final case class JobDiscardReject(msg: String)
+  final case class AlloyGenerationRequestReject(reason: String)
+  final case class AlloyGenerationRequestComplete(instance: String)
 
 
   implicit val verReqAccept_format: RootJsonFormat[VerificationRequestAccept] = jsonFormat1(VerificationRequestAccept)
@@ -32,6 +34,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   implicit val serverStopConfirmed_format: RootJsonFormat[ServerStopConfirmed] = jsonFormat1(ServerStopConfirmed)
   implicit val jobDiscardAccept_format: RootJsonFormat[JobDiscardAccept] = jsonFormat1(JobDiscardAccept)
   implicit val jobDiscardReject_format: RootJsonFormat[JobDiscardReject] = jsonFormat1(JobDiscardReject)
+  implicit val alloyGenReqReject_format: RootJsonFormat[AlloyGenerationRequestReject] = jsonFormat1(AlloyGenerationRequestReject)
+  implicit val alloyGenReqComplete_format: RootJsonFormat[AlloyGenerationRequestComplete] = jsonFormat1(AlloyGenerationRequestComplete)
 
   // Implicit conversions for reporter.Message.
 

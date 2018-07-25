@@ -12,5 +12,7 @@ object ViperRequests extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonS
 
 
   // Other requests go below this line.
+  case class AlloyGenerationRequest(arg: String)
 
+  implicit val generateStuff = jsonFormat1(AlloyGenerationRequest.apply)
 }

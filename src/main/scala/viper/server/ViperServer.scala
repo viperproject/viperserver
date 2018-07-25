@@ -22,7 +22,10 @@ import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.server.Directives._
-
+import edu.mit.csail.sdg.alloy4.A4Reporter
+import edu.mit.csail.sdg.ast.Module
+import edu.mit.csail.sdg.parser.CompUtil
+import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
 import viper.server.ViperServerProtocol._
 import viper.server.ViperIDEProtocol._
 import viper.silver.reporter
@@ -357,6 +360,33 @@ object ViperServerRunner {
         case _ =>
           // Did not find a job with this jid.
           complete( JobDiscardReject(s"The verification job #$jid does not exist.") )
+      }
+    }
+  } ~ path("alloy") {
+    post {
+      entity(as[AlloyGenerationRequest]) { r =>
+        try {
+          val reporter: A4Reporter = new A4Reporter()
+
+          val world = CompUtil.parseEverything_fromString(reporter, r.arg)
+
+          val options: A4Options = new A4Options()
+          options.solver = A4Options.SatSolver.SAT4J
+
+          val commands = world.getAllCommands
+          if (commands.size() != 1) {
+            complete( AlloyGenerationRequestReject(s"Expected only one command, but got ${commands.size()}") )
+          }
+          val command = commands.get(0)
+          val solution = TranslateAlloyToKodkod.execute_command(reporter, world.getAllReachableSigs, command, options)
+          if (solution.satisfiable()) {
+            complete( AlloyGenerationRequestComplete(solution.toString) )
+          } else {
+            complete( AlloyGenerationRequestReject(s"Model could not be satisfied.") )
+          }
+        } catch {
+          case e => complete( AlloyGenerationRequestReject(s"An exception occurred during model-generation:\n${e.toString}") )
+        }
       }
     }
   }
