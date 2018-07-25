@@ -39,6 +39,9 @@ object ViperServerRunner {
   private var _config: ViperConfig = _
   final def config: ViperConfig = _config
 
+  private var _logFile: String = _
+  final def logFile: String = _logFile
+
   implicit val system: ActorSystem = ActorSystem("Main")
   implicit val materializer: ActorMaterializer = ActorMaterializer()
   implicit val executionContext: ExecutionContextExecutor = system.dispatcher
@@ -402,11 +405,11 @@ object ViperServerRunner {
       sys.exit(1)
     }
 
-    val logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
+    val logger = ViperLogger("ViperServerLogger", logFile, config.logLevel())
 
-    ViperCache.initialize(config.backendSpecificCache())
+    ViperCache.initialize(logger.get, config.backendSpecificCache())
 
-    val port = viper.server.utility.Sockets.findFreePort
+    val port = config.port()
     val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(routes(logger), "localhost", port)
     _term_actor = system.actorOf(Terminator.props(bindingFuture), "terminator")
 
@@ -418,6 +421,7 @@ object ViperServerRunner {
   def parseCommandLine(args: Seq[String]) {
     _config = new ViperConfig(args)
     _config.verify()
+    _logFile = _config.getLogFileWithGuarantee
   }
 
   private def getArgListFromArgString(arg_str: String): List[String] = {
