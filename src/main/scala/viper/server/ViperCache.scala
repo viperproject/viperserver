@@ -7,7 +7,7 @@
 package viper.server
 
 import ch.qos.logback.classic.Logger
-import viper.silver.ast.{Forall, Hashable, Method, Node, Program}
+import viper.silver.ast._
 import viper.silver.utility.CacheHelper
 import viper.silver.verifier.{AbstractVerificationError, errors}
 
@@ -181,7 +181,7 @@ object ViperCache {
       }
   }
 
-  def removeBody(m: Method): Method = m.copy(body = None)(m.pos, m.info, m.errT, is_cached = true)
+  def removeBody(m: Method): Method = m.copy(body = None)(m.pos, ConsInfo(m.info, Cached), m.errT)
 
   private def str(n: Node)(implicit key: String) = s"(${n.toOneLinerStr()} -> ${getHashForNode(n).hashCode.toHexString})"
   private def hex(h: String) = h.hashCode.toHexString

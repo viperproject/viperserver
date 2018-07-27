@@ -467,7 +467,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
       //Members
       case t: Field => t.copy()(pos, t.info, t.errT)
       case t: Function => t.copy()(pos, t.info, t.errT)
-      case t: Method => t.copy()(pos, t.info, t.errT, t.is_cached)
+      case t: Method => t.copy()(pos, t.info, t.errT)
       case t: Predicate => t.copy()(pos, t.info, t.errT)
       case t: Domain => t.copy()(pos, t.info, t.errT)
 
