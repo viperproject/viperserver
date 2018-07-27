@@ -10,6 +10,7 @@ import akka.NotUsed
 import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSupport}
 import akka.stream.scaladsl.Flow
 import akka.util.ByteString
+import edu.mit.csail.sdg.translator.A4Solution
 import spray.json.DefaultJsonProtocol
 import viper.silicon.SymbLog
 import viper.silver.reporter.{InvalidArgumentsReport, _}
@@ -26,7 +27,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   final case class JobDiscardAccept(msg: String)
   final case class JobDiscardReject(msg: String)
   final case class AlloyGenerationRequestReject(reason: String)
-  final case class AlloyGenerationRequestComplete(instance: String)
+  final case class AlloyGenerationRequestComplete(solution: A4Solution)
 
 
   implicit val verReqAccept_format: RootJsonFormat[VerificationRequestAccept] = jsonFormat1(VerificationRequestAccept)
@@ -35,7 +36,11 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   implicit val jobDiscardAccept_format: RootJsonFormat[JobDiscardAccept] = jsonFormat1(JobDiscardAccept)
   implicit val jobDiscardReject_format: RootJsonFormat[JobDiscardReject] = jsonFormat1(JobDiscardReject)
   implicit val alloyGenReqReject_format: RootJsonFormat[AlloyGenerationRequestReject] = jsonFormat1(AlloyGenerationRequestReject)
-  implicit val alloyGenReqComplete_format: RootJsonFormat[AlloyGenerationRequestComplete] = jsonFormat1(AlloyGenerationRequestComplete)
+  implicit val alloyGenReqComplete_format: RootJsonFormat[AlloyGenerationRequestComplete] = lift(
+    new RootJsonWriter[AlloyGenerationRequestComplete] {
+      override def write(obj: AlloyGenerationRequestComplete): JsValue = AlloySolutionWriter.toJSON(obj.solution)
+    }
+  )
 
   // Implicit conversions for reporter.Message.
 

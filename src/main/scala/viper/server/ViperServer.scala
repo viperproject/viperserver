@@ -25,7 +25,7 @@ import akka.http.scaladsl.server.Directives._
 import edu.mit.csail.sdg.alloy4.A4Reporter
 import edu.mit.csail.sdg.ast.Module
 import edu.mit.csail.sdg.parser.CompUtil
-import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
+import edu.mit.csail.sdg.translator.{A4Options, A4Solution, TranslateAlloyToKodkod}
 import viper.server.ViperServerProtocol._
 import viper.server.ViperIDEProtocol._
 import viper.silver.reporter
@@ -380,7 +380,7 @@ object ViperServerRunner {
           val command = commands.get(0)
           val solution = TranslateAlloyToKodkod.execute_command(reporter, world.getAllReachableSigs, command, options)
           if (solution.satisfiable()) {
-            complete( AlloyGenerationRequestComplete(solution.toString) )
+            complete( AlloyGenerationRequestComplete(solution) )
           } else {
             complete( AlloyGenerationRequestReject(s"Model could not be satisfied.") )
           }
