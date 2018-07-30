@@ -51,9 +51,6 @@ object TermWriter {
 
   def toJSON(term: Term): JsValue = term match {
 
-    case Combine(p0, Unit) => toJSON(p0)
-    case Combine(Unit, p1) => toJSON(p1)
-
     case b: BinaryOp[Term] => binary(b.op, toJSON(b.p0), toJSON(b.p1))
     case u: UnaryOp[Term] => unary(u.op, toJSON(u.p))
 
