@@ -1,6 +1,6 @@
 package viper.server
 
-import edu.mit.csail.sdg.ast.Sig
+import edu.mit.csail.sdg.ast.{ExprVar, Sig}
 import edu.mit.csail.sdg.ast.Sig.Field
 
 import collection.JavaConversions._
@@ -24,28 +24,24 @@ object AlloySolutionWriter {
   }
 
   private def toJSON(f: Field, sol: A4Solution): JsValue = {
-    val atoms = sol.eval(f)
-    if (atoms.arity() > 0) {
-      JsObject(
-        "name" -> JsString(f.label),
-        "atoms" -> JsArray(sol.eval(f).map(toJSON).toVector)
-      )
-    } else {
-      JsObject( "name" -> JsString(f.label) )
-    }
+    JsObject(
+      "name" -> JsString(f.label),
+      "atoms" -> JsArray(sol.eval(f).map(toJSON).toVector)
+    )
   }
 
   private def toJSON(sig: Sig, sol: A4Solution): JsValue = {
-    if (sig.getFields.size() > 0) {
-      JsObject(
-        "label" -> JsString(sig.label),
-        "fields" -> JsArray(sig.getFields.map(f => toJSON(f, sol)).toVector)
-      )
-    } else {
-      JsObject( "label" -> JsString(sig.label) )
-    }
+    JsObject(
+      "label" -> JsString(sig.label),
+      "fields" -> JsArray(sig.getFields.map(f => toJSON(f, sol)).toVector)
+    )
   }
 
+  private def toJSON(atom: ExprVar): JsValue =
+    JsObject(
+      "name" -> JsString(atom.label),
+      "type" -> JsString(atom.`type`().toString)
+    )
 
   def toJSON(solution: A4Solution): JsValue = {
     val signatures = solution.getAllReachableSigs
@@ -53,7 +49,8 @@ object AlloySolutionWriter {
                              .filter(s => s.label.startsWith("this/"))
                              .map(s => toJSON(s, solution))
     JsObject(
-      "signatures" -> JsArray(signatures.toVector)
+      "signatures" -> JsArray(signatures.toVector),
+      "atoms" -> JsArray(solution.getAllAtoms.map(toJSON).toVector)
     )
   }
 }
