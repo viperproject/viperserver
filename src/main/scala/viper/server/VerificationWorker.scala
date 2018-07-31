@@ -13,7 +13,7 @@ import akka.actor.ActorRef
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperServerRunner.ReporterActor
-import viper.silicon.{SiliconFrontend, SymbExLogger}
+import viper.silicon.{Silicon, SiliconFrontend, SymbExLogger}
 import viper.silver.ast.{Position, _}
 import viper.silver.frontend.{SilFrontend, TranslatorState}
 import viper.silver.reporter
@@ -266,7 +266,6 @@ class ViperBackend(private val _frontend: SilFrontend) {
     _frontend.verifier.stop()
 
     // finish by reporting the overall outcome
-
     _frontend.result match {
       case Success =>
         //printSuccess();
@@ -278,7 +277,15 @@ class ViperBackend(private val _frontend: SilFrontend) {
     }
 
     if (_frontend.config.ideModeAdvanced()) {
-      _frontend.reporter.report(ExecutionTraceReport(System.currentTimeMillis(), SymbExLogger.memberList))
+
+      _frontend.verifier match {
+        case v: Silicon =>
+          val report = ExecutionTraceReport(System.currentTimeMillis(), SymbExLogger.memberList, v.axioms().toList)
+          _frontend.reporter.report(report)
+        case other =>
+          _frontend.logger.error(s"Expected backend to be 'Silicon' in ideModeAdvanced, but was '${other.name}', not " +
+            s"sending execution trace report.")
+      }
     }
   }
 

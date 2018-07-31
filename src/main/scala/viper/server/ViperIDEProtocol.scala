@@ -13,6 +13,7 @@ import akka.util.ByteString
 import edu.mit.csail.sdg.translator.A4Solution
 import spray.json.DefaultJsonProtocol
 import viper.silicon.SymbLog
+import viper.silicon.state.terms.Term
 import viper.silver.reporter.{InvalidArgumentsReport, _}
 import viper.silver.verifier._
 
@@ -213,18 +214,19 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val symbExLogReport_writer: RootJsonFormat[ExecutionTraceReport] = lift(new RootJsonWriter[ExecutionTraceReport] {
-
     override def write(obj: ExecutionTraceReport) = obj match {
-      case ExecutionTraceReport(timestamp, members: List[SymbLog]) =>
+      case ExecutionTraceReport(timestamp, members: List[SymbLog], axioms: List[Term]) =>
         JsObject(
           "timestamp" -> timestamp.toJson,
-          "log" -> JsArray(members.map(m => SymbExLogReportWriter.toJSON(m.main)).toVector)
+          "members" -> JsArray(members.map(m => SymbExLogReportWriter.toJSON(m.main)).toVector),
+          "axioms" -> JsArray(axioms.map(TermWriter.toJSON).toVector)
         )
 
-      case ExecutionTraceReport(timestamp, members) =>
+      case ExecutionTraceReport(timestamp, members, axioms) =>
         JsObject(
           "timestamp" -> timestamp.toJson,
-          "log" -> JsArray(members.map(m => JsString(m.toString)).toVector)
+          "members" -> JsArray(members.map(m => JsString(m.toString)).toVector),
+          "axioms" -> JsArray(axioms.map(a => JsString(a.toString)).toVector)
         )
     }
   })
