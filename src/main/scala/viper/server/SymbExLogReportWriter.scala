@@ -130,36 +130,6 @@ object SymbExLogReportWriter {
     * @return The record translated as a JsValue.
     */
   def toJSON(record: SymbolicRecord): JsValue = record match {
-    case ite: IfThenElseRecord =>
-      JsObject(
-        "kind" -> JsString("IfThenElse"),
-        "children" -> JsArray(
-          JsObject(
-            "kind" -> JsString("If"),
-            "value" -> JsString(ite.thnCond.value.toString()),
-            "prestate" -> stateToJSON(ite.thnCond),
-            "children" -> JsArray(ite.thnSubs.map(toJSON).toVector)
-          ),
-          JsObject(
-            "kind" -> JsString("Else"),
-            "value" -> JsString(ite.elsCond.value.toString()),
-            "prestate" -> stateToJSON(ite.elsCond),
-            "children" -> JsArray(ite.elsSubs.map(toJSON).toVector)
-          )
-        )
-      )
-
-    case ce: CondExpRecord =>
-      JsObject(
-        "kind" -> JsString("CondExp"),
-        "value" -> JsString(ce.value.toString()),
-        "prestate" -> stateToJSON(ce),
-        "children" -> JsArray(
-          toJSON(ce.thnExp),
-          toJSON(ce.elsExp)
-        )
-      )
-
     case gb: GlobalBranchRecord =>
       JsObject(
         "kind" -> JsString("GlobalBranch"),
