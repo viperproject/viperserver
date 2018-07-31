@@ -181,6 +181,7 @@ object SymbExLogReportWriter {
       JsObject(
         "kind" -> JsString("MethodCall"),
         "value" -> JsString(mc.value.toString()),
+        "pos" -> JsString(utils.ast.sourceLineColumn(mc.value)),
         "children" -> JsArray(
           JsObject(
             "kind" -> JsString("parameters"),
