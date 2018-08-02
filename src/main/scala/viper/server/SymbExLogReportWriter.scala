@@ -8,6 +8,7 @@ import scala.collection.immutable.VectorBuilder
 import spray.json._
 import viper.silicon.interfaces.state.Chunk
 import viper.silicon.resources.{FieldID, PredicateID}
+import viper.silicon.rules.InverseFunctions
 import viper.silicon.state.{utils => _, _}
 import viper.silver.ast.AbstractLocalVar
 
@@ -15,6 +16,13 @@ import viper.silver.ast.AbstractLocalVar
 // TODO: Clean this up
 /** Wrapper for the SymbExLogReport conversion to JSON. */
 object SymbExLogReportWriter {
+
+  private def inverseFunctionsToJSON(invs: InverseFunctions): JsValue = {
+    JsArray(
+      TermWriter.toJSON(invs.axiomInversesOfInvertibles),
+      TermWriter.toJSON(invs.axiomInvertiblesOfInverses)
+    )
+  }
 
   private def heapChunkToJSON(chunk: Chunk) = chunk match {
     case BasicChunk(PredicateID(), id, args, snap, perm) =>
@@ -50,7 +58,7 @@ object SymbExLogReportWriter {
         "field" -> JsString(id.toString),
         "field_value_function" -> TermWriter.toJSON(fvf),
         "perm" -> TermWriter.toJSON(perm),
-        "invs" -> invs.map(i => JsString(i.toString)).getOrElse(JsNull),
+        "invs" -> invs.map(inverseFunctionsToJSON).getOrElse(JsNull),
         "cond" -> cond.map(TermWriter.toJSON).getOrElse(JsNull),
         "receiver" -> receiver.map(TermWriter.toJSON).getOrElse(JsNull),
         "hints" -> (if (hints != Nil) JsArray(hints.map(TermWriter.toJSON).toVector) else JsNull)
@@ -63,7 +71,7 @@ object SymbExLogReportWriter {
         "predicate" -> JsString(id.toString),
         "predicate_snap_function" -> TermWriter.toJSON(psf),
         "perm" -> TermWriter.toJSON(perm),
-        "invs" -> invs.map(i => JsString(i.toString)).getOrElse(JsNull),
+        "invs" -> invs.map(inverseFunctionsToJSON).getOrElse(JsNull),
         "cond" -> cond.map(TermWriter.toJSON).getOrElse(JsNull),
         "singleton_args" -> singletonArgs.map(as => JsArray(as.map(TermWriter.toJSON).toVector)).getOrElse(JsNull),
         "hints" -> (if (hints != Nil) JsArray(hints.map(TermWriter.toJSON).toVector) else JsNull)
@@ -76,7 +84,7 @@ object SymbExLogReportWriter {
         "predicate" -> JsString(id.toString),
         "wand_snap_function" -> TermWriter.toJSON(wsf),
         "perm" -> TermWriter.toJSON(perm),
-        "invs" -> invs.map(i => JsString(i.toString)).getOrElse(JsNull),
+        "invs" -> invs.map(inverseFunctionsToJSON).getOrElse(JsNull),
         "cond" -> cond.map(TermWriter.toJSON).getOrElse(JsNull),
         "singleton_args" -> singletonArgs.map(as => JsArray(as.map(TermWriter.toJSON).toVector)).getOrElse(JsNull),
         "hints" -> (if (hints != Nil) JsArray(hints.map(TermWriter.toJSON).toVector) else JsNull)
