@@ -219,7 +219,13 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         JsObject(
           "timestamp" -> timestamp.toJson,
           "members" -> JsArray(members.map(m => SymbExLogReportWriter.toJSON(m.main)).toVector),
-          "axioms" -> JsArray(axioms.map(TermWriter.toJSON).toVector)
+          "axioms" -> JsArray(axioms.map(TermWriter.toJSON).toVector),
+          "macros" -> JsArray(members.flatMap(m => m.macros().map(m => {
+            JsObject(
+              "macro" -> TermWriter.toJSON(m._1),
+              "body" -> TermWriter.toJSON(m._2)
+            )
+          })).toVector)
         )
 
       case ExecutionTraceReport(timestamp, members, axioms) =>
