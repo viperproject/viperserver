@@ -1,6 +1,5 @@
 package viper.server
 
-import viper.silicon.state.terms.{BuiltinEquals, Combine, Unit}
 import viper.silicon.verifier.Verifier
 import viper.silicon._
 
@@ -111,24 +110,16 @@ object SymbExLogReportWriter {
       case other =>
         JsString(s"Unexpected variable in store '$other'")
     }).toVector)
-    val heap = JsArray(state.h.values.map(heapChunkToJSON).toVector)
     val oldHeap = state.oldHeaps.get(Verifier.PRE_STATE_LABEL) match {
       case Some(h) => JsArray(h.values.map(heapChunkToJSON).toVector)
       case _ => JsArray()
     }
 
-    // Ignore empty combines
-    val filteredPcs = pcs.filterNot {
-        case BuiltinEquals(_, Combine(Unit, Unit)) => true
-        case _ => false
-      }
-    val pathConditions = JsArray(filteredPcs.map(TermWriter.toJSON).toVector)
-
     JsObject(
       "store" -> store,
-      "heap" -> heap,
+      "heap" -> JsArray(state.h.values.map(heapChunkToJSON).toVector),
       "oldHeap" -> oldHeap,
-      "pcs" -> pathConditions
+      "pcs" -> JsArray(pcs.map(TermWriter.toJSON).toVector)
     )
   }
 
