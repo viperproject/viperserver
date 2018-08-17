@@ -33,6 +33,7 @@ object AlloySolutionWriter {
   private def toJSON(sig: Sig, sol: A4Solution): JsValue = {
     JsObject(
       "label" -> JsString(sig.label),
+      "atoms" -> JsArray(sol.eval(sig).flatMap(s => toJSON(s).elements).toVector),
       "fields" -> JsArray(sig.getFields.map(f => toJSON(f, sol)).toVector)
     )
   }
