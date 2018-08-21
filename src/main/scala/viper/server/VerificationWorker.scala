@@ -280,7 +280,10 @@ class ViperBackend(private val _frontend: SilFrontend) {
 
       _frontend.verifier match {
         case v: Silicon =>
-          val report = ExecutionTraceReport(System.currentTimeMillis(), SymbExLogger.memberList, v.axioms().toList)
+          val report = ExecutionTraceReport(System.currentTimeMillis(),
+                                            SymbExLogger.memberList,
+                                            v.axioms().toList,
+                                            v.postConditionAxioms().toList)
           _frontend.reporter.report(report)
         case other =>
           _frontend.logger.error(s"Expected backend to be 'Silicon' in ideModeAdvanced, but was '${other.name}', not " +
