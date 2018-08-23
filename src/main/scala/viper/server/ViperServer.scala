@@ -372,6 +372,8 @@ object ViperServerRunner {
 
           val options: A4Options = new A4Options()
           options.solver = A4Options.SatSolver.parse(r.solver);
+          options.skolemDepth = 1
+          options.noOverflow = true;
 
           val commands = world.getAllCommands
           if (commands.size() != 1) {
