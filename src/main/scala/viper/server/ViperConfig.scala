@@ -16,7 +16,7 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     hidden = false
   )(singleArgConverter(level => level.toUpperCase))
 
-  val logFile: ScallopOption[String] = opt[String]("logFile",
+  val logFile: ScallopOption[String] = opt[String]("logFile", 'l',
     descr = "Specifies the location of the log file to be used by ViperServer and the verification " +
             "backends it creates.",
     default = {
@@ -48,6 +48,7 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     }
   }
 
+  @deprecated
   val ideMode: ScallopOption[Boolean] = opt[Boolean]("ideMode",
     descr = ("Used for VS Code IDE. Report errors in json format, and write"
       + "errors in the format '<file>,<line>:<col>,<line>:<col>,<message>' to"
@@ -64,6 +65,7 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     hidden = false
   )
 
+  @deprecated
   val ideModeAdvanced: ScallopOption[Boolean] = opt[Boolean]("ideModeAdvanced",
     descr = ("Used for VS Code IDE. Write symbolic execution log into .vscode/executionTreeData.js file, "
       + "write execution tree graph into .vscode/dot_input.dot, "
@@ -74,4 +76,19 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
   )
 
   dependsOnAll(ideModeAdvanced, ideMode :: Nil)
+
+  val port: ScallopOption[Int] = opt[Int]("port", 'p',
+    descr = ("Specifies the port on which ViperServer will be started."
+      + s"The port must be an integer in range [${viper.server.utility.Sockets.MIN_PORT_NUMBER}-${viper.server.utility.Sockets.MAX_PORT_NUMBER}]"
+      + "If the option is omitted, an available port will be selected automatically."),
+    default = Some(viper.server.utility.Sockets.findFreePort),
+    validate = p => try {
+      viper.server.utility.Sockets.available(p)
+    } catch {
+      case e: Exception =>
+        println(s"Invalid port $p: $e")
+        false
+    },
+    noshort = false,
+    hidden = false)
 }

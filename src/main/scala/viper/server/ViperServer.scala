@@ -22,6 +22,7 @@ import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.server.Directives._
+import akka.http.scaladsl.server.Route
 import edu.mit.csail.sdg.alloy4.A4Reporter
 import edu.mit.csail.sdg.ast.Module
 import edu.mit.csail.sdg.parser.CompUtil
@@ -41,6 +42,9 @@ object ViperServerRunner {
 
   private var _config: ViperConfig = _
   final def config: ViperConfig = _config
+
+  private var _logFile: String = _
+  final def logFile: String = _logFile
 
   implicit val system: ActorSystem = ActorSystem("Main")
   implicit val materializer: ActorMaterializer = ActorMaterializer()
@@ -208,7 +212,7 @@ object ViperServerRunner {
     }
   }
 
-  protected def routes(logger: ViperLogger) = {
+  protected def routes(logger: ViperLogger): Route = {
     /**
       * Send GET request to "/exit".
       *
@@ -223,8 +227,7 @@ object ViperServerRunner {
       * Some use cases:
       * - The IDE is being shut down
       * - ViperServer receives a deadly signal and needs to kill the running verification jobs
-      *
-      * */
+      */
     path("exit") {
       get {
         val interrupt_future_list: List[Future[String]] = _job_handles map { case (jid, handle_future) =>
@@ -236,7 +239,7 @@ object ViperServerRunner {
         } toList
         val overall_interrupt_future: Future[List[String]] = Future.sequence(interrupt_future_list)
 
-        onComplete(overall_interrupt_future) { (err: Try[List[String]]) =>
+        onComplete(overall_interrupt_future) { err: Try[List[String]] =>
           err match {
             case Success(_) =>
               _term_actor ! Terminator.Exit
@@ -301,7 +304,6 @@ object ViperServerRunner {
       *
       * Use case:
       * - Ask ViperServer to begin streaming the results corresponding to the verification job with provided <jid>
-      *
       */
     get {
       lookupJob(jid) match {
@@ -351,10 +353,10 @@ object ViperServerRunner {
               val interrupt_done: Future[String] = (handle.controller_actor ? Stop(true)).mapTo[String]
               onSuccess(interrupt_done) { msg =>
                 handle.controller_actor ! PoisonPill // the actor played its part.
-                complete(JobDiscardAccept(msg))
+                complete( JobDiscardAccept(msg) )
               }
             case Failure(error) =>
-              complete(JobDiscardReject(s"The verification job #$jid does not exist."))
+              complete( JobDiscardReject(s"The verification job #$jid does not exist.") )
           }
 
         case _ =>
@@ -362,7 +364,45 @@ object ViperServerRunner {
           complete( JobDiscardReject(s"The verification job #$jid does not exist.") )
       }
     }
+  } ~ path("cache" /  "flush") {
+    /**
+      * Send GET request to "/cache/flush".
+      *
+      * This will invalidate the entire cache.
+      *
+      *  Use case:
+      *  - Client decided to re-verify several files from scratch.
+      */
+    get {
+      ViperCache.resetCache()
+      complete( CacheFlushAccept(s"The cache has been flushed successfully.") )
+    }
+  } ~ path("cache" /  "flush") {
+    /**
+      * Send POST request to "/cache/flush".
+      *
+      * This will invalidate the cache for the tool and file specified.
+      *
+      *  Use case:
+      *  - Client decided to re-verify the entire file from scratch.
+      */
+    post {
+      entity(as[CacheResetRequest]) {
+        r =>
+          ViperCache.forgetFile(r.backend, r.file) match {
+            case Some(_) =>
+              complete( CacheFlushAccept(s"The cache for tool (${r.backend}) for file (${r.file}) has been flushed successfully.") )
+            case None =>
+              complete( CacheFlushReject(s"The cache does not exist for tool (${r.backend}) for file (${r.file}).") )
+          }
+      }
+    }
   } ~ path("alloy") {
+    /**
+      * Send POST request to "/alloy".
+      *
+      * This will generate an instance of the given model.
+      */
     post {
       entity(as[AlloyGenerationRequest]) { r =>
         try {
@@ -404,11 +444,11 @@ object ViperServerRunner {
       sys.exit(1)
     }
 
-    val logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
+    val logger = ViperLogger("ViperServerLogger", logFile, config.logLevel())
 
-    ViperCache.initialize(config.backendSpecificCache())
+    ViperCache.initialize(logger.get, config.backendSpecificCache())
 
-    val port = viper.server.utility.Sockets.findFreePort
+    val port = config.port()
     val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(routes(logger), "localhost", port)
     _term_actor = system.actorOf(Terminator.props(bindingFuture), "terminator")
 
@@ -420,6 +460,7 @@ object ViperServerRunner {
   def parseCommandLine(args: Seq[String]) {
     _config = new ViperConfig(args)
     _config.verify()
+    _logFile = _config.getLogFileWithGuarantee
   }
 
   private def getArgListFromArgString(arg_str: String): List[String] = {
