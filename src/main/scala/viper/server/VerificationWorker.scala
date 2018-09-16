@@ -275,20 +275,6 @@ class ViperBackend(private val _frontend: SilFrontend) {
           // Cached errors will be reporter as soon as they are retrieved from the cache.
           Failure(f.errors.filter { e => !e.cached }))
     }
-
-    if (_frontend.config.ideModeAdvanced()) {
-
-      _frontend.verifier match {
-        case v: Silicon =>
-          val report = ExecutionTraceReport(SymbExLogger.memberList,
-                                            v.axioms().toList,
-                                            v.postConditionAxioms().toList)
-          _frontend.reporter.report(report)
-        case other =>
-          _frontend.logger.error(s"Expected backend to be 'Silicon' in ideModeAdvanced, but was '${other.name}', not " +
-            s"sending execution trace report.")
-      }
-    }
   }
 
   private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): List[AbstractVerificationError] = {
