@@ -280,8 +280,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
 
       _frontend.verifier match {
         case v: Silicon =>
-          val report = ExecutionTraceReport(System.currentTimeMillis(),
-                                            SymbExLogger.memberList,
+          val report = ExecutionTraceReport(SymbExLogger.memberList,
                                             v.axioms().toList,
                                             v.postConditionAxioms().toList)
           _frontend.reporter.report(report)

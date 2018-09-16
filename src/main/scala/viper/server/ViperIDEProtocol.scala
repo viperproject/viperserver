@@ -219,9 +219,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
 
   implicit val symbExLogReport_writer: RootJsonFormat[ExecutionTraceReport] = lift(new RootJsonWriter[ExecutionTraceReport] {
     override def write(obj: ExecutionTraceReport) = obj match {
-      case ExecutionTraceReport(timestamp, members: List[SymbLog], axioms: List[Term], functionPostAxioms: List[Term]) =>
+      case ExecutionTraceReport(members: List[SymbLog], axioms: List[Term], functionPostAxioms: List[Term]) =>
         JsObject(
-          "timestamp" -> timestamp.toJson,
           "members" -> JsArray(members.map(m => SymbExLogReportWriter.toJSON(m.main)).toVector),
           "axioms" -> JsArray(axioms.map(TermWriter.toJSON).toVector),
           "functionPostAxioms" -> JsArray(functionPostAxioms.map(TermWriter.toJSON).toVector),
@@ -233,9 +232,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
           })).toVector)
         )
 
-      case ExecutionTraceReport(timestamp, members, axioms, functionPostAxioms) =>
+      case ExecutionTraceReport(members, axioms, functionPostAxioms) =>
         JsObject(
-          "timestamp" -> timestamp.toJson,
           "members" -> JsArray(members.map(m => JsString(m.toString)).toVector),
           "axioms" -> JsArray(axioms.map(a => JsString(a.toString)).toVector),
           "functionPostAxioms" -> JsArray(functionPostAxioms.map(a => JsString(a.toString)).toVector)
