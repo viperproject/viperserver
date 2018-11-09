@@ -12,6 +12,7 @@ lazy val server = (project in file("."))
     .dependsOn(carbon % "compile->compile;test->test")
     .dependsOn(common)
     .aggregate(common)
+    .enablePlugins(JavaAppPackaging)
     .settings(
         // General settings
         name := "ViperServer",
