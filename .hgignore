@@ -3,3 +3,8 @@ target
 tmp
 .idea
 .DS_Store
+*.swp
+lib/
+silver
+silicon
+carbon
