@@ -15,7 +15,7 @@ import viper.carbon.CarbonFrontend
 import viper.server.ViperServerRunner.ReporterActor
 import viper.silicon.{SiliconFrontend, SymbExLogger}
 import viper.silver.ast.{Position, _}
-import viper.silver.frontend.{SilFrontend, TranslatorState}
+import viper.silver.frontend.{DefaultStates, SilFrontend}
 import viper.silver.reporter
 import viper.silver.reporter.{Reporter, _}
 import viper.silver.verifier.errors._
@@ -234,12 +234,13 @@ class ViperBackend(private val _frontend: SilFrontend) {
     _frontend.reset( Paths.get(_frontend.config.file()) )
 
     // run the parser, typechecker, and verifier
-    _frontend.parse()
-    _frontend.typecheck()
-    _frontend.translate()
+    _frontend.parsing()
+    _frontend.semanticAnalysis()
+    _frontend.translation()
+    _frontend.consistencyCheck()
 
     if (_frontend.errors.nonEmpty) {
-      _frontend.setState( TranslatorState.Verified )
+      _frontend.setState( DefaultStates.Verification )
 
     } else {
       val prog: Program = _frontend.program.get
@@ -256,10 +257,10 @@ class ViperBackend(private val _frontend: SilFrontend) {
       _frontend.reporter.report(ProgramDefinitionsReport(collectDefinitions(prog)))
 
       if (_frontend.config.disableCaching()) {
-        _frontend.doVerify()
+        _frontend.verification()
       } else {
         println("start cached verification")
-        doVerifyCached()
+        doCachedVerification()
       }
     }
 
@@ -303,54 +304,59 @@ class ViperBackend(private val _frontend: SilFrontend) {
     result.toList
   }
 
-  def doVerifyCached(): Unit = {
+  def doCachedVerification(): Unit = {
 
-    // The entityHashes of the new AST are evaluated lazily.
+    /** Top level branch is here for the same reason as in
+      * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
+    if (_frontend.state == DefaultStates.ConsistencyCheck && _frontend.errors.isEmpty) {
 
-    val (methodsToVerify, methodsToCache, cachedErrors) = consultCache()
-    _frontend.logger.debug(
-      s"Retrieved data from cache..." +
-      s" methodsToCache: ${methodsToCache.map(_.name)};" +
-      s" cachedErrors: ${cachedErrors.map(_.loggableMessage)};" +
-      s" methodsToVerify: ${methodsToVerify.map(_.name)}.")
+      // The entityHashes of the new AST are evaluated lazily.
 
-    val real_program = _frontend.program.get
-    val prog: Program = Program(real_program.domains, real_program.fields, real_program.functions, real_program.predicates,
-      methodsToVerify ++ methodsToCache) (real_program.pos, real_program.info, real_program.errT)
+      val (methodsToVerify, methodsToCache, cachedErrors) = consultCache()
+      _frontend.logger.debug(
+        s"Retrieved data from cache..." +
+          s" methodsToCache: ${methodsToCache.map(_.name)};" +
+          s" cachedErrors: ${cachedErrors.map(_.loggableMessage)};" +
+          s" methodsToVerify: ${methodsToVerify.map(_.name)}.")
 
-    _frontend.logger.trace(s"The cached program is equivalent to: \n${prog.toString()}")
-    _frontend.setVerificationResult( _frontend.mapVerificationResult(_frontend.verifier.verify(prog)) )
+      val real_program = _frontend.program.get
+      val prog: Program = Program(real_program.domains, real_program.fields, real_program.functions, real_program.predicates,
+        methodsToVerify ++ methodsToCache)(real_program.pos, real_program.info, real_program.errT)
 
-    _frontend.setState( TranslatorState.Verified )
+      _frontend.logger.trace(s"The cached program is equivalent to: \n${prog.toString()}")
+      _frontend.setVerificationResult(_frontend.mapVerificationResult(_frontend.verifier.verify(prog)))
 
-    //update cache
-    methodsToVerify.foreach(m => {
-      _frontend.getVerificationResult.get match {
-        case Failure(errors) =>
-          val errorsToCache = getMethodSpecificErrors(m, errors)
-          ViperCache.update(backendName, file, prog, m, errorsToCache) match {
-            case e :: es =>
-              _frontend.logger.debug(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
-            case Nil =>
-              _frontend.logger.warn(s"Storing new entry in cache for method (${m.name}) FAILED. List of errors for this method: $errorsToCache")
-          }
-        case Success =>
-          ViperCache.update(backendName, file, prog, m, Nil) match {
-            case e :: es =>
-              _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
-            case Nil =>
-              _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}) FAILED.")
-          }
-      }
-    })
+      _frontend.setState(DefaultStates.Verification)
 
-    //combine errors:
-    if (cachedErrors.nonEmpty) {
-      _frontend.getVerificationResult.get match {
-        case Failure(errorList) =>
-          _frontend.setVerificationResult(Failure(errorList ++ cachedErrors))
-        case Success =>
-          _frontend.setVerificationResult(Failure(cachedErrors))
+      //update cache
+      methodsToVerify.foreach(m => {
+        _frontend.getVerificationResult.get match {
+          case Failure(errors) =>
+            val errorsToCache = getMethodSpecificErrors(m, errors)
+            ViperCache.update(backendName, file, prog, m, errorsToCache) match {
+              case e :: es =>
+                _frontend.logger.debug(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
+              case Nil =>
+                _frontend.logger.warn(s"Storing new entry in cache for method (${m.name}) FAILED. List of errors for this method: $errorsToCache")
+            }
+          case Success =>
+            ViperCache.update(backendName, file, prog, m, Nil) match {
+              case e :: es =>
+                _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
+              case Nil =>
+                _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}) FAILED.")
+            }
+        }
+      })
+
+      //combine errors:
+      if (cachedErrors.nonEmpty) {
+        _frontend.getVerificationResult.get match {
+          case Failure(errorList) =>
+            _frontend.setVerificationResult(Failure(errorList ++ cachedErrors))
+          case Success =>
+            _frontend.setVerificationResult(Failure(cachedErrors))
+        }
       }
     }
   }
