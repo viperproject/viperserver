@@ -77,6 +77,14 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
 
   dependsOnAll(ideModeAdvanced, ideMode :: Nil)
 
+  var bindInterface: ScallopOption[String] = opt[String]("bind-interface",
+    descr = ("Specifies the interface that ViperServer will listen on."
+      + "The default is \"localhost\" where only connections from the local machine are accepted."
+      + "Use 0.0.0.0 to accept connections from any machine (not a good idea without HTTPS or a firewall)."),
+    default = Some("localhost"),
+    noshort=true
+  )
+
   val port: ScallopOption[Int] = opt[Int]("port", 'p',
     descr = ("Specifies the port on which ViperServer will be started."
       + s"The port must be an integer in range [${viper.server.utility.Sockets.MIN_PORT_NUMBER}-${viper.server.utility.Sockets.MAX_PORT_NUMBER}]"

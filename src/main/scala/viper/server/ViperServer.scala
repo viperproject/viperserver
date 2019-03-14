@@ -409,12 +409,13 @@ object ViperServerRunner {
 
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 
+    val host = config.bindInterface()
     val port = config.port()
-    val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(routes(logger), "localhost", port)
+    val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(routes(logger), host, port)
     _term_actor = system.actorOf(Terminator.props(bindingFuture), "terminator")
 
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
-    println(s"ViperServer online at http://localhost:$port")
+    println(s"ViperServer online at http://$host:$port")
 
   } // method main
 
