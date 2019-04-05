@@ -31,7 +31,7 @@ lazy val server = (project in file("."))
         assembly / test := {},                                          // Prevent testing before packaging
         assembly / assemblyMergeStrategy := {
             case "logback.xml" => MergeStrategy.first
-            case "BuildInfo$.class" => MergeStrategy.first
+            case "viper/silicon/BuildInfo$.class" => MergeStrategy.first
             case x =>
                 val fallbackStrategy = (assembly / assemblyMergeStrategy).value
                 fallbackStrategy(x)
