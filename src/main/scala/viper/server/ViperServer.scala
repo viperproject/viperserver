@@ -39,8 +39,8 @@ object ViperServerRunner {
   private var _config: ViperConfig = _
   final def config: ViperConfig = _config
 
-  private var _logFile: String = _
-  final def logFile: String = _logFile
+  private var _logger: ViperLogger = _
+  final def logger: ViperLogger = _logger
 
   implicit val system: ActorSystem = ActorSystem("Main")
   implicit val materializer: ActorMaterializer = ActorMaterializer()
@@ -102,13 +102,13 @@ object ViperServerRunner {
           .onComplete(_ => system.terminate()) // and shutdown when done
       case Terminator.WatchJob(jid, handle) =>
         val queue_completion_future: Future[Done] = handle.queue.watchCompletion()
-        queue_completion_future.onSuccess({ case _ =>
-          discardJob(jid)
-          println(s"Terminator deleted job #$jid")
-        })
-        queue_completion_future.onFailure({ case e =>
-          println(s"Terminator detected failure in job #$jid: $e")
-          throw e
+        queue_completion_future.onComplete( {
+          case Failure(e) =>
+            println(s"Terminator detected failure in job #$jid: $e")
+            throw e
+          case Success(_) =>
+            discardJob(jid)
+            println(s"Terminator deleted job #$jid")
         })
     }
   }
@@ -208,7 +208,7 @@ object ViperServerRunner {
     }
   }
 
-  protected def routes(logger: ViperLogger): Route = {
+  def routes(logger: ViperLogger): Route = {
     /**
       * Send GET request to "/exit".
       *
@@ -398,14 +398,12 @@ object ViperServerRunner {
   def main(args: Array[String]): Unit = {
 
     try {
-      parseCommandLine(args)
+      init(args)
 
     } catch { case e: Throwable =>
       println(s"Cannot parse CMD arguments: $e")
       sys.exit(1)
     }
-
-    val logger = ViperLogger("ViperServerLogger", logFile, config.logLevel())
 
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 
@@ -413,15 +411,15 @@ object ViperServerRunner {
     val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(routes(logger), "localhost", port)
     _term_actor = system.actorOf(Terminator.props(bindingFuture), "terminator")
 
-    println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
     println(s"ViperServer online at http://localhost:$port")
 
   } // method main
 
-  def parseCommandLine(args: Seq[String]) {
-    _config = new ViperConfig(args)
+  def init(cmdArgs: Seq[String]) {
+    _config = new ViperConfig(cmdArgs)
     _config.verify()
-    _logFile = _config.getLogFileWithGuarantee
+    _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
+    println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
   }
 
   private def getArgListFromArgString(arg_str: String): List[String] = {
