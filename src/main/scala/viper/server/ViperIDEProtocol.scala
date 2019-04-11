@@ -28,13 +28,13 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   final case class CacheFlushReject(msg: String)
 
 
-  implicit val verReqAccept_format: RootJsonFormat[VerificationRequestAccept] = jsonFormat1(VerificationRequestAccept)
-  implicit val verReqReject_format: RootJsonFormat[VerificationRequestReject] = jsonFormat1(VerificationRequestReject)
-  implicit val serverStopConfirmed_format: RootJsonFormat[ServerStopConfirmed] = jsonFormat1(ServerStopConfirmed)
-  implicit val jobDiscardAccept_format: RootJsonFormat[JobDiscardAccept] = jsonFormat1(JobDiscardAccept)
-  implicit val jobDiscardReject_format: RootJsonFormat[JobDiscardReject] = jsonFormat1(JobDiscardReject)
-  implicit val CacheFlushAccept_format: RootJsonFormat[CacheFlushAccept] = jsonFormat1(CacheFlushAccept)
-  implicit val CacheFlushReject_format: RootJsonFormat[CacheFlushReject] = jsonFormat1(CacheFlushReject)
+  implicit val verReqAccept_format: RootJsonFormat[VerificationRequestAccept] = jsonFormat1(VerificationRequestAccept.apply)
+  implicit val verReqReject_format: RootJsonFormat[VerificationRequestReject] = jsonFormat1(VerificationRequestReject.apply)
+  implicit val serverStopConfirmed_format: RootJsonFormat[ServerStopConfirmed] = jsonFormat1(ServerStopConfirmed.apply)
+  implicit val jobDiscardAccept_format: RootJsonFormat[JobDiscardAccept] = jsonFormat1(JobDiscardAccept.apply)
+  implicit val jobDiscardReject_format: RootJsonFormat[JobDiscardReject] = jsonFormat1(JobDiscardReject.apply)
+  implicit val CacheFlushAccept_format: RootJsonFormat[CacheFlushAccept] = jsonFormat1(CacheFlushAccept.apply)
+  implicit val CacheFlushReject_format: RootJsonFormat[CacheFlushReject] = jsonFormat1(CacheFlushReject.apply)
 
   // Implicit conversions for reporter.Message.
 
@@ -241,6 +241,10 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: ExternalDependenciesReport) = JsArray(obj.deps.map(_.toJson).toVector)
   })
 
+  implicit val warningsDuringParsing_writer: RootJsonFormat[WarningsDuringParsing] = lift(new RootJsonWriter[WarningsDuringParsing] {
+    override def write(obj: WarningsDuringParsing) = JsArray(obj.warnings.map(_.asInstanceOf[AbstractError].toJson).toVector)
+  })
+
   implicit val simpleMessage_writer: RootJsonFormat[SimpleMessage] = lift(new RootJsonWriter[SimpleMessage] {
     override def write(obj: SimpleMessage) = JsObject("text" -> JsString(obj.text))
   })
@@ -261,6 +265,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case x: ExceptionReport => x.toJson
         case i: InvalidArgumentsReport => i.toJson
         case r: ExternalDependenciesReport => r.toJson
+        case f: WarningsDuringParsing => f.toJson
         case m: SimpleMessage => m.toJson
       }))
   })
