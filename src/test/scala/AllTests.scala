@@ -45,13 +45,13 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
     fname
   }
 
-  val verifiableFile = "let.sil"
-  //val nonExistingFile = "bla.sil"
-  val emptyFile = "empty.vpr"
+  private val verifiableFile = new File("all/basic/let.sil") getPath
+  private val nonExistingFile = new File("bla/bla/bla.sil") getPath
+  private val emptyFile = new File("graphs/empty.vpr") getPath
 
-  val tool = "silicon"
-  val testSimpleViperCodeWithSilicon_cmd = s"$tool ${getResourcePath(verifiableFile)}"
-  val testEmptyFileWithSilicon_cmd = s"$tool ${getResourcePath(emptyFile)}"
+  private val tool = "silicon"
+  private val testSimpleViperCodeWithSilicon_cmd = s"$tool ${getResourcePath(verifiableFile)}"
+  private val testEmptyFileWithSilicon_cmd = s"$tool ${getResourcePath(emptyFile)}"
 
   "ViperServer" should {
 
