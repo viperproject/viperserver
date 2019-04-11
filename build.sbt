@@ -20,10 +20,11 @@ lazy val server = (project in file("."))
         version := "1.1-SNAPSHOT",
 
         // Compilation settings
-        libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.5.17",
-        libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json" % "10.1.5",
-        libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.5.17",
-        libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.1.5" % Test,
+        libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.5.22",
+        libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json" % "10.1.8",
+        libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.5.22",
+        libraryDependencies += "com.typesafe.akka" %% "akka-stream-testkit" % "2.5.22" % Test,
+        libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.1.8" % Test,
 
         // Assembly settings
         assembly / assemblyJarName := "viper.jar",                      // JAR filename
