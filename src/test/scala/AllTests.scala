@@ -44,7 +44,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
       temp_file.delete()
       absent_fname
     }
-    fname
+    "\"" + fname + "\""
   }
 
   private val verifiableFile = "viper/let.sil"
