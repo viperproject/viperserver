@@ -5,6 +5,15 @@ lazy val carbon = project in file("carbon")
 
 lazy val common = (project in file("common"))
 
+// Publishing settings
+ThisBuild / Test / publishArtifact := true
+// Allows 'publishLocal' SBT command to include test artifacts in a dedicated JAR file
+// (whose name is postfixed by 'test-source') and publish it in the local Ivy repository.
+// This JAR file contains all classes and resources for testing and projects like Carbon
+// and Silicon can rely on it to access the test suit implemented in Silver.
+
+ThisBuild / Test / parallelExecution := false
+
 // Viper Server specific project settings
 lazy val server = (project in file("."))
     .dependsOn(silver % "compile->compile;test->test")

@@ -18,6 +18,7 @@ import scala.concurrent.duration._
 
 class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
 
+  import scala.language.postfixOps
   import ViperRequests._
   implicit val jsonStreamingSupport: JsonEntityStreamingSupport = EntityStreamingSupport.json()
   implicit val requestTimeput: RouteTestTimeout = RouteTestTimeout(10.second dilated)
@@ -31,13 +32,14 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
   }
 
   def getResourcePath(sil_file: String): String = {
-    val resource = getClass.getResource(sil_file)
+    val cross_platform_path = new File(sil_file) getPath
+    val resource = getClass.getResource(cross_platform_path)
     val fname = if (resource != null) {
       val file = Paths.get(resource.toURI)
       file.toString
     } else {
       // simulate absent file
-      val temp_file = File.createTempFile("io_testing", ".sil")
+      val temp_file = File.createTempFile("ViperServer_testing", ".vpr")
       val absent_fname = temp_file.getPath
       temp_file.delete()
       absent_fname
@@ -45,9 +47,9 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
     fname
   }
 
-  private val verifiableFile = new File("all/basic/let.sil") getPath
-  private val nonExistingFile = new File("bla/bla/bla.sil") getPath
-  private val emptyFile = new File("graphs/empty.vpr") getPath
+  private val verifiableFile = "viper/let.sil"
+  //private val nonExistingFile = "viper/bla.sil"
+  private val emptyFile ="viper/empty.vpr"
 
   private val tool = "silicon"
   private val testSimpleViperCodeWithSilicon_cmd = s"$tool ${getResourcePath(verifiableFile)}"
