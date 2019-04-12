@@ -21,6 +21,7 @@ import viper.silver.reporter.{Reporter, _}
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, _}
 import viper.silver.utility.TimingLog
+import viper.silver.utility.TimingLog.Marker
 
 import scala.language.postfixOps
 
@@ -220,33 +221,45 @@ class ViperBackend(private val _frontend: SilFrontend) {
     }).mapValues(_.size)
 
   def execute(args: Seq[String]) {
-    val tStartWhole = TimingLog.mark()
-
+    val tBeforeWhole = TimingLog.mark()
     // create the verifier
     _frontend.setVerifier( _frontend.createVerifier(args.mkString(" ")) )
 
+    val tBeforePrepare = TimingLog.mark()
     if (!_frontend.prepare(args)) return
 
+    val tBeforeInit = TimingLog.mark()
     // initialize the translator
     _frontend.init( _frontend.verifier )
 
+    val tBeforeReset = TimingLog.mark()
     // set the file we want to verify
     _frontend.reset( Paths.get(_frontend.config.file()) )
 
     // run the parser, typechecker, and verifier
+    val tBeforeParsing = TimingLog.mark()
     _frontend.parsing()
-    return
+    val tBeforeSemanticAnalysis = TimingLog.mark()
     _frontend.semanticAnalysis()
+    val tBeforeTranslation = TimingLog.mark()
     _frontend.translation()
+    val tBeforeConsistencyCheck = TimingLog.mark()
     _frontend.consistencyCheck()
+    val tAfterConsistencyCheck = TimingLog.mark()
 
+    var tBeforeCountInstances: Marker = 0
+    var tBeforeReportingStatistics: Marker = 0
+    var tBeforeVerification: Marker = 0
+    var tAfterVerification: Marker = 0
     if (_frontend.errors.nonEmpty) {
       _frontend.setState( DefaultStates.Verification )
 
     } else {
+      tBeforeCountInstances = TimingLog.mark()
       val prog: Program = _frontend.program.get
       val stats = countInstances(prog)
 
+      tBeforeReportingStatistics = TimingLog.mark()
       _frontend.reporter.report(ProgramOutlineReport(prog.members.toList))
       _frontend.reporter.report(StatisticsReport(
         stats.getOrElse("method", 0),
@@ -257,19 +270,34 @@ class ViperBackend(private val _frontend: SilFrontend) {
       ))
       _frontend.reporter.report(ProgramDefinitionsReport(collectDefinitions(prog)))
 
+      tBeforeVerification = TimingLog.mark()
       if (_frontend.config.disableCaching()) {
         _frontend.verification()
       } else {
         println("start cached verification")
         doCachedVerification()
       }
+      tAfterVerification = TimingLog.mark()
     }
 
+    val tBeforeStop = TimingLog.mark()
     _frontend.verifier.stop()
-    val tEndWhole = TimingLog.mark()
+    val tAfterWhole = TimingLog.mark()
 
-    _frontend.timingLog.saveDuration("Whole program verification", tStartWhole, tEndWhole)
-    val wholeVerificationMillis = TimingLog.durationMillis(tStartWhole, tEndWhole)
+    _frontend.timingLog.saveDuration("Whole program verification", tBeforeWhole, tAfterWhole)
+    _frontend.timingLog.saveDuration("frontend.createVerifier()", tBeforeWhole, tBeforePrepare)
+    _frontend.timingLog.saveDuration("frontend.prepare()", tBeforePrepare, tBeforeInit)
+    _frontend.timingLog.saveDuration("frontend.init()", tBeforeInit, tBeforeReset)
+    _frontend.timingLog.saveDuration("frontend.reset()", tBeforeReset, tBeforeParsing)
+    _frontend.timingLog.saveDuration("frontend.parsing()", tBeforeParsing, tBeforeSemanticAnalysis)
+    _frontend.timingLog.saveDuration("frontend.semanticAnalysis()", tBeforeSemanticAnalysis, tBeforeTranslation)
+    _frontend.timingLog.saveDuration("frontend.translation()", tBeforeTranslation, tBeforeConsistencyCheck)
+    _frontend.timingLog.saveDuration("frontend.consistencyCheck()", tBeforeConsistencyCheck, tAfterConsistencyCheck)
+    _frontend.timingLog.saveDuration("countInstances(prog)", tBeforeCountInstances, tBeforeReportingStatistics)
+    _frontend.timingLog.saveDuration("Reporting statistics", tBeforeReportingStatistics, tBeforeVerification)
+    _frontend.timingLog.saveDuration("Verification (possibly cached)", tBeforeVerification, tAfterVerification)
+    _frontend.timingLog.saveDuration("frontend.verifier.stop()", tBeforeStop, tAfterWhole)
+    val wholeVerificationMillis = TimingLog.durationMillis(tBeforeWhole, tAfterWhole)
 
     // finish by reporting the overall outcome
     _frontend.result match {

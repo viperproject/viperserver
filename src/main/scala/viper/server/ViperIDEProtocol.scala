@@ -120,7 +120,18 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       "result" -> obj.result.toJson)
   })
 
-  implicit val durationEvent_writer: RootJsonFormat[DurationEvent] = jsonFormat6(DurationEvent)
+  implicit val durationEvent_writer: RootJsonFormat[DurationEvent] = lift(new RootJsonWriter[DurationEvent] {
+    override def write(obj: DurationEvent): JsValue = obj match {
+      case DurationEvent(name, cat, ph, ts, pid, tid) => JsObject(
+        "name" -> JsString(name),
+        "cat" -> JsString(cat),
+        "ph" -> JsString(ph),
+        "ts" -> JsNumber(ts),
+        "pid" -> JsNumber(pid),
+        "tid" -> JsNumber(tid)
+      )
+    }
+  })
 
   implicit val timingLogEntry_writer: RootJsonFormat[TimingLogEntry] = lift(new RootJsonWriter[TimingLogEntry] {
     override def write(obj: TimingLogEntry): JsValue = obj match {
