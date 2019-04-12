@@ -275,7 +275,7 @@ object ViperServerRunner {
             val new_job_handle: Future[JobHandle] = (main_actor ? ViperServerProtocol.Verify(arg_list)).mapTo[JobHandle]
             new_job_handle
           })
-          complete( VerificationRequestAccept(id) )
+          complete(VerificationRequestAccept(id))
 
         } else {
           complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS).") )

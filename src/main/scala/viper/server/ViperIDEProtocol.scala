@@ -12,6 +12,7 @@ import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import spray.json.DefaultJsonProtocol
 import viper.silver.reporter.{InvalidArgumentsReport, _}
+import viper.silver.utility.{DurationEvent, TimingLogEntry}
 import viper.silver.verifier._
 
 
@@ -119,16 +120,25 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       "result" -> obj.result.toJson)
   })
 
-  implicit val overallSuccessMessage_writer: RootJsonFormat[OverallSuccessMessage] = lift(new RootJsonWriter[OverallSuccessMessage] {
-    override def write(obj: OverallSuccessMessage): JsObject = {
-      JsObject(
-        "time" -> obj.verificationTime.toJson)
+  implicit val durationEvent_writer: RootJsonFormat[DurationEvent] = jsonFormat6(DurationEvent)
+
+  implicit val timingLogEntry_writer: RootJsonFormat[TimingLogEntry] = lift(new RootJsonWriter[TimingLogEntry] {
+    override def write(obj: TimingLogEntry): JsValue = obj match {
+      case e: DurationEvent => e.toJson
     }
+  })
+
+  implicit val overallSuccessMessage_writer: RootJsonFormat[OverallSuccessMessage] = lift(new RootJsonWriter[OverallSuccessMessage] {
+    override def write(obj: OverallSuccessMessage): JsObject = JsObject(
+      "time" -> obj.verificationTime.toJson,
+      "timingLog" -> obj.timingEvents.toJson
+    )
   })
 
   implicit val overallFailureMessage_writer: RootJsonFormat[OverallFailureMessage] = lift(new RootJsonWriter[OverallFailureMessage] {
     override def write(obj: OverallFailureMessage): JsValue = JsObject(
       "time" -> obj.verificationTime.toJson,
+      "timingLog" -> obj.timingEvents.toJson,
       "result" -> obj.result.toJson
     )
   })

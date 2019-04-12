@@ -20,6 +20,7 @@ import viper.silver.reporter
 import viper.silver.reporter.{Reporter, _}
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, _}
+import viper.silver.utility.TimingLog
 
 import scala.language.postfixOps
 
@@ -119,7 +120,6 @@ class VerificationWorker(private val reporter: ActorRef,
 }
 
 class ViperBackend(private val _frontend: SilFrontend) {
-
   override def toString: String = {
     if ( _frontend.verifier == null )
       s"ViperBackend( ${_frontend.getClass.getName} /with uninitialized verifier/ )"
@@ -220,7 +220,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
     }).mapValues(_.size)
 
   def execute(args: Seq[String]) {
-    _frontend.setStartTime()
+    val tStartWhole = TimingLog.mark()
 
     // create the verifier
     _frontend.setVerifier( _frontend.createVerifier(args.mkString(" ")) )
@@ -235,6 +235,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
 
     // run the parser, typechecker, and verifier
     _frontend.parsing()
+    return
     _frontend.semanticAnalysis()
     _frontend.translation()
     _frontend.consistencyCheck()
@@ -265,15 +266,22 @@ class ViperBackend(private val _frontend: SilFrontend) {
     }
 
     _frontend.verifier.stop()
+    val tEndWhole = TimingLog.mark()
+
+    _frontend.timingLog.saveDuration("Whole program verification", tStartWhole, tEndWhole)
+    val wholeVerificationMillis = TimingLog.durationMillis(tStartWhole, tEndWhole)
 
     // finish by reporting the overall outcome
-
     _frontend.result match {
       case Success =>
-        _frontend.reporter report OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime)
+        _frontend.reporter report OverallSuccessMessage(_frontend.getVerifierName,
+          wholeVerificationMillis,
+          _frontend.timingLog.events)
         // TODO: Think again about where to detect and trigger SymbExLogging
       case f@Failure(_) =>
-        _frontend.reporter report OverallFailureMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime,
+        _frontend.reporter report OverallFailureMessage(_frontend.getVerifierName,
+          wholeVerificationMillis,
+          _frontend.timingLog.events,
           // Cached errors will be reporter as soon as they are retrieved from the cache.
           Failure(f.errors.filter { e => !e.cached }))
     }
