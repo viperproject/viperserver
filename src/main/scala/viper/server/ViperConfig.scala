@@ -1,8 +1,18 @@
+/**
+  * This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+  *
+  * Copyright (c) 2011-2019 ETH Zurich.
+  */
+
 package  viper.server
 
 import java.io.File
 
 import org.rogach.scallop.{ScallopConf, ScallopOption, singleArgConverter}
+import viper.server.utility.ibm
+import viper.server.utility.ibm.Socket
 
 class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
 
@@ -79,11 +89,11 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
 
   val port: ScallopOption[Int] = opt[Int]("port", 'p',
     descr = ("Specifies the port on which ViperServer will be started."
-      + s"The port must be an integer in range [${viper.server.utility.Sockets.MIN_PORT_NUMBER}-${viper.server.utility.Sockets.MAX_PORT_NUMBER}]"
+      + s"The port must be an integer in range [${Socket.MIN_PORT_NUMBER}-${ibm.Socket.MAX_PORT_NUMBER}]"
       + "If the option is omitted, an available port will be selected automatically."),
-    default = Some(viper.server.utility.Sockets.findFreePort),
+    default = Some(ibm.Socket.findFreePort),
     validate = p => try {
-      viper.server.utility.Sockets.available(p)
+      ibm.Socket.available(p)
     } catch {
       case e: Exception =>
         println(s"Invalid port $p: $e")

@@ -1,34 +1,27 @@
 # README #
 
-Viper Server
+This is ViperServer, an HTTP server that manages verification requests to different tools from the Viper tool stack.
 
-### What is this repository for? ###
+The main two tools currently are:
 
-* Quick summary
-* Version
-* [Learn Markdown](https://bitbucket.org/tutorials/markdowndemo)
+- [Carbon](https://bitbucket.org/viperproject/carbon), a verification condition generation (VCG) backend for the Viper language.
+- [Silicon](https://bitbucket.org/viperproject/silicon), a symbolic execution verification backend.
 
-### How do I get set up? ###
 
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
+### The Purpose of ViperServer ###
 
-### Contribution guidelines ###
+1. Viper IDE: integration of Viper into Visual Studio Code (VS Code). Viper IDE provides the best user experience for Viper.
+   More details here: http://viper.ethz.ch/downloads/
+2. Avoid 1-3 second delays caused by JVM startup time. ViperServer offers a robust alternative to, e.g.,
+   [Nailgun](https://github.com/facebook/nailgun).
+3. Develop Viper encodings more efficiently with caching.
+4. Interact with Viper tools programmatically using the HTTP API. A reference client implementation (in Python) is
+   available via [viper_client](https://bitbucket.org/viperproject/viper_client).
 
-* Writing tests
-* Code review
-* Other guidelines
+For more details, please visit: http://viper.ethz.ch/downloads/
 
-### Who do I talk to? ###
 
-* Repo owner or admin
-* Other community or team contact
-
-### Installation Instructions:
+### Installation Instructions ###
 
 * Clone [silver](https://bitbucket.org/viperproject/silver/), [silicon](https://bitbucket.org/viperproject/silicon/) and [carbon](https://bitbucket.org/viperproject/carbon/) repositories in your computer, in separate directories.
 * Clone **viperserver** (this repository) in your computer, in another directory.
@@ -46,3 +39,16 @@ mklink /D silicon <relative path to diretory where you installed silicon>
 mklink /D carbon <relative path to diretory where you installed carbon>  
 ```
 * Compile by typing: ```sbt compile```
+
+* Other supported SBT commands are: ```sbt stage``` (produces fine-grained jar files), ```sbt assembly``` (produces a single fat jar file).
+
+### Running Tests ###
+
+* Set the environment variable ```Z3_EXE``` to an executable of a recent version of [Z3](https://github.com/Z3Prover/z3).
+
+* Run the following command: ```sbt test```.
+
+
+### Who do I talk to? ###
+
+* This repository is maintained by [Arshavir Ter-Gabrielyan](mailto:ter-gabrielyan@inf.ethz.ch).

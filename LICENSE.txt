@@ -1,4 +1,4 @@
-Silicon and all files of its source code are licensed under the Mozilla Public
+ViperServer and all files of its source code are licensed under the Mozilla Public
 License Version 2.0 (see below or http://www.mozilla.org/MPL/2.0/), with the
 following *exceptions*:
 
@@ -11,11 +11,11 @@ following *exceptions*:
     src/test/resources
     utils
 
-- Files found in src/main/resources/dafny_axioms (and its sub-directories),
-  which are licensed under Microsoft Public License (Ms-PL)
+- Files found in src/main/scala/viper/server/utility/apache (and its sub-directories),
+  which are licensed under Apache License, Version 2.0
 
-
-
+- Files found in src/main/scala/viper/server/utility/ibm (and its sub-directories),
+  which are licensed under Eclipse Public License 2.0
 
 
 Mozilla Public License Version 2.0
