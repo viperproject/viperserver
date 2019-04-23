@@ -21,5 +21,7 @@ object ViperRequests extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonS
   implicit val CacheResetRequest_format: RootJsonFormat[CacheResetRequest] = jsonFormat2(CacheResetRequest.apply)
 
   // Other requests go below this line.
+  case class AlloyGenerationRequest(arg: String, solver: String)
 
+  implicit val generateStuff = jsonFormat2(AlloyGenerationRequest.apply)
 }

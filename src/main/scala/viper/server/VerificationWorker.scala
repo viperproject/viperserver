@@ -15,7 +15,7 @@ import akka.actor.ActorRef
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperServerRunner.ReporterActor
-import viper.silicon.{SiliconFrontend, SymbExLogger}
+import viper.silicon.{Silicon, SiliconFrontend, SymbExLogger}
 import viper.silver.ast.{Position, _}
 import viper.silver.frontend.{DefaultStates, SilFrontend}
 import viper.silver.reporter
@@ -269,7 +269,6 @@ class ViperBackend(private val _frontend: SilFrontend) {
     _frontend.verifier.stop()
 
     // finish by reporting the overall outcome
-
     _frontend.result match {
       case Success =>
         _frontend.reporter report OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime)
@@ -278,10 +277,6 @@ class ViperBackend(private val _frontend: SilFrontend) {
         _frontend.reporter report OverallFailureMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime,
           // Cached errors will be reporter as soon as they are retrieved from the cache.
           Failure(f.errors.filter { e => !e.cached }))
-    }
-
-    if (SymbExLogger.enabled) {
-      _frontend.reporter.report(PongMessage("<Stub SymbExLoggerReport>"))
     }
   }
 

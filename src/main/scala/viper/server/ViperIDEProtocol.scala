@@ -12,7 +12,10 @@ import akka.NotUsed
 import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSupport}
 import akka.stream.scaladsl.Flow
 import akka.util.ByteString
+import edu.mit.csail.sdg.translator.A4Solution
 import spray.json.DefaultJsonProtocol
+import viper.silicon.SymbLog
+import viper.silicon.state.terms.Term
 import viper.silver.reporter.{InvalidArgumentsReport, _}
 import viper.silver.verifier._
 
@@ -28,6 +31,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   final case class JobDiscardReject(msg: String)
   final case class CacheFlushAccept(msg: String)
   final case class CacheFlushReject(msg: String)
+  final case class AlloyGenerationRequestReject(reason: String)
+  final case class AlloyGenerationRequestComplete(solution: A4Solution)
 
 
   implicit val verReqAccept_format: RootJsonFormat[VerificationRequestAccept] = jsonFormat1(VerificationRequestAccept.apply)
@@ -37,6 +42,12 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   implicit val jobDiscardReject_format: RootJsonFormat[JobDiscardReject] = jsonFormat1(JobDiscardReject.apply)
   implicit val CacheFlushAccept_format: RootJsonFormat[CacheFlushAccept] = jsonFormat1(CacheFlushAccept.apply)
   implicit val CacheFlushReject_format: RootJsonFormat[CacheFlushReject] = jsonFormat1(CacheFlushReject.apply)
+  implicit val alloyGenReqReject_format: RootJsonFormat[AlloyGenerationRequestReject] = jsonFormat1(AlloyGenerationRequestReject.apply)
+  implicit val alloyGenReqComplete_format: RootJsonFormat[AlloyGenerationRequestComplete] = lift(
+    new RootJsonWriter[AlloyGenerationRequestComplete] {
+      override def write(obj: AlloyGenerationRequestComplete): JsValue = AlloySolutionWriter.toJSON(obj.solution)
+    }
+  )
 
   // Implicit conversions for reporter.Message.
 
@@ -208,12 +219,28 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: ProgramDefinitionsReport) = JsObject("definitions" -> JsArray(obj.definitions.map(_.toJson).toVector))
   })
 
-  implicit val symbExLogReport_writer: RootJsonFormat[SymbExLogReport] = lift(new RootJsonWriter[SymbExLogReport] {
-    override def write(obj: SymbExLogReport) = JsObject(
-      //"entity" -> obj.entity.toJson,
-      "timestamp" -> obj.timestamp.toJson,
-      "log" -> JsString("<omitted>")
-    )
+  implicit val symbExLogReport_writer: RootJsonFormat[ExecutionTraceReport] = lift(new RootJsonWriter[ExecutionTraceReport] {
+    override def write(obj: ExecutionTraceReport) = obj match {
+      case ExecutionTraceReport(members: List[SymbLog], axioms: List[Term], functionPostAxioms: List[Term]) =>
+        JsObject(
+          "members" -> JsArray(members.map(m => SymbExLogReportWriter.toJSON(m.main)).toVector),
+          "axioms" -> JsArray(axioms.map(TermWriter.toJSON).toVector),
+          "functionPostAxioms" -> JsArray(functionPostAxioms.map(TermWriter.toJSON).toVector),
+          "macros" -> JsArray(members.flatMap(m => m.macros().map(m => {
+            JsObject(
+              "macro" -> TermWriter.toJSON(m._1),
+              "body" -> TermWriter.toJSON(m._2)
+            )
+          })).toVector)
+        )
+
+      case ExecutionTraceReport(members, axioms, functionPostAxioms) =>
+        JsObject(
+          "members" -> JsArray(members.map(m => JsString(m.toString)).toVector),
+          "axioms" -> JsArray(axioms.map(a => JsString(a.toString)).toVector),
+          "functionPostAxioms" -> JsArray(functionPostAxioms.map(a => JsString(a.toString)).toVector)
+        )
+    }
   })
 
   implicit val stackTraceElement_writer: RootJsonFormat[StackTraceElement] = lift(new RootJsonWriter[java.lang.StackTraceElement] {
@@ -263,7 +290,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case s: StatisticsReport => s.toJson
         case o: ProgramOutlineReport => o.toJson
         case d: ProgramDefinitionsReport => d.toJson
-        case e: SymbExLogReport => e.toJson
+        case e: ExecutionTraceReport => e.toJson
         case x: ExceptionReport => x.toJson
         case i: InvalidArgumentsReport => i.toJson
         case r: ExternalDependenciesReport => r.toJson
