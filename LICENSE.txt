@@ -3,7 +3,7 @@ License Version 2.0 (see below or http://www.mozilla.org/MPL/2.0/), with the
 following *exceptions*:
 
 - Files found in the following directories (and their sub-directories), which
-  are licensed under Public Domain
+  are in Public Domain
   (see http://creativecommons.org/publicdomain/zero/1.0/):
 
     docs/licenses
@@ -16,7 +16,6 @@ following *exceptions*:
 
 - Files found in src/main/scala/viper/server/utility/ibm (and its sub-directories),
   which are licensed under Eclipse Public License 2.0
-
 
 Mozilla Public License Version 2.0
 ==================================
