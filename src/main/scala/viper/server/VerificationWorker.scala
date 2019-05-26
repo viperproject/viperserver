@@ -321,7 +321,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
         methodsToVerify ++ methodsToCache)(real_program.pos, real_program.info, real_program.errT)
 
       _frontend.logger.trace(s"The cached program is equivalent to: \n${prog.toString()}")
-      _frontend.setVerificationResult(_frontend.mapVerificationResult(_frontend.verifier.verify(prog)))
+      _frontend.setVerificationResult(_frontend.verifier.verify(prog))
 
       _frontend.setState(DefaultStates.Verification)
 
