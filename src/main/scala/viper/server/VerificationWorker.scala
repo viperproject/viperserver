@@ -37,6 +37,7 @@ class ActorReporter(private val actor_ref: ActorRef, val tag: String)
   }
 }
 
+
 class ViperServerException extends Exception
 
 case class ViperServerWrongTypeException(name: String) extends ViperServerException {
@@ -565,8 +566,8 @@ class ViperBackend(private val _frontend: SilFrontend) {
       case t: Old => t.copy()(pos, t.info, t.errT)
       case t: LabelledOld => t.copy()(pos, t.info, t.errT)
       case t: AnySetCardinality => t.copy()(pos, t.info, t.errT)
-      case t: FuncApp => t.copy()(pos, t.info, t.typ, t.formalArgs, t.errT)
-      case t: DomainFuncApp => t.copy()(pos, t.info, t.typ, t.formalArgs, t.domainName, t.errT)
+      case t: FuncApp => t.copy()(pos, t.info, t.typ, t.errT)
+      case t: DomainFuncApp => t.copy()(pos, t.info, t.typ, t.domainName, t.errT)
       case t: EmptySeq => t.copy()(pos, t.info, t.errT)
       case t: ExplicitSeq => t.copy()(pos, t.info, t.errT)
       case t: RangeSeq => t.copy()(pos, t.info, t.errT)
