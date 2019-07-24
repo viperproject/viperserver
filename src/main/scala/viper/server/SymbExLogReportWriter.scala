@@ -1,18 +1,20 @@
 package viper.server
 
-import viper.silicon.verifier.Verifier
+import logger.SymbLog
+import logger.records.{RecordData, SymbolicRecord}
+import logger.records.scoping.{CloseScopeRecord, OpenScopeRecord}
+import logger.records.structural.{BranchInfo, BranchingRecord, JoiningRecord}
 import viper.silicon._
-
-import scala.collection.immutable.VectorBuilder
 import spray.json._
+import viper.silicon.common.collections.immutable.InsertionOrderedSet
 import viper.silicon.interfaces.state.Chunk
 import viper.silicon.resources.{FieldID, PredicateID}
 import viper.silicon.rules.InverseFunctions
+import viper.silicon.state.terms.Term
 import viper.silicon.state.{utils => _, _}
 import viper.silver.ast.AbstractLocalVar
 
 
-// TODO: Clean this up
 /** Wrapper for the SymbExLogReport conversion to JSON. */
 object SymbExLogReportWriter {
 
@@ -95,12 +97,129 @@ object SymbExLogReportWriter {
     )
   }
 
-  // TODO: Implement structured translation of the state (PCs, heap?, store?)
-  private def stateToJSON(record: SymbolicRecord) = {
-    val state = record.state
-    val pcs = record.pcs
+  /** Translates all members to a JsArray.
+    *
+    * @param members A symbolic log per member to translate.
+    * @return array of all records.
+    */
+  def toJSON(members: List[SymbLog]): JsArray = {
+    val records = members.foldLeft(Vector[JsValue]()) {
+      (prevVal: Vector[JsValue], member: SymbLog) => prevVal ++ toJSON(member)
+    }
+    JsArray(records)
+  }
 
-    val store = JsArray(state.g.values.map({
+  /** Translates a SymbLog to a vector of JsValues.
+    *
+    * @param symbLog The symbolic log to translate.
+    * @return array of all records.
+    */
+  def toJSON(symbLog: SymbLog): Vector[JsValue] = {
+    symbLog.log.map(toJSON).toVector
+  }
+
+  /** Translates a SymbolicRecord to a JsValue.
+    *
+    * @param record The symbolic to translate.
+    * @return The record translated as a JsValue.
+    */
+  def toJSON(record: SymbolicRecord): JsValue = {
+
+    var isJoinPoint: Boolean = false
+    var isScopeOpen: Boolean = false
+    var isScopeClose: Boolean = false
+    var isSyntactic: Boolean = false
+    var branches: Option[JsArray] = None
+    var data: Option[JsObject] = toJSON(record.getData())
+    record match {
+      case br: BranchingRecord => branches = Some(JsArray(br.getBranchInfos().map(toJSON).toVector))
+      case jr: JoiningRecord => isJoinPoint = true
+      case os: OpenScopeRecord => isScopeOpen = true
+      case cs: CloseScopeRecord => isScopeClose = true
+      case _ =>
+    }
+
+    var fields: Map[String, JsValue] = new Map()
+
+    fields = fields + ("id" -> JsNumber(record.id))
+    fields = fields + ("kind" -> JsString(record.toTypeString()))
+    fields = fields + ("value" -> JsString(record.toSimpleString()))
+    if (isJoinPoint) {
+      fields = fields + ("isJoinPoint" -> JsTrue)
+    }
+    if (isScopeOpen) {
+      fields = fields + ("isScopeOpen" -> JsTrue)
+    }
+    if (isScopeClose) {
+      fields = fields + ("isScopeClose" -> JsTrue)
+    }
+    if (isSyntactic) {
+      fields = fields + ("isSyntactic" -> JsTrue)
+    }
+    branches match {
+      case Some(jsBranches) => fields = fields + ("branches" -> jsBranches)
+      case _ =>
+    }
+    data match {
+      case Some(jsData) => fields = fields + ("data" -> jsData)
+      case _ =>
+    }
+
+    JsObject(fields)
+  }
+
+  def toJSON(data: RecordData): Option[JsObject] = {
+    var fields: Map[String, JsValue] = new Map()
+
+    data.refId match {
+      case Some(refId) => fields = fields + ("refId" -> JsNumber(refId))
+      case _ =>
+    }
+
+    if (data.isSmtQuery) {
+      fields = fields + ("isSmtQuery" -> JsTrue)
+    }
+
+    data.timeMs match {
+      case Some(timeMs) => fields = fields + ("timeMs" -> JsNumber(timeMs))
+      case _ =>
+    }
+
+    data.pos match {
+      case Some(pos) => fields = fields + ("pos" -> JsString(pos))
+      case _ =>
+    }
+
+    data.lastSMTQuery match {
+      case Some(smtQuery) => fields = fields + ("lastSMTQuery" -> TermWriter.toJSON(smtQuery))
+      case _ =>
+    }
+
+    data.store match {
+      case Some(store) => fields = fields + ("store" -> toJSON(store))
+      case _ =>
+    }
+
+    data.heap match {
+      case Some(heap) => fields = fields + ("heap" -> toJSON(heap))
+      case _ =>
+    }
+
+    data.oldHeap match {
+      case Some(oldHeap) => fields = fields + ("oldHeap" -> toJSON(oldHeap))
+      case _ =>
+    }
+
+    data.pcs match {
+      case Some(pcs) => fields = fields + ("pcs" -> toJSON(pcs))
+      case _ =>
+    }
+
+    if (fields.isEmpty) None else Some(JsObject(fields))
+  }
+
+  def toJSON(store: Store): JsArray = {
+    JsArray(store.values.map({
       case (v @ AbstractLocalVar(name), value) =>
         JsObject(
           "name" -> JsString(name),
@@ -110,120 +229,23 @@ object SymbExLogReportWriter {
       case other =>
         JsString(s"Unexpected variable in store '$other'")
     }).toVector)
-    val oldHeap = state.oldHeaps.get(Verifier.PRE_STATE_LABEL) match {
-      case Some(h) => JsArray(h.values.map(heapChunkToJSON).toVector)
-      case _ => JsArray()
-    }
-
-    JsObject(
-      "store" -> store,
-      "heap" -> JsArray(state.h.values.map(heapChunkToJSON).toVector),
-      "oldHeap" -> oldHeap,
-      "pcs" -> JsArray(pcs.map(TermWriter.toJSON).toVector)
-    )
   }
 
-  /** Translates a SymbolicRecord to a JsValue.
-    *
-    * @param record The symbolic to translate.
-    * @return The record translated as a JsValue.
-    */
-  def toJSON(record: SymbolicRecord): JsValue = record match {
-    case gb: GlobalBranchRecord =>
-      JsObject(
-        "kind" -> JsString("GlobalBranch"),
-        "value" -> JsString(gb.value.toString()),
-        "prestate" -> stateToJSON(gb),
-        "children" -> JsArray(
-          JsObject(
-            "kind" -> JsString("Branch 1"),
-            "children" -> JsArray(gb.thnSubs.map(toJSON).toVector)
-          ),
-          JsObject(
-            "kind" -> JsString("Branch 2"),
-            "children" -> JsArray(gb.elsSubs.map(toJSON).toVector)
-          )
-        )
-      )
+  def toJSON(heap: Heap): JsArray = {
+    JsArray(heap.values.map(heapChunkToJSON).toVector)
+  }
 
-    case mc: MethodCallRecord =>
-      JsObject(
-        "kind" -> JsString("MethodCall"),
-        "value" -> JsString(mc.value.toString()),
-        "pos" -> JsString(utils.ast.sourceLineColumn(mc.value)),
-        "children" -> JsArray(
-          JsObject(
-            "kind" -> JsString("parameters"),
-            "children" -> JsArray(mc.parameters.map(toJSON).toVector)
-          ),
-          JsObject(
-            "kind" -> JsString("precondition"),
-            "prestate" -> stateToJSON(mc.precondition),
-            "children" -> JsArray(toJSON(mc.precondition))
-          ),
-          JsObject(
-            "kind" -> JsString("postcondition"),
-            "prestate" -> stateToJSON(mc.postcondition),
-            "children" -> JsArray(toJSON(mc.postcondition))
-          )
-        )
-      )
+  def toJSON(pcs: InsertionOrderedSet[Term]): JsArray = {
+    JsArray(pcs.map(TermWriter.toJSON).toVector)
+  }
 
-    case cr: CommentRecord =>
-      JsObject(
-        "kind" -> JsString("comment"),
-        "value" -> JsString(if(cr.comment != null) cr.comment else "")
-      )
+  def toJSON(info: BranchInfo): JsObject = {
+    val records: List[JsNumber] = info.records.map(record => JsNumber(record.id))
 
-    // Records that don't have a special structure.
-    case r =>
-      // We first gather all the fields since many might not be present
-      val members: VectorBuilder[JsField] = new VectorBuilder[(String, JsValue)]()
-
-      // Get the kind/type and value of the record
-      members ++= (r match {
-        case m: MethodRecord => Vector( "kind" -> JsString("Method"), "value" -> JsString(m.value.name) )
-        case p: PredicateRecord => Vector( "kind" -> JsString("Predicate"), "value" -> JsString(p.value.name) )
-        case f: FunctionRecord => Vector( "kind" -> JsString("Function"), "value" -> JsString(f.value.name) )
-        case e: ExecuteRecord =>
-          Vector(
-            "type" -> JsString("execute"),
-            "pos" -> JsString(utils.ast.sourceLineColumn(e.value)),
-            "value" -> JsString(e.value.toString())
-          )
-        case e: EvaluateRecord =>
-          Vector(
-            "type" -> JsString("evaluate"),
-            "pos" -> JsString(utils.ast.sourceLineColumn(e.value)),
-            "value" -> JsString(e.value.toString())
-          )
-        case p: ProduceRecord =>
-          Vector(
-            "type" -> JsString("produce"),
-            "pos" -> JsString(utils.ast.sourceLineColumn(p.value)),
-            "value" -> JsString(p.value.toString())
-          )
-        case c: ConsumeRecord =>
-          Vector(
-            "type" -> JsString("produce"),
-            "pos" -> JsString(utils.ast.sourceLineColumn(c.value)),
-            "value" -> JsString(c.value.toString())
-          )
-        case _: WellformednessCheckRecord =>
-          Vector( "kind" -> JsString("WellformednessCheck") )
-        case _ =>
-          Vector( "kind" -> JsString(s"UnexpectedRecord ${r.toSimpleString()}") )
-      })
-
-      if (r.state != null) {
-        members += ("prestate" -> stateToJSON(r))
-      }
-
-      if (r.lastFailedProverQuery.isDefined) {
-        members += ("lastSMTQuery" -> TermWriter.toJSON(r.lastFailedProverQuery.get))
-      }
-      members += ("children" -> JsArray(r.subs.map(toJSON).toVector))
-
-      JsObject(members.result():_*)
+    JsObject(
+      "isReachable" -> JsBoolean(info.isReachable),
+      "startTimeMs" -> JsNumber(info.startTimeMs),
+      "records" -> JsArray(records.toVector)
+    )
   }
 }

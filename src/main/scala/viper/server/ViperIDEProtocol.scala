@@ -13,8 +13,8 @@ import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSup
 import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import edu.mit.csail.sdg.translator.A4Solution
+import logger.SymbLog
 import spray.json.DefaultJsonProtocol
-import viper.silicon.SymbLog
 import viper.silicon.state.terms.Term
 import viper.silver.reporter.{InvalidArgumentsReport, _}
 import viper.silver.verifier._
@@ -223,7 +223,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: ExecutionTraceReport) = obj match {
       case ExecutionTraceReport(members: List[SymbLog], axioms: List[Term], functionPostAxioms: List[Term]) =>
         JsObject(
-          "members" -> JsArray(members.map(m => SymbExLogReportWriter.toJSON(m.main)).toVector),
+          "members" -> SymbExLogReportWriter.toJSON(members),
           "axioms" -> JsArray(axioms.map(TermWriter.toJSON).toVector),
           "functionPostAxioms" -> JsArray(functionPostAxioms.map(TermWriter.toJSON).toVector),
           "macros" -> JsArray(members.flatMap(m => m.macros().map(m => {

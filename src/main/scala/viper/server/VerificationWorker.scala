@@ -15,7 +15,7 @@ import akka.actor.ActorRef
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperServerRunner.ReporterActor
-import viper.silicon.{Silicon, SiliconFrontend, SymbExLogger}
+import viper.silicon.SiliconFrontend
 import viper.silver.ast.{Position, _}
 import viper.silver.frontend.{DefaultStates, SilFrontend}
 import viper.silver.reporter
