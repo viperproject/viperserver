@@ -13,8 +13,8 @@ import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSup
 import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import edu.mit.csail.sdg.translator.A4Solution
-import logger.SymbLog
 import spray.json.DefaultJsonProtocol
+import viper.silicon.logger.SymbLog
 import viper.silicon.state.terms.Term
 import viper.silver.reporter.{InvalidArgumentsReport, _}
 import viper.silver.verifier._

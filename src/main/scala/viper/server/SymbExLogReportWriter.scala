@@ -1,13 +1,13 @@
 package viper.server
 
-import logger.SymbLog
-import logger.records.{RecordData, SymbolicRecord}
-import logger.records.scoping.{CloseScopeRecord, OpenScopeRecord}
-import logger.records.structural.{BranchInfo, BranchingRecord, JoiningRecord}
 import viper.silicon._
 import spray.json._
 import viper.silicon.common.collections.immutable.InsertionOrderedSet
 import viper.silicon.interfaces.state.Chunk
+import viper.silicon.logger.SymbLog
+import viper.silicon.logger.records.{RecordData, SymbolicRecord}
+import viper.silicon.logger.records.scoping.{CloseScopeRecord, OpenScopeRecord}
+import viper.silicon.logger.records.structural.{BranchInfo, BranchingRecord, JoiningRecord}
 import viper.silicon.resources.{FieldID, PredicateID}
 import viper.silicon.rules.InverseFunctions
 import viper.silicon.state.terms.Term
