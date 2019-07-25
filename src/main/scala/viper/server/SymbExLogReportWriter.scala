@@ -115,7 +115,21 @@ object SymbExLogReportWriter {
     * @return array of all records.
     */
   def toJSON(symbLog: SymbLog): Vector[JsValue] = {
-    symbLog.log.map(toJSON).toVector
+    val allRecords = getAllRecords(symbLog.log)
+    allRecords.map(toJSON).toVector
+  }
+
+  def getAllRecords(list: List[SymbolicRecord]): List[SymbolicRecord] = {
+    list.foldLeft(List[SymbolicRecord]()) (
+      (prevVal, curVal) => prevVal ++ getAllRecords(curVal))
+  }
+
+  def getAllRecords(r: SymbolicRecord): List[SymbolicRecord] = {
+    r match {
+      case br: BranchingRecord => br.getBranches().foldLeft(List[SymbolicRecord]()) (
+        (prevVal, curVal) => prevVal ++ getAllRecords(curVal))
+      case _ => List(r)
+    }
   }
 
   /** Translates a SymbolicRecord to a JsValue.
@@ -194,7 +208,7 @@ object SymbExLogReportWriter {
       case Some(smtQuery) => fields = fields + ("lastSMTQuery" -> TermWriter.toJSON(smtQuery))
       case _ =>
     }
-
+    /*
     data.store match {
       case Some(store) => fields = fields + ("store" -> toJSON(store))
       case _ =>
@@ -214,7 +228,7 @@ object SymbExLogReportWriter {
       case Some(pcs) => fields = fields + ("pcs" -> toJSON(pcs))
       case _ =>
     }
-
+    */
     if (fields.isEmpty) None else Some(JsObject(fields))
   }
 
