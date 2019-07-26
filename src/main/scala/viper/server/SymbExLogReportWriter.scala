@@ -125,8 +125,9 @@ object SymbExLogReportWriter {
   }
 
   def getAllRecords(r: SymbolicRecord): List[SymbolicRecord] = {
+    // return the record itself plus all records that are referenced by it (which only occurs for branching records)
     r match {
-      case br: BranchingRecord => br.getBranches().foldLeft(List[SymbolicRecord]()) (
+      case br: BranchingRecord => br.getBranches().foldLeft(List[SymbolicRecord](br)) (
         (prevVal, curVal) => prevVal ++ getAllRecords(curVal))
       case _ => List(r)
     }
@@ -194,6 +195,11 @@ object SymbExLogReportWriter {
       fields = fields + ("isSmtQuery" -> JsTrue)
     }
 
+    data.smtStatistics match {
+      case Some(stats) => fields = fields + ("smtStatistics" -> toJSON(stats))
+      case _ =>
+    }
+
     data.timeMs match {
       case Some(timeMs) => fields = fields + ("timeMs" -> JsNumber(timeMs))
       case _ =>
@@ -230,6 +236,11 @@ object SymbExLogReportWriter {
     }
     */
     if (fields.isEmpty) None else Some(JsObject(fields))
+  }
+
+  def toJSON(m: Map[String, String]): JsObject = {
+    val fields: Map[String, JsValue] = m map { case (key, value) => (key, JsString(value)) }
+    JsObject(fields)
   }
 
   def toJSON(store: Store): JsArray = {
