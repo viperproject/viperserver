@@ -214,7 +214,7 @@ object SymbExLogReportWriter {
       case Some(smtQuery) => fields = fields + ("lastSMTQuery" -> TermWriter.toJSON(smtQuery))
       case _ =>
     }
-    /*
+
     data.store match {
       case Some(store) => fields = fields + ("store" -> toJSON(store))
       case _ =>
@@ -234,7 +234,7 @@ object SymbExLogReportWriter {
       case Some(pcs) => fields = fields + ("pcs" -> toJSON(pcs))
       case _ =>
     }
-    */
+
     if (fields.isEmpty) None else Some(JsObject(fields))
   }
 
