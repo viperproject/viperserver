@@ -33,8 +33,8 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
     println(s">>> ViperServer test request `$req` response in the following response: $res")
   }
 
-  def getResourcePath(sil_file: String): String = {
-    val cross_platform_path = new File(sil_file) getPath
+  def getResourcePath(vpr_file: String): String = {
+    val cross_platform_path = new File(vpr_file) getPath
     val resource = getClass.getResource(cross_platform_path)
     val fname = if (resource != null) {
       val file = Paths.get(resource.toURI)
@@ -49,19 +49,19 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
     "\"" + fname + "\""
   }
 
-  private val verifiableFile = "viper/let.sil"
-  //private val nonExistingFile = "viper/bla.sil"
+  private val verifiableFile = "viper/let.vpr"
+  //private val nonExistingFile = "viper/bla.vpr"
   private val emptyFile ="viper/empty.vpr"
 
   private val tool = "silicon"
-  private val testSimpleViperCodeWithSilicon_cmd = s"$tool ${getResourcePath(verifiableFile)}"
-  private val testEmptyFileWithSilicon_cmd = s"$tool ${getResourcePath(emptyFile)}"
+  private val testSimpleViperCode_cmd = s"$tool --disableCaching ${getResourcePath(verifiableFile)}"
+  private val testEmptyFile_cmd = s"$tool --disableCaching ${getResourcePath(emptyFile)}"
 
   "ViperServer" should {
 
-    "start a verification session using Carbon over a small Viper program" in {
-      Post("/verify", VerificationRequest(testSimpleViperCodeWithSilicon_cmd)) ~> _routsUnderTest ~> check {
-        //printRequestResponsePair(s"POST, /verify, $testSimpleViperCodeWithSilicon_cmd", responseAs[String])
+    s"start a verification session using `$tool` over a small Viper program" in {
+      Post("/verify", VerificationRequest(testSimpleViperCode_cmd)) ~> _routsUnderTest ~> check {
+        //printRequestResponsePair(s"POST, /verify, $testSimpleViperCode_cmd", responseAs[String])
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
       }
@@ -70,15 +70,15 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
     "respond with the result for session #0" in {
       Get("/verify/0") ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"GET, /verify/0", responseAs[String])
-        responseAs[String] should include (""""kind":"overall","status":"success","verifier":"silicon"""")
+        responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
       }
     }
 
-    "start another verification session using Carbon " in {
-      Post("/verify", VerificationRequest(testEmptyFileWithSilicon_cmd)) ~> _routsUnderTest ~> check {
-        //printRequestResponsePair(s"POST, /verify, $testEmptyFileWithSilicon_cmd", responseAs[String])
+    s"start another verification session using `$tool` " in {
+      Post("/verify", VerificationRequest(testEmptyFile_cmd)) ~> _routsUnderTest ~> check {
+        //printRequestResponsePair(s"POST, /verify, $testEmptyFile_cmd", responseAs[String])
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
       }
@@ -87,7 +87,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
     "respond with the result for session #1" in {
       Get("/verify/1") ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"GET, /verify/1", responseAs[String])
-        responseAs[String] should include (""""kind":"overall","status":"success","verifier":"silicon"""")
+        responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
       }
