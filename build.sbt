@@ -47,7 +47,7 @@ lazy val server = (project in file("."))
         run / javaOptions += "-Xss128m",
 
         // Test settings
-        // Forcing error to test e-mail notification fork := true,
+        fork := true,
 
         // Assembly settings
         assembly / assemblyJarName := "viper.jar",                      // JAR filename
