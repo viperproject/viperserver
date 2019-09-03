@@ -43,6 +43,12 @@ lazy val server = (project in file("."))
         libraryDependencies += "com.typesafe.akka" %% "akka-stream-testkit" % "2.5.22" % Test,
         libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.1.8" % Test,
 
+        // Run settings
+        run / javaOptions += "-Xss128m",
+
+        // Test settings
+        fork := true,
+
         // Assembly settings
         assembly / assemblyJarName := "viper.jar",                      // JAR filename
         assembly / mainClass := Some("viper.server.ViperServerRunner"), // Define JAR's entry point
