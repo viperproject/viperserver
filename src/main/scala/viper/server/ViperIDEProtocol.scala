@@ -15,6 +15,7 @@ import akka.util.ByteString
 import edu.mit.csail.sdg.translator.A4Solution
 import spray.json.DefaultJsonProtocol
 import viper.silicon.logger.SymbLog
+import viper.silicon.logger.writer.{SymbExLogReportWriter, TermWriter}
 import viper.silicon.state.terms.Term
 import viper.silver.reporter.{InvalidArgumentsReport, _}
 import viper.silver.verifier._
