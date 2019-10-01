@@ -222,7 +222,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
 
   implicit val symbExLogReport_writer: RootJsonFormat[ExecutionTraceReport] = lift(new RootJsonWriter[ExecutionTraceReport] {
     override def write(obj: ExecutionTraceReport) = obj match {
-      case ExecutionTraceReport(members: List[SymbLog], axioms: List[Term], functionPostAxioms: List[Term]) =>
+      case ExecutionTraceReport(members: Seq[SymbLog], axioms: List[Term], functionPostAxioms: List[Term]) =>
         JsObject(
           "members" -> SymbExLogReportWriter.toJSON(members),
           "axioms" -> JsArray(axioms.map(TermWriter.toJSON).toVector),
