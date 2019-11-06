@@ -496,8 +496,6 @@ class ViperBackend(private val _frontend: SilFrontend) {
       case t: If => t.copy()(pos, t.info, t.errT)
       case t: Label => t.copy()(pos, t.info, t.errT)
       case t: Goto => t.copy()(pos, t.info, t.errT)
-      case t: Fresh => t.copy()(pos, t.info, t.errT)
-      case t: Constraining => t.copy()(pos, t.info, t.errT)
       case t: LocalVarDeclStmt => t.copy()(pos, t.info, t.errT)
 
       case t: LocalVarDecl => t.copy()(pos, t.info, t.errT)
