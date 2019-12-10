@@ -15,7 +15,7 @@ import akka.actor.ActorRef
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperServerRunner.ReporterActor
-import viper.silicon.{Silicon, SiliconFrontend, SymbExLogger}
+import viper.silicon.SiliconFrontend
 import viper.silver.ast.{Position, _}
 import viper.silver.frontend.{DefaultStates, SilFrontend}
 import viper.silver.reporter
@@ -319,7 +319,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
 
       val real_program = _frontend.program.get
       val prog: Program = Program(real_program.domains, real_program.fields, real_program.functions, real_program.predicates,
-        methodsToVerify ++ methodsToCache)(real_program.pos, real_program.info, real_program.errT)
+        methodsToVerify ++ methodsToCache, real_program.extensions)(real_program.pos, real_program.info, real_program.errT)
 
       _frontend.logger.trace(s"The cached program is equivalent to: \n${prog.toString()}")
       _frontend.setVerificationResult(_frontend.mapVerificationResult(_frontend.verifier.verify(prog)))
