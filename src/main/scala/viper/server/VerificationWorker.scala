@@ -193,7 +193,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
               case _ => Seq()
             })
           } ++ t.axioms.flatMap { ax =>
-            Definition(ax.name, "Axiom", ax.pos, Some(p)) +: (ax.pos match {
+            Definition(if (ax.isInstanceOf[NamedDomainAxiom]) ax.asInstanceOf[NamedDomainAxiom].name else "", "Axiom", ax.pos, Some(p)) +: (ax.pos match {
               case ax_p: AbstractSourcePosition =>
                 ax.exp.deepCollect {
                   case scope:Scope with Positioned =>
@@ -476,7 +476,8 @@ class ViperBackend(private val _frontend: SilFrontend) {
       case t: Domain => t.copy()(pos, t.info, t.errT)
 
       //DomainMembers
-      case t: DomainAxiom => t.copy()(pos, t.info, t.domainName, t.errT)
+      case t: NamedDomainAxiom => t.copy()(pos, t.info, t.domainName, t.errT)
+      case t: AnonymousDomainAxiom => t.copy()(pos, t.info, t.domainName, t.errT)
       case t: DomainFunc => t.copy()(pos, t.info, t.domainName, t.errT)
 
       //Statements
