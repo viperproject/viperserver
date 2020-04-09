@@ -41,8 +41,9 @@ import java.nio.file.Paths
 
 import viper.silicon.SiliconFrontend
 import viper.silver.ast.Program
-import viper.silver.frontend.SilFrontend
+import viper.silver.frontend.{DefaultStates, SilFrontend}
 import viper.silver.parser.PProgram
+import viper.silver.verifier.VerificationResult
 
 object ViperServerRunner {
 
@@ -470,7 +471,9 @@ object ViperServerRunner {
 		writeBatchScripts(port)
 		println(s"ViperServer online at http://localhost:$port")
 
-		parseTest()
+//		parseTest()
+		verificationTest()
+
 	} // method main
 
 	def init(cmdArgs: Seq[String]) {
@@ -479,7 +482,6 @@ object ViperServerRunner {
 		_logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
 		println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 	}
-
 
 	private def getArgListFromArgString(arg_str: String): List[String] = {
 		val possibly_quoted_string = raw"""[^\s"']+|"[^"]*"|'[^']*'""".r
@@ -490,43 +492,75 @@ object ViperServerRunner {
 		}
 	}
 
-	def parseTest(): Unit ={
-//		val source = scala.io.Source.fromFile("test.vpr")
-//		val lines = try source.mkString finally source.close()
-//		println(lines)
+	def parseTest(): Unit = {
+		var astgen = new ASTGenerator("test.vpr")
+		println("Parsing---")
+		println(astgen.parse_AST)
+		for (m <- astgen.parse_AST.methods) println(m)
 
-		val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure)
-									   .toMat(Sink.asPublisher(false))(Keep.both)
-									   .run()
+		println("Translating---")
+		println(astgen.translated_AST)
+	}
 
-		val some_reporter = system.actorOf(ReporterActor.props(0, queue), s"parse_reporter")
+	def verificationTest() : Unit = {
+		var astGen = new ASTGenerator("test.vpr")
+		var astVer = new VerificationFromAST(astGen.translated_AST)
+		println("Verifying---")
+		println(astVer.ver_result)
+	}
 
-		val siliconBackend: SilFrontend = new SiliconFrontend(new ActorReporter(some_reporter, "silicon"), _logger.get)
-		val args:Array[String] = Array("test.vpr")
+	class VerificationFromAST(var ast : Program){
+		var ver_backend: SilFrontend = initialize_backend()
+		var ver_result: Option[VerificationResult] = verify()
 
-		siliconBackend.setStartTime()
+		private def initialize_backend() : SilFrontend = {
+			val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure)
+										   .toMat(Sink.asPublisher(false))(Keep.both)
+										   .run()
 
-		// create the verifier
-		siliconBackend.setVerifier( siliconBackend.createVerifier(args.mkString(" ")) )
-		if (!siliconBackend.prepare(args)) return
+			val some_reporter = system.actorOf(ReporterActor.props(0, queue), s"verification_reporter")
 
-		// initialize the translator
-		siliconBackend.init( siliconBackend.verifier )
+			new SiliconFrontend(new ActorReporter(some_reporter, "silicon"), _logger.get)
+		}
 
-		// set the file we want to verify
-		siliconBackend.reset(Paths.get(siliconBackend.config.file()))
+		private def verify(): Option[VerificationResult] = {
+			ver_backend.setState(DefaultStates.Translation)
+			ver_backend.doConsistencyCheck(ast)
+			ver_backend.verification()
+			ver_backend.getVerificationResult
+		}
+	}
 
-		// run the parser, typechecker, and verifier
-		siliconBackend.parsing()
-		val parseResult: PProgram = siliconBackend.parsingResult
-		for (m <- parseResult.methods) println(m)
-		println("parsing done!")
+	class ASTGenerator(private val vpr_file_path:String){
+		var ver_backend: SilFrontend = initialize_backend()
+		var parse_AST : PProgram = parse()
+		var translated_AST : Program = translate()
 
-		siliconBackend.semanticAnalysis()
-		siliconBackend.translation()
-		val prog : Program = siliconBackend.translationResult
-		println(prog)
-		println("translating done!")
+		private def initialize_backend() : SilFrontend = {
+			val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure)
+										   .toMat(Sink.asPublisher(false))(Keep.both)
+										   .run()
+
+			val some_reporter = system.actorOf(ReporterActor.props(0, queue), s"parse_reporter")
+
+			new SiliconFrontend(new ActorReporter(some_reporter, "silicon"), _logger.get)
+		}
+
+		private def parse(): PProgram = {
+			val args:Array[String] = Array(vpr_file_path)
+			ver_backend.setVerifier( ver_backend.createVerifier(args.mkString(" ")) )
+			ver_backend.prepare(args)
+			ver_backend.init( ver_backend.verifier )
+			ver_backend.reset(Paths.get(ver_backend.config.file()))
+			ver_backend.parsing()
+			ver_backend.parsingResult
+		}
+
+		private def translate() = {
+			ver_backend.semanticAnalysis()
+			ver_backend.translation()
+			ver_backend.translationResult
+		}
 	}
 
 	private def writeBatchScripts(port: Int): Unit ={
