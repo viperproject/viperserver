@@ -1,1 +1,1 @@
-cd ..\viper_client-master & python client.py -c terminate -p 52769 & cd ..\viperserver
+cd ..\viper_client-master & python client.py -c terminate -p 53743 & cd ..\viperserver
