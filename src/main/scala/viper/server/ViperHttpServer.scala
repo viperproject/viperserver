@@ -97,7 +97,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
           case None => complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS)."))
         }
       }
-    } // TEST (allows the communication with Viperserver by simple get request)###################################################################################################################
+    } // TEST (allows the communication with Viperserver by simple get request)#DELETE LATER##################################################################################################################
   } ~ path("test") {
     get {
       println("Hello from Test\n")
@@ -125,7 +125,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
           // Did not find a job with this jid.
           complete( VerificationRequestReject(s"The verification job #$id does not exist.") )
       }    
-    } //#########################################################################################################################
+    } //DELETE LATER#########################################################################################################################
   } ~ path("verify" / IntNumber) { jid =>
 
     /**

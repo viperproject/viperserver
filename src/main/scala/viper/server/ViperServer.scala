@@ -9,11 +9,11 @@ object ViperServerRunner {
     
     def main(args: Array[String]): Unit = {
       // Execute ViperCoreServer
-/*
+
       import viper.silicon.SiliconFrontend
       import java.nio.file.Paths
 
-      val fileName: String = "wrong.sil"
+      val fileName: String = "correct.sil"
 
       val config = new ViperConfig(args)
       config.verify()
@@ -62,13 +62,14 @@ object ViperServerRunner {
       // wait for 10 seconds
       Thread.sleep(10000)
       core.stop()
-*/
-      // Execute ViperHttpServer
 
+      // Execute ViperHttpServer
+/*
       val config = new ViperConfig(args)
       config.verify()
       httpServer = new ViperHttpServer(config)
 
       httpServer.start()
+*/
   } // method main
 }
