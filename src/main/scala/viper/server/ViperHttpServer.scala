@@ -90,11 +90,13 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
     post {
       entity(as[VerificationRequest]) { r =>
         val arg_list = getArgListFromArgString(r.arg)
-        val (id, _) = createJobHandle(arg_list)
+        val jobHandler = createJobHandle(arg_list)
+        val id = jobHandler.id
 
-        id match {
-          case Some(id) => complete( VerificationRequestAccept(id) )
-          case None => complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS)."))
+        if (id >= 0) {
+          complete( VerificationRequestAccept(id) )
+        } else {
+          complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS)."))
         }
       }
     } // TEST (allows the communication with Viperserver by simple get request)#DELETE LATER##################################################################################################################
@@ -102,14 +104,10 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
     get {
       println("Hello from Test\n")
       val arg_list = getArgListFromArgString("silicon wrong.sil")
-      val (ids, jobHandle) = createJobHandle(arg_list)
+      val jobHandler = createJobHandle(arg_list)
+      val id = jobHandler.id
 
-      val id = ids match {
-        case Some(id) => id
-        case None => 0
-      }
-
-      jobHandle match {
+      lookupJob(id) match {
         case Some(handle_future) => {
           onComplete(handle_future) {
             case Success(handle) => {
@@ -214,7 +212,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       *  - Client decided to re-verify several files from scratch.
       */
     get {
-      ViperCache.resetCache()
+      flushCache()
       complete( CacheFlushAccept(s"The cache has been flushed successfully.") )
     }
   } ~ path("cache" /  "flush") {

@@ -25,19 +25,13 @@ import viper.server.ViperServerProtocol._
 
 
 /*
- # Some Dummy Configurations which will be passed to the backend which
- # will later be exchanged by the real backendconfigurations which are
- # used for silicon and carbon. (Don't think they are actually exactly the same. But can further determine
- # when I have a look at SilFrontend and if there is a possibility to set a config on a SilFrontend with this.)
- #
- # Currently the custom backend config is not supported here. (Add afterwards)
- #
- # I think what is meant here with partialCommandline is the CommandLine Input which would be given to the
- # Verifiers (Silicon / Carbon) but without specifying the FileName because the File already got parsed, ...
- # and transformed into the Program which is then passed.
- # Need to figure out a way to pass the Program directly into the Verifier without having it do the whole parsing, ...
- # steps again.
+ # TODO: Currently the custom backend config is not supported here. (Add afterwards)
  */ 
+
+/*
+ # Think these configurations should contain everything except the real filename.
+ # However, some dummy Filename needs to be added for the caching.
+ */
 trait BackendConfig {
   val partialCommandLine: List[String]
 }
@@ -51,6 +45,9 @@ case class CarbonConfig(partialCommandLine: List[String]) extends BackendConfig
 case class JobHandle(controller_actor: ActorRef,
                      queue: SourceQueueWithComplete[Message],
                      publisher: Publisher[Message])
+
+
+case class VerificationJobHandler(id: Int)
 
 
 class ViperCoreServer(private var _config: ViperConfig) {
@@ -182,7 +179,6 @@ class ViperCoreServer(private var _config: ViperConfig) {
         throw new Exception("Main Actor: unexpected message received: " + msg)
     }
 
-    // TODO: look if it is necessary to pass the my_reporter in the case of reporter getting passed.
     private def verify(config: List[String], reporter: Option[Reporter], program: Option[ast.Program]): JobHandle = {
 
       // The maximum number of messages in the reporter's message buffer is 10000.
@@ -228,11 +224,6 @@ class ViperCoreServer(private var _config: ViperConfig) {
     init(None)
   }
 
-/*
-  def start(routes: ViperLogger => Route): Unit = {
-    init(Some(routes))
-  }
-*/
 
   protected def init(routes: Option[ViperLogger => Route]): Unit = {
     config.verify()
@@ -260,39 +251,21 @@ class ViperCoreServer(private var _config: ViperConfig) {
   }
 
   /*
-   # Note: I think the program which is given here can be verified directly with either cached verification
-   # or the normal one. The program given as input here is I think the same one as in line 249 of VerificationWorker.scala.
-   #
-   # However the verifier frontend ... has to be created here. The only parts dropping out are parsing, semanticAnalysis, translation, consistencyCheck.
-   # (Changes in VerificationWorker have to be done for this.)
-   #
-   # Perhaps make two methods in the reporteractor. One of them accepts still the args: List[String] and the other one accepts program: ast.Program
-   # and make both of the methods create a VerificationWorker with two different constructors.
-   # One other major difference would be the need to accept such a BackendConfig in ViperBackend which then gets used to instanciate Silver or Carbon
-   # or whatever Verifier is used. (Can do this with maybe Option[BackendConfig] which then gets split into the cases where only the args are used
-   # and the case where the BackendConfig is used instead of the args) -> I think we can just use the verify method from Verifier (which is for example extended
-   # by Silicon) which takes a Program.
-   # Also need to slightly change the doCachedVerification method when we want to do it in this way. (needs to accept a Program when it is given in this way.)
-   # Note: Verifier is a field of SilFrontend and can thus just be extracted for the verification -> similar way to implement execute method in ViperBackend
-   # for both cases. (It's the output of createVerifier which is a method in SilFrontend)
-   #
    # For the moment the partialCommandLine in BackendConfig should be just the normal command line (for example: "silicon DUMMY_FILENAME.sil")
    */
-  def verify(args: List[String], reporter: Reporter, program: ast.Program): Option[Future[JobHandle]] = {
-    val (_, jobHandle) = createJobHandle(args, Some(reporter), Some(program))
-    jobHandle
+  def verify(args: List[String], reporter: Reporter, program: ast.Program): VerificationJobHandler = {
+    createJobHandle(args, Some(reporter), Some(program))
   }
 
-  def verify(args: List[String]): Option[Future[JobHandle]] = {
-    val (_, jobHandle) = createJobHandle(args)
-    jobHandle
-  }
-
-  protected def createJobHandle(args: List[String]): (Option[Int], Option[Future[JobHandle]]) = {
+  def verify(args: List[String]): VerificationJobHandler = {
     createJobHandle(args, None, None)
   }
 
-  private def createJobHandle(args: List[String], reporter: Option[Reporter], program: Option[ast.Program]): (Option[Int], Option[Future[JobHandle]]) = {
+  protected def createJobHandle(args: List[String]): VerificationJobHandler = {
+    createJobHandle(args, None, None)
+  }
+
+  private def createJobHandle(args: List[String], reporter: Option[Reporter], program: Option[ast.Program]): VerificationJobHandler = {
     if (newJobsAllowed) {
       val (id, jobHandle) = bookNewJob((new_jid: Int) => {
         implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
@@ -300,10 +273,10 @@ class ViperCoreServer(private var _config: ViperConfig) {
         val new_job_handle: Future[JobHandle] = (main_actor ? ViperServerProtocol.Verify(args, reporter, program)).mapTo[JobHandle]
         new_job_handle
       })
-      (Some(id), Some(jobHandle))
+      VerificationJobHandler(id)
     } else {
       println(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS).")
-      (None, None)
+      VerificationJobHandler(-1) // Not able to create a new JobHandle
     }
   }
 
@@ -333,6 +306,12 @@ class ViperCoreServer(private var _config: ViperConfig) {
     val overall_interrupt_future: Future[List[String]] = Future.sequence(interrupt_future_list)
     overall_interrupt_future
   }
+
+
+  def flushCache(): Unit = {
+    ViperCache.resetCache()
+    println(s"The cache has been flushed successfully.")
+  }
     
 
 
@@ -360,7 +339,12 @@ trait ViperCoreServer {
 
 // Silas, up until here and the parts below if necessary
 
+// TODO: implement these too. (but only for whole cache)
 //  def flushCash(jobId: Int): Unit // maybe required for testing
+
+
+
+
 //  def getFuture(jobId: Int): Future[VerificationResult]
 //  def discardJob(jobId: Int): Boolean
 

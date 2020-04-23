@@ -13,7 +13,7 @@ object ViperServerRunner {
       import viper.silicon.SiliconFrontend
       import java.nio.file.Paths
 
-      val fileName: String = "correct.sil"
+      val fileName: String = "wrong.sil"
 
       val config = new ViperConfig(args)
       config.verify()
@@ -32,6 +32,9 @@ object ViperServerRunner {
       frontend.consistencyCheck()
 
       val program = frontend.program.get
+
+      //println(program.info) -> When program is generated in this way the info is NoInfo. (Could use SimpleInfo(comment: Seq[String]) with the name in comment?)
+
 
       println("Generating new ViperCoreServer")
       val core = new ViperCoreServer(config)
@@ -52,6 +55,12 @@ object ViperServerRunner {
       println("Second verification:")
       core.verify(backendConfig, reporter, program)
 
+      Thread.sleep(2500)
+      core.flushCache()
+      
+      println("Third verification:")
+      core.verify(backendConfig, reporter, program)
+
       println("\n\n")
 
 
@@ -63,6 +72,11 @@ object ViperServerRunner {
       Thread.sleep(10000)
       core.stop()
 
+
+
+
+
+
       // Execute ViperHttpServer
 /*
       val config = new ViperConfig(args)
@@ -71,5 +85,7 @@ object ViperServerRunner {
 
       httpServer.start()
 */
+
+
   } // method main
 }

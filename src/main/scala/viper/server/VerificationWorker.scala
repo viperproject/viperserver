@@ -24,8 +24,10 @@ import viper.silver.verifier.{AbstractVerificationError, _}
 
 import scala.language.postfixOps
 
+
+
 // Implementation of the Reporter interface used by the backend.
-class ActorReporter(private val actor_ref: ActorRef, val tag: String)
+class ActorReporter(private val actor_ref: ActorRef, private val rep: Option[Reporter], val tag: String)
   extends viper.silver.reporter.Reporter {
 
   val name = s"ViperServer_$tag"
@@ -33,6 +35,12 @@ class ActorReporter(private val actor_ref: ActorRef, val tag: String)
   def report(msg: reporter.Message): Unit = {
     //println(s"ActorReporter reporting >>> ${msg}")
     actor_ref ! ReporterProtocol.ServerReport(msg)
+
+    rep match {
+      case Some(reporter) => reporter.report(msg)
+      case None =>
+    }
+
   }
 
 }
@@ -81,25 +89,16 @@ class VerificationWorker(private val reporterActor: ActorRef,
     try {
       command match {
         case "silicon" :: args =>
-          logger.info("Creating new Silicon verification backend.")
-          backend = reporter match {
-            case Some(rep) => new ViperBackend(new SiliconFrontend(rep, logger))
-            case _ => new ViperBackend(new SiliconFrontend(new ActorReporter(reporterActor, "silicon"), logger))
-          }
+          logger.info("Creating new Silicon verification backend.")   
+          backend = new ViperBackend(new SiliconFrontend(new ActorReporter(reporterActor, reporter, "silicon"), logger))
           backend.execute(args, program)
         case "carbon" :: args =>
           logger.info("Creating new Carbon verification backend.")
-          backend = reporter match {
-            case Some(rep) => new ViperBackend(new CarbonFrontend(rep, logger))
-            case _ => new ViperBackend(new CarbonFrontend(new ActorReporter(reporterActor, "carbon"), logger))
-          }
+          backend = new ViperBackend(new CarbonFrontend(new ActorReporter(reporterActor, reporter, "carbon"), logger))
           backend.execute(args, program)
         case custom :: args =>
           logger.info(s"Creating new verification backend based on class $custom.")
-          backend = reporter match {
-            case Some(rep) => new ViperBackend(resolveCustomBackend(custom, rep).get)
-            case _ => new ViperBackend(resolveCustomBackend(custom, new ActorReporter(reporterActor, custom)).get)
-          }
+          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(reporterActor, reporter, custom)).get)
           backend.execute(args, program)
         case args =>
           logger.error("invalid arguments: ${args.toString}",
@@ -251,6 +250,11 @@ class ViperBackend(private val _frontend: SilFrontend) {
     _frontend.reporter.report(ProgramDefinitionsReport(collectDefinitions(prog)))   
   }
 
+  /*
+   # TODO: change the used filename such that it is taken from the ast for example. (have to look if a name is in ast.Program)
+   #       In case where program is given no filename should have to be specified
+   #       in the args. (maybe also append the program name before to args in order to prepare the frontend also with this filename)
+   */
   def execute(args: Seq[String], program: Option[Program]) {
     _frontend.setStartTime()
 
