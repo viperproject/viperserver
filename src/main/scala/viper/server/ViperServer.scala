@@ -281,7 +281,7 @@ object ViperServerRunner {
             val new_job_handle: Future[JobHandle] = (main_actor ? ViperServerProtocol.Verify(arg_list)).mapTo[JobHandle]
             new_job_handle
           })
-          complete( VerificationRequestAccept(id) )
+          complete(VerificationRequestAccept(id))
 
         } else {
           complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS).") )
@@ -437,10 +437,8 @@ object ViperServerRunner {
   }
 
   def main(args: Array[String]): Unit = {
-
     try {
       init(args)
-
     } catch { case e: Throwable =>
       println(s"Cannot parse CMD arguments: $e")
       sys.exit(1)
@@ -448,12 +446,12 @@ object ViperServerRunner {
 
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 
+    val host = config.bindInterface()
     val port = config.port()
-    val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(routes(logger), "localhost", port)
+    val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(routes(logger), host, port)
     _term_actor = system.actorOf(Terminator.props(bindingFuture), "terminator")
 
-    println(s"ViperServer online at http://localhost:$port")
-
+    println(s"ViperServer online at http://$host:$port")
   } // method main
 
   def init(cmdArgs: Seq[String]) {

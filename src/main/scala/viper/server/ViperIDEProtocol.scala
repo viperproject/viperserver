@@ -17,6 +17,7 @@ import spray.json.DefaultJsonProtocol
 import viper.silicon.SymbLog
 import viper.silicon.state.terms.Term
 import viper.silver.reporter.{InvalidArgumentsReport, _}
+import viper.silver.utility.{DurationEvent, TimingLogEntry}
 import viper.silver.verifier._
 
 
@@ -132,16 +133,36 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       "result" -> obj.result.toJson)
   })
 
-  implicit val overallSuccessMessage_writer: RootJsonFormat[OverallSuccessMessage] = lift(new RootJsonWriter[OverallSuccessMessage] {
-    override def write(obj: OverallSuccessMessage): JsObject = {
-      JsObject(
-        "time" -> obj.verificationTime.toJson)
+  implicit val durationEvent_writer: RootJsonFormat[DurationEvent] = lift(new RootJsonWriter[DurationEvent] {
+    override def write(obj: DurationEvent): JsValue = obj match {
+      case DurationEvent(name, cat, ph, ts, pid, tid) => JsObject(
+        "name" -> JsString(name),
+        "cat" -> JsString(cat),
+        "ph" -> JsString(ph),
+        "ts" -> JsNumber(ts),
+        "pid" -> JsNumber(pid),
+        "tid" -> JsNumber(tid)
+      )
     }
+  })
+
+  implicit val timingLogEntry_writer: RootJsonFormat[TimingLogEntry] = lift(new RootJsonWriter[TimingLogEntry] {
+    override def write(obj: TimingLogEntry): JsValue = obj match {
+      case e: DurationEvent => e.toJson
+    }
+  })
+
+  implicit val overallSuccessMessage_writer: RootJsonFormat[OverallSuccessMessage] = lift(new RootJsonWriter[OverallSuccessMessage] {
+    override def write(obj: OverallSuccessMessage): JsObject = JsObject(
+      "time" -> obj.verificationTime.toJson,
+      "timingLog" -> obj.timingEvents.toJson
+    )
   })
 
   implicit val overallFailureMessage_writer: RootJsonFormat[OverallFailureMessage] = lift(new RootJsonWriter[OverallFailureMessage] {
     override def write(obj: OverallFailureMessage): JsValue = JsObject(
       "time" -> obj.verificationTime.toJson,
+      "timingLog" -> obj.timingEvents.toJson,
       "result" -> obj.result.toJson
     )
   })
