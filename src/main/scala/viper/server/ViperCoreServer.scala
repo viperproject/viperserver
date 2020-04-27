@@ -24,19 +24,12 @@ import viper.silver.logger.ViperLogger
 import viper.server.ViperServerProtocol._
 
 
-/*
- # TODO: Currently the custom backend config is not supported here. (Add afterwards)
- */ 
-
-/*
- # Think these configurations should contain everything except the real filename.
- # However, some dummy Filename needs to be added for the caching.
- */
 trait BackendConfig {
   val partialCommandLine: List[String]
 }
 case class SiliconConfig(partialCommandLine: List[String]) extends BackendConfig
 case class CarbonConfig(partialCommandLine: List[String]) extends BackendConfig
+case class CustomConfig(partialCommandLine: List[String]) extends BackendConfig
 
 
 // We can potentially have more than one verification task at the same time.

@@ -111,8 +111,9 @@ class VerificationWorker(private val reporterActor: ActorRef,
       case e: Throwable =>
         reporter match {
           case Some(rep) => rep.report(ExceptionReport(e))
-          case None => reporterActor ! ReporterProtocol.ServerReport(ExceptionReport(e))
+          case None =>
         }
+        reporterActor ! ReporterProtocol.ServerReport(ExceptionReport(e))
         logger.trace(s"Creation/Execution of the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
     }
     finally {
@@ -250,11 +251,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
     _frontend.reporter.report(ProgramDefinitionsReport(collectDefinitions(prog)))   
   }
 
-  /*
-   # TODO: change the used filename such that it is taken from the ast for example. (have to look if a name is in ast.Program)
-   #       In case where program is given no filename should have to be specified
-   #       in the args. (maybe also append the program name before to args in order to prepare the frontend also with this filename)
-   */
+
   def execute(args: Seq[String], program: Option[Program]) {
     _frontend.setStartTime()
 
