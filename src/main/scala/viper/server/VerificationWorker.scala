@@ -21,6 +21,7 @@ import viper.silver.reporter
 import viper.silver.reporter.{Reporter, _}
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, _}
+import viper.silver.verifier.VerificationResult
 
 import scala.language.postfixOps
 
@@ -40,9 +41,7 @@ class ActorReporter(private val actor_ref: ActorRef, private val rep: Option[Rep
       case Some(reporter) => reporter.report(msg)
       case None =>
     }
-
   }
-
 }
 
 
@@ -55,6 +54,12 @@ case class ViperServerWrongTypeException(name: String) extends ViperServerExcept
 case class ViperServerBackendNotFoundException(name: String) extends ViperServerException {
   override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be found."
 }
+
+case class ViperServerPreparationException(name: String) extends ViperServerException {
+  override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be prepared."
+}
+
+
 
 class VerificationWorker(private val reporterActor: ActorRef,
                          private val logger: Logger,
@@ -85,24 +90,37 @@ class VerificationWorker(private val reporterActor: ActorRef,
 
   private var backend: ViperBackend = _
 
+  private var _backendName: String = _
+  def backendName: String = _backendName
+
+  private var _result: Option[VerificationResult] = None
+  def result: Option[VerificationResult] = _result
+
   def run(): Unit = {
     try {
       command match {
         case "silicon" :: args =>
+          _backendName = "silicon"
           logger.info("Creating new Silicon verification backend.")   
           backend = new ViperBackend(new SiliconFrontend(new ActorReporter(reporterActor, reporter, "silicon"), logger))
-          backend.execute(args, program)
+          _result = backend.execute(args, program)
         case "carbon" :: args =>
+          _backendName = "carbon"
           logger.info("Creating new Carbon verification backend.")
           backend = new ViperBackend(new CarbonFrontend(new ActorReporter(reporterActor, reporter, "carbon"), logger))
-          backend.execute(args, program)
+          _result = backend.execute(args, program)
         case custom :: args =>
+          _backendName = custom
           logger.info(s"Creating new verification backend based on class $custom.")
           backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(reporterActor, reporter, custom)).get)
-          backend.execute(args, program)
+          _result = backend.execute(args, program)
         case args =>
           logger.error("invalid arguments: ${args.toString}",
             "You need to specify the verification backend, e.g., `silicon [args]`")
+      }
+      result match {
+        case Some(res) => reporterActor ! ReporterProtocol.CompleteOverallResult(res)
+        case None => reporterActor ! ReporterProtocol.FailOverallResult(ViperServerPreparationException(backendName))
       }
     }
     catch {
@@ -252,13 +270,13 @@ class ViperBackend(private val _frontend: SilFrontend) {
   }
 
 
-  def execute(args: Seq[String], program: Option[Program]) {
+  def execute(args: Seq[String], program: Option[Program]): Option[VerificationResult] = {
     _frontend.setStartTime()
 
     // create the verifier
     _frontend.setVerifier( _frontend.createVerifier(args.mkString(" ")) )
 
-    if (!_frontend.prepare(args)) return
+    if (!_frontend.prepare(args)) return None
 
     // initialize the translator
     _frontend.init( _frontend.verifier )
@@ -309,8 +327,10 @@ class ViperBackend(private val _frontend: SilFrontend) {
 
     _frontend.verifier.stop()
 
+    val result = _frontend.result
+
     // finish by reporting the overall outcome
-    _frontend.result match {
+    result match {
       case Success =>
         _frontend.reporter report OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime)
         // TODO: Think again about where to detect and trigger SymbExLogging
@@ -319,6 +339,8 @@ class ViperBackend(private val _frontend: SilFrontend) {
           // Cached errors will be reporter as soon as they are retrieved from the cache.
           Failure(f.errors.filter { e => !e.cached }))
     }
+
+    Some(result)
   }
 
 

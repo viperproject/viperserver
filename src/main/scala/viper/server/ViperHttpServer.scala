@@ -10,13 +10,13 @@ package viper.server
 
 
 
-import scala.concurrent.{ Future}
+import scala.concurrent.{ Future, ExecutionContextExecutor }
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 import akka.{NotUsed}
 import akka.pattern.ask
 import akka.util.Timeout
-import akka.actor.{PoisonPill}
+import akka.actor.{PoisonPill, ActorSystem}
 import akka.stream.scaladsl.{Source}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
@@ -32,7 +32,9 @@ import ViperRequests.{ VerificationRequest, CacheResetRequest, AlloyGenerationRe
 import scala.util.Try
 
 
-class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(_config) {
+class ViperHttpServer(private var _config: ViperConfig)
+                     (override implicit val system: ActorSystem,
+                      override implicit val executionContext: ExecutionContextExecutor) extends ViperCoreServer(_config) {
 
   override def start(): Unit = {
     init(Some(routes))
@@ -108,7 +110,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       val id = jobHandler.id
 
       lookupJob(id) match {
-        case Some(handle_future) => {
+        case Some((handle_future, resultPromise)) => {
           onComplete(handle_future) {
             case Success(handle) => {
               val src: Source[Message, NotUsed] = Source.fromPublisher(handle.publisher)
@@ -145,7 +147,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       */
     get {
       lookupJob(jid) match {
-        case Some(handle_future) =>
+        case Some((handle_future, resultPromise)) =>
           onComplete(handle_future) {
             case Success(handle) =>
               // Found a job with this jid.
@@ -184,7 +186,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       */
     get {
       lookupJob(jid) match {
-        case Some(handle_future) =>
+        case Some((handle_future, resultPromise)) =>
           onComplete(handle_future) {
             case Success(handle) =>
               implicit val askTimeout: Timeout = Timeout(5000 milliseconds)

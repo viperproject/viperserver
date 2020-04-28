@@ -2,13 +2,20 @@ package viper.server
 
 import viper.silver.logger.ViperLogger
 import viper.silver.reporter._
+import scala.concurrent.ExecutionContextExecutor
+import akka.actor.ActorSystem
+
+import scala.util.{Failure, Success}
 
 object ViperServerRunner {
+  import viper.server.ViperCoreServer
 
   var httpServer: ViperHttpServer = _
     
     def main(args: Array[String]): Unit = {
       // Execute ViperCoreServer
+      implicit val system: ActorSystem = ActorSystem("Main")
+      implicit val executionContext: ExecutionContextExecutor = system.dispatcher
 
       import viper.silicon.SiliconFrontend
       import java.nio.file.Paths
@@ -33,7 +40,6 @@ object ViperServerRunner {
 
       val program = frontend.program.get
 
-      //println(program.info) -> When program is generated in this way the info is NoInfo. (Could use SimpleInfo(comment: Seq[String]) with the name in comment?)
 
 
       println("Generating new ViperCoreServer")
@@ -48,37 +54,37 @@ object ViperServerRunner {
     
 
       println("First verification:")
-      core.verify(backendConfig, reporter, program)
+      val first_handler = core.verify(backendConfig, reporter, program)
 
       Thread.sleep(5000)
 
       println("Second verification:")
-      core.verify(backendConfig, reporter, program)
+      val second_handler = core.verify(backendConfig, reporter, program)
 
       Thread.sleep(2500)
       core.flushCache()
       
       println("Third verification:")
-      core.verify(backendConfig, reporter, program)
+      val third_handler = core.verify(backendConfig, reporter, program)
 
-      println("\n\n")
-
-
-      /*
-       # In the normal usecase stop will not be called immediately after the execution of the verification. (Hence the waiting)
-       */
-
-      // wait for 10 seconds
-      Thread.sleep(10000)
-      core.stop()
+      val resFuture = core.getFuture(third_handler.id)
 
 
-
+      resFuture.onComplete({res => res match {
+        case Success(_) =>
+          println("Completed with success")
+          core.stop()
+        case Failure(_) =>
+          println("Completed with failure")
+          core.stop()
+      }})
 
 
 
-      // Execute ViperHttpServer
+
 /*
+      // Execute ViperHttpServer
+
       val config = new ViperConfig(args)
       config.verify()
       httpServer = new ViperHttpServer(config)
