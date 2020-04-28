@@ -91,6 +91,7 @@ class ViperCoreServer(private var _config: ViperConfig)
   object Terminator {
     case object Exit
     case class WatchJob(jid: Int, handle: JobHandle)
+    case class WatchJobResult(jid: Int, resultPromise: Promise[VerificationResult])
 
     def props(bindingFuture: Future[Http.ServerBinding]): Props = Props(new Terminator(Some(bindingFuture)))
     def props(): Props = Props(new Terminator(None))
@@ -112,6 +113,16 @@ class ViperCoreServer(private var _config: ViperConfig)
       case Terminator.WatchJob(jid, handle) =>
         val queue_completion_future: Future[Done] = handle.queue.watchCompletion()
         queue_completion_future.onComplete( {
+          case Failure(e) =>
+            println(s"Terminator detected failure in job #$jid: $e")
+            throw e
+          case Success(_) =>
+            discardJob(jid)
+            println(s"Terminator deleted job #$jid")
+        })
+      case Terminator.WatchJobResult(jid, resultPromise) =>
+        val result_future: Future[VerificationResult] = resultPromise.future
+        result_future.onComplete({
           case Failure(e) =>
             println(s"Terminator detected failure in job #$jid: $e")
             throw e
@@ -318,12 +329,16 @@ class ViperCoreServer(private var _config: ViperConfig)
     println(s"The cache has been flushed successfully.")
   }
 
+  /*
+   * Returns the future of the Verification Result.
+   * Deletes the jobhandle on completion.
+   */
   def getFuture(jid: Int): Future[VerificationResult] = {
     lookupJob(jid) match {
       case Some((handle_future, resultPromise)) =>
-        println("Hello from the some branch")
-        resultPromise.future
+        _term_actor ! Terminator.WatchJobResult(jid, resultPromise)
 
+        resultPromise.future
       case None =>
         val promise = Promise[VerificationResult]()
         promise failure (new NoSuchElementException("Could not find the requested jid."))

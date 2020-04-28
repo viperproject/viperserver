@@ -55,30 +55,41 @@ object ViperServerRunner {
 
       println("First verification:")
       val first_handler = core.verify(backendConfig, reporter, program)
+      val first_result = core.getFuture(first_handler.id)
 
       Thread.sleep(5000)
 
       println("Second verification:")
       val second_handler = core.verify(backendConfig, reporter, program)
+      val second_result = core.getFuture(second_handler.id)
 
       Thread.sleep(2500)
       core.flushCache()
-      
+
       println("Third verification:")
       val third_handler = core.verify(backendConfig, reporter, program)
+      val third_result = core.getFuture(third_handler.id)
 
-      val resFuture = core.getFuture(third_handler.id)
+      //Thread.sleep(2500)
+      
+      println("Fourth verification:")
+      val fourth_handler = core.verify(backendConfig, reporter, program)
+      val fourth_result = core.getFuture(fourth_handler.id)
 
-
-      resFuture.onComplete({res => res match {
+      third_result.onComplete({
         case Success(_) =>
-          println("Completed with success")
-          core.stop()
+          fourth_result.onComplete({
+            case Success(_) =>
+              println("Completed with success")
+              core.stop()
+            case Failure(_) =>
+              println("Completed with failure")
+              core.stop()
+          })
         case Failure(_) =>
-          println("Completed with failure")
+          println("Third result failed")
           core.stop()
-      }})
-
+      })
 
 
 
