@@ -281,25 +281,44 @@ class ViperBackend(private val _frontend: SilFrontend) {
     }
   }
 
-  private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): List[AbstractVerificationError] = {
-    //The position of the error is used to determine to which Method it belongs.
-    val methodStart = m.pos.asInstanceOf[SourcePosition].start.line
-    val methodEnd = m.pos.asInstanceOf[SourcePosition].end.get.line
+  /*
+  Tries to determine which of the given errors are caused by the given method.
+  If an error's scope field is set, this information is used.
+  Otherwise, if both the given method and the error have line/column position information, we calculate if the error's
+  position is inside the method.
+  If at least one error has no scope set and no position, or the method's position is not set, we cannot determine
+  if the error belongs to the method and return None.
+   */
+  private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): Option[List[AbstractVerificationError]] = {
+    val methodPos = m.pos match {
+      case sp: SourcePosition => Some(sp.start.line, sp.end.get.line)
+      case _ => {
+        None
+      }
+    }
     val result = scala.collection.mutable.ListBuffer[AbstractVerificationError]()
 
     errors.foreach {
+      case e: AbstractVerificationError if e.scope.isDefined =>
+        if (e.scope.get == m)
+          result += e
       case e: AbstractVerificationError =>
         e.pos match {
           case pos: HasLineColumn =>
             val errorPos = pos.line
-            if (errorPos >= methodStart && errorPos <= methodEnd) result += e
+            if (methodPos.isEmpty)
+            {
+              return None
+            }
+            //The position of the error is used to determine to which Method it belongs.
+            if (errorPos >= methodPos.get._1 && errorPos <= methodPos.get._2) result += e
           case _ =>
-            throw new Exception("Error determining method specific errors for the cache: The reported errors should have a location")
+            return None
         }
       case e =>
         throw new Exception("Error with unexpected type found: " + e)
     }
-    result.toList
+    Some(result.toList)
   }
 
   def doCachedVerification(): Unit = {
@@ -322,7 +341,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
         methodsToVerify ++ methodsToCache, real_program.extensions)(real_program.pos, real_program.info, real_program.errT)
 
       _frontend.logger.trace(s"The cached program is equivalent to: \n${prog.toString()}")
-      _frontend.setVerificationResult(_frontend.mapVerificationResult(_frontend.verifier.verify(prog)))
+      _frontend.setVerificationResult(_frontend.verifier.verify(prog))
 
       _frontend.setState(DefaultStates.Verification)
 
@@ -330,12 +349,17 @@ class ViperBackend(private val _frontend: SilFrontend) {
       methodsToVerify.foreach(m => {
         _frontend.getVerificationResult.get match {
           case Failure(errors) =>
-            val errorsToCache = getMethodSpecificErrors(m, errors)
-            ViperCache.update(backendName, file, prog, m, errorsToCache) match {
-              case e :: es =>
-                _frontend.logger.debug(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
-              case Nil =>
-                _frontend.logger.warn(s"Storing new entry in cache for method (${m.name}) FAILED. List of errors for this method: $errorsToCache")
+            val errorsToCacheMaybe = getMethodSpecificErrors(m, errors)
+            errorsToCacheMaybe match {
+              case Some(errorsToCache) => {
+                ViperCache.update(backendName, file, prog, m, errorsToCache) match {
+                  case e :: es =>
+                    _frontend.logger.debug(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
+                  case Nil =>
+                    _frontend.logger.warn(s"Storing new entry in cache for method (${m.name}) FAILED. List of errors for this method: $errorsToCache")
+                }
+              }
+              case None =>
             }
           case Success =>
             ViperCache.update(backendName, file, prog, m, Nil) match {
