@@ -472,10 +472,6 @@ object ViperServerRunner {
 
     writeBatchScripts(port)
     println(s"ViperServer online at http://localhost:$port")
-
-//    runParsing()
-//    runVerification()
-
   } // method main
 
   def init(cmdArgs: Seq[String]) {
@@ -491,54 +487,6 @@ object ViperServerRunner {
     possibly_quoted_string.findAllIn(arg_str).toList.map {
       case quoted_string(noqt_a) => noqt_a
       case a => a
-    }
-  }
-
-  def runParsing(): Unit = {
-    var astgen = new AstGenerator1("src\\test\\resources\\viper\\sum_method.vpr")
-    println("Parsing---")
-    println(astgen.parse_ast)
-    for (m <- astgen.parse_ast.methods) println(m)
-
-    println("Translating---")
-    println(astgen.translated_ast)
-  }
-
-  def runVerification() : Unit = {
-    var astGen = new AstGenerator1("src\\test\\resources\\viper\\sum_method.vpr")
-    		val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure).toMat(Sink.asPublisher(false))(Keep.both).run()
-    val some_reporter = system.actorOf(ReporterActor.props(0, queue), s"ver_reporter")
-    val _verificationTask = new Thread(new VerificationWorker(some_reporter, logger.get, List(), Some(astGen.translated_ast)))
-    _verificationTask.start()
-  }
-
-  class AstGenerator1 (private val vpr_file_path:String){
-    var ver_backend: SilFrontend = initialize_backend()
-    var parse_ast : PProgram = parse()
-    var translated_ast : Program = translate()
-
-    private def initialize_backend() : SilFrontend = {
-      		val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure)
-      									   .toMat(Sink.asPublisher(false))(Keep.both)
-      									   .run()
-      val some_reporter = system.actorOf(ReporterActor.props(0, queue), s"parse_reporter")
-      new SiliconFrontend(new ActorReporter(some_reporter, "silicon"), _logger.get)
-    }
-
-    private def parse(): PProgram = {
-      val args:Array[String] = Array(vpr_file_path)
-      ver_backend.setVerifier( ver_backend.createVerifier(args.mkString(" ")) )
-      ver_backend.prepare(args)
-      ver_backend.init( ver_backend.verifier )
-      ver_backend.reset(Paths.get(ver_backend.config.file()))
-      ver_backend.parsing()
-      ver_backend.parsingResult
-    }
-
-    private def translate() = {
-      ver_backend.semanticAnalysis()
-      ver_backend.translation()
-      ver_backend.translationResult
     }
   }
 

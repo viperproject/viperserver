@@ -50,8 +50,7 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
 
 class VerificationWorker(private val reporter: ActorRef,
                          private val logger: Logger,
-                         private val command: List[String],
-                         private val ast: Option[Program] = None) extends Runnable {
+                         private val command: List[String]) extends Runnable {
 
   private def resolveCustomBackend(clazzName: String, rep: Reporter): Option[SilFrontend] = {
     (try {
@@ -79,15 +78,15 @@ class VerificationWorker(private val reporter: ActorRef,
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
-          backend = new ViperBackend(new SiliconFrontend(new ActorReporter(reporter, "silicon"), logger), ast)
+          backend = new ViperBackend(new SiliconFrontend(new ActorReporter(reporter, "silicon"), logger))
           backend.execute(args)
         case "carbon" :: args =>
           logger.info("Creating new Carbon verification backend.")
-          backend = new ViperBackend(new CarbonFrontend(new ActorReporter(reporter, "carbon"), logger), ast)
+          backend = new ViperBackend(new CarbonFrontend(new ActorReporter(reporter, "carbon"), logger))
           backend.execute(args)
         case custom :: args =>
           logger.info(s"Creating new verification backend based on class $custom.")
-          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(reporter, custom)).get, ast)
+          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(reporter, custom)).get)
           backend.execute(args)
         case args =>
           logger.error("invalid arguments: ${args.toString}",
@@ -120,7 +119,7 @@ class VerificationWorker(private val reporter: ActorRef,
   }
 }
 
-class ViperBackend(private val _frontend: SilFrontend, private val _ast: Option[Program]) {
+class ViperBackend(private val _frontend: SilFrontend, private val _ast: Option[Program] = None) {
 
   override def toString: String = {
     if ( _frontend.verifier == null )
@@ -267,6 +266,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Option[
     // finish by reporting the overall outcome
     ver_result match {
       case Success =>
+        println("ni")
         _frontend.reporter report OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime)
       // TODO: Think again about where to detect and trigger SymbExLogging
       case f@Failure(_) =>

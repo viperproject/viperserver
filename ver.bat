@@ -1,1 +1,1 @@
-cd ..\viper_client-master & python client.py -c verify -p 53743 & cd ..\viperserver
+cd ..\viper_client-master & python client.py -c verify -p 49858 & cd ..\viperserver
