@@ -27,6 +27,10 @@ import viper.silver.verifier.VerificationResult
 import viper.server.ViperServerProtocol._
 
 
+/*
+ * The partial command line is just the normal command line without the backend specification.
+ * The first element of the partial command line is the filename.
+ */
 trait BackendConfig {
   val partialCommandLine: List[String]
 }
@@ -40,8 +44,7 @@ case class CustomConfig(partialCommandLine: List[String]) extends BackendConfig
 //  as well as its unique job_id.
 case class JobHandle(controller_actor: ActorRef,
                      queue: SourceQueueWithComplete[Message],
-                     publisher: Publisher[Message],
-                     /*overallResult: Promise[VerificationResult]*/)
+                     publisher: Publisher[Message])
 
 
 case class VerificationJobHandler(id: Int)
@@ -90,7 +93,7 @@ class ViperCoreServer(private var _config: ViperConfig)
 
   object Terminator {
     case object Exit
-    case class WatchJob(jid: Int, handle: JobHandle)
+    case class WatchJobQueue(jid: Int, handle: JobHandle)
     case class WatchJobResult(jid: Int, resultPromise: Promise[VerificationResult])
 
     def props(bindingFuture: Future[Http.ServerBinding]): Props = Props(new Terminator(Some(bindingFuture)))
@@ -110,7 +113,7 @@ class ViperCoreServer(private var _config: ViperConfig)
           case None =>
             system.terminate() // shutdown
         }
-      case Terminator.WatchJob(jid, handle) =>
+      case Terminator.WatchJobQueue(jid, handle) =>
         val queue_completion_future: Future[Done] = handle.queue.watchCompletion()
         queue_completion_future.onComplete( {
           case Failure(e) =>
@@ -186,14 +189,14 @@ class ViperCoreServer(private var _config: ViperConfig)
         throw new Exception("Main Actor: unexpected message received: " + msg)
     }
 
-    private def verify(config: List[String], reporter: Option[Reporter], program: Option[ast.Program], resultPromise: Promise[VerificationResult]): JobHandle = {
+    private def verify(args: List[String], reporter: Option[Reporter], program: Option[ast.Program], resultPromise: Promise[VerificationResult]): JobHandle = {
 
       // The maximum number of messages in the reporter's message buffer is 10000.
       val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure).toMat(Sink.asPublisher(false))(Keep.both).run()
 
       val my_reporter = system.actorOf(ReporterActor.props(id, queue, resultPromise), s"reporter_$id")
 
-      _verificationTask = new Thread(new VerificationWorker(my_reporter, logger.get, config, program, reporter))
+      _verificationTask = new Thread(new VerificationWorker(my_reporter, logger.get, args, program, reporter))
       _verificationTask.start()
 
       println(s"Starting job #$id...")
@@ -265,15 +268,18 @@ class ViperCoreServer(private var _config: ViperConfig)
     }
   }
 
-  /*
-   # For the moment the partialCommandLine in BackendConfig should be just the normal command line (for example: "silicon DUMMY_FILENAME.sil")
+  /* TODO: add programId here into the verify method(this is then used for the cache identifier later)
+   *       change this in the createJobHandle(args) method to extract the filename or just use it differently afterwards in the verificationworker
    */
-  def verify(args: List[String], reporter: Reporter, program: ast.Program): VerificationJobHandler = {
-    createJobHandle(args, Some(reporter), Some(program))
-  }
+  def verify(programID: String, config: BackendConfig, reporter: Reporter, program: ast.Program): VerificationJobHandler = {
+    val args: List[String] = config match {
+      case _ : SiliconConfig => "silicon" :: config.partialCommandLine
+      case _ : CarbonConfig => "carbon" :: config.partialCommandLine
+      // TODO: add custom config
+      case _ => "silicon" :: config.partialCommandLine
+    }
 
-  def verify(args: List[String]): VerificationJobHandler = {
-    createJobHandle(args, None, None)
+    createJobHandle(args :+ programID, Some(reporter), Some(program))
   }
 
   protected def createJobHandle(args: List[String]): VerificationJobHandler = {

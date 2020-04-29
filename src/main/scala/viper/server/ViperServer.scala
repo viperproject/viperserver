@@ -20,18 +20,23 @@ object ViperServerRunner {
       import viper.silicon.SiliconFrontend
       import java.nio.file.Paths
 
-      val fileName: String = "wrong.sil"
+      
+      val programName: String = "wrong.sil"
+      val programID: String = "nonExistentFileName.sil"
 
       val config = new ViperConfig(args)
       config.verify()
-      // Prepare program to verify:
+      // Prepare program to verify ------------------------------------------------------------------------------
       val otherlogger = ViperLogger("otherViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
       val frontend = new SiliconFrontend(new StdIOReporter(), otherlogger.get)
 
-      frontend.setVerifier(frontend.createVerifier(fileName))
+      frontend.setVerifier(frontend.createVerifier(programName))
+
+      frontend.prepare(Seq(programName))
 
       frontend.init(frontend.verifier)
-      frontend.reset(Paths.get(fileName))
+
+      frontend.reset(Paths.get(programName))
 
       frontend.parsing()
       frontend.semanticAnalysis()
@@ -39,7 +44,7 @@ object ViperServerRunner {
       frontend.consistencyCheck()
 
       val program = frontend.program.get
-
+      // Finished preparing program -----------------------------------------------------------------------------
 
 
       println("Generating new ViperCoreServer")
@@ -49,31 +54,31 @@ object ViperServerRunner {
       core.start()
       println("\n\nVerifying File:")
 
-      val backendConfig = List("silicon", fileName)
+      val backendConfig = SiliconConfig(List())
       val reporter = new StdIOReporter()
     
 
       println("First verification:")
-      val first_handler = core.verify(backendConfig, reporter, program)
+      val first_handler = core.verify(programID, backendConfig, reporter, program)
       val first_result = core.getFuture(first_handler.id)
 
       Thread.sleep(5000)
 
       println("Second verification:")
-      val second_handler = core.verify(backendConfig, reporter, program)
+      val second_handler = core.verify(programID, backendConfig, reporter, program)
       val second_result = core.getFuture(second_handler.id)
 
       Thread.sleep(2500)
       core.flushCache()
 
       println("Third verification:")
-      val third_handler = core.verify(backendConfig, reporter, program)
+      val third_handler = core.verify(programID, backendConfig, reporter, program)
       val third_result = core.getFuture(third_handler.id)
 
       //Thread.sleep(2500)
       
       println("Fourth verification:")
-      val fourth_handler = core.verify(backendConfig, reporter, program)
+      val fourth_handler = core.verify(programID, backendConfig, reporter, program)
       val fourth_result = core.getFuture(fourth_handler.id)
 
       third_result.onComplete({
@@ -90,7 +95,6 @@ object ViperServerRunner {
           println("Third result failed")
           core.stop()
       })
-
 
 
 /*

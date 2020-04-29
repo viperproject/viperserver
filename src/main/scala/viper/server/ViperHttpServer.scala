@@ -114,7 +114,7 @@ class ViperHttpServer(private var _config: ViperConfig)
           onComplete(handle_future) {
             case Success(handle) => {
               val src: Source[Message, NotUsed] = Source.fromPublisher(handle.publisher)
-              _term_actor ! Terminator.WatchJob(id, handle)
+              _term_actor ! Terminator.WatchJobQueue(id, handle)
               complete(s"the verification was done")
             }
             case Failure(error) =>
@@ -155,7 +155,7 @@ class ViperHttpServer(private var _config: ViperConfig)
               // We do not remove the current entry from [[_job_handles]] because the handle is
               //  needed in order to terminate the job before streaming is completed.
               //  The Terminator actor will delete the entry upon completion of the stream.
-              _term_actor ! Terminator.WatchJob(jid, handle)
+              _term_actor ! Terminator.WatchJobQueue(jid, handle)
               complete(src)
             case Failure(error) =>
               complete( VerificationRequestReject(s"The verification job #$jid resulted in a terrible error: $error") )

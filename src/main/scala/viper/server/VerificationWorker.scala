@@ -118,10 +118,6 @@ class VerificationWorker(private val reporterActor: ActorRef,
           logger.error("invalid arguments: ${args.toString}",
             "You need to specify the verification backend, e.g., `silicon [args]`")
       }
-      result match {
-        case Some(res) => reporterActor ! ReporterProtocol.CompleteOverallResult(res)
-        case None => reporterActor ! ReporterProtocol.FailOverallResult(ViperServerPreparationException(backendName))
-      }
     }
     catch {
       case _: InterruptedException =>
@@ -150,6 +146,11 @@ class VerificationWorker(private val reporterActor: ActorRef,
     } else {
       logger.error(s"The command `${command.mkString(" ")}` did not result in initialization of verification backend.")
       reporterActor ! ReporterProtocol.FinalServerReport(false)
+    }
+
+    result match {
+      case Some(res) => reporterActor ! ReporterProtocol.CompleteOverallResult(res)
+      case None => reporterActor ! ReporterProtocol.FailOverallResult(ViperServerPreparationException(backendName))
     }
   }
 }
@@ -276,6 +277,8 @@ class ViperBackend(private val _frontend: SilFrontend) {
     // create the verifier
     _frontend.setVerifier( _frontend.createVerifier(args.mkString(" ")) )
 
+
+/*
     if (!_frontend.prepare(args)) return None
 
     // initialize the translator
@@ -283,10 +286,18 @@ class ViperBackend(private val _frontend: SilFrontend) {
 
     // set the file we want to verify
     _frontend.reset( Paths.get(_frontend.config.file()) )
-
+*/
     program match {
       case Some(prog) => {
+        _frontend.configureVerifier(args)
+
+        // initialize the translator
+        _frontend.init( _frontend.verifier )
+
         _frontend.setState( DefaultStates.ConsistencyCheck )
+
+        // start the verifier
+        _frontend.verifier.start()
 
         reportProgramStats(prog)
 
@@ -301,6 +312,14 @@ class ViperBackend(private val _frontend: SilFrontend) {
       }
 
       case _ => {
+        if (!_frontend.prepare(args)) return None
+
+        // initialize the translator
+        _frontend.init( _frontend.verifier )
+
+        // set the file we want to verify
+        _frontend.reset( Paths.get(_frontend.config.file()))
+
         // run the parser, typechecker, and verifier
         _frontend.parsing()
         _frontend.semanticAnalysis()
