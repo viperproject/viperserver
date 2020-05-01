@@ -365,8 +365,13 @@ class ViperBackend(private val _frontend: SilFrontend) {
 
   private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): List[AbstractVerificationError] = {
     //The position of the error is used to determine to which Method it belongs.
-    val methodStart = m.pos.asInstanceOf[SourcePosition].start.line
-    val methodEnd = m.pos.asInstanceOf[SourcePosition].end.get.line
+    val sourcePosition: SourcePosition = m.pos match {
+      case position: TranslatedPosition => position.pos.asInstanceOf[SourcePosition]
+      case position => position.asInstanceOf[SourcePosition]
+    }
+
+    val methodStart = sourcePosition.start.line
+    val methodEnd = sourcePosition.end.get.line
     val result = scala.collection.mutable.ListBuffer[AbstractVerificationError]()
 
     errors.foreach {
@@ -416,6 +421,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
 
       _frontend.setState(DefaultStates.Verification)
 
+
       //update cache
       methodsToVerify.foreach(m => {
         _frontend.getVerificationResult.get match {
@@ -436,6 +442,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
             }
         }
       })
+
 
       //combine errors:
       if (cachedErrors.nonEmpty) {

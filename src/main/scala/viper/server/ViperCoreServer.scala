@@ -26,18 +26,21 @@ import viper.silver.logger.ViperLogger
 import viper.silver.verifier.VerificationResult
 import viper.server.ViperServerProtocol._
 
+import viper.server.ViperBackendConfigs._
+
 
 /*
  * The partial command line is just the normal command line without the backend specification.
  * The first element of the partial command line is the filename.
  */
+ /*
 trait BackendConfig {
   val partialCommandLine: List[String]
 }
 case class SiliconConfig(partialCommandLine: List[String]) extends BackendConfig
 case class CarbonConfig(partialCommandLine: List[String]) extends BackendConfig
 case class CustomConfig(partialCommandLine: List[String]) extends BackendConfig
-
+*/
 
 // We can potentially have more than one verification task at the same time.
 // A verification task is distinguished via the corresponding ActorRef,
@@ -268,10 +271,7 @@ class ViperCoreServer(private var _config: ViperConfig)
     }
   }
 
-  /* TODO: add programId here into the verify method(this is then used for the cache identifier later)
-   *       change this in the createJobHandle(args) method to extract the filename or just use it differently afterwards in the verificationworker
-   */
-  def verify(programID: String, config: BackendConfig, reporter: Reporter, program: ast.Program): VerificationJobHandler = {
+  def verify(programID: String, config: ViperBackendConfig, reporter: Reporter, program: ast.Program): VerificationJobHandler = {
     val args: List[String] = config match {
       case _ : SiliconConfig => "silicon" :: config.partialCommandLine
       case _ : CarbonConfig => "carbon" :: config.partialCommandLine

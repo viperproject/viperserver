@@ -7,6 +7,8 @@ import akka.actor.ActorSystem
 
 import scala.util.{Failure, Success}
 
+import viper.server.ViperBackendConfigs._
+
 object ViperServerRunner {
   import viper.server.ViperCoreServer
 
