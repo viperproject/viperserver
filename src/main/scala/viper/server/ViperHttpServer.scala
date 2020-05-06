@@ -10,7 +10,7 @@ package viper.server
 
 
 
-import scala.concurrent.{ Future, ExecutionContextExecutor }
+import scala.concurrent.{ Future, ExecutionContextExecutor, ExecutionContext }
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 import akka.{NotUsed}
@@ -32,9 +32,7 @@ import ViperRequests.{ VerificationRequest, CacheResetRequest, AlloyGenerationRe
 import scala.util.Try
 
 
-class ViperHttpServer(private var _config: ViperConfig)
-                     (override implicit val system: ActorSystem,
-                      override implicit val executionContext: ExecutionContextExecutor) extends ViperCoreServer(_config) {
+class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(_config) {
 
   override def start(): Unit = {
     init(Some(routes))

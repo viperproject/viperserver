@@ -3,6 +3,7 @@ package viper.server
 import viper.silver.logger.ViperLogger
 import viper.silver.reporter._
 import scala.concurrent.ExecutionContextExecutor
+import scala.concurrent.ExecutionContext
 import akka.actor.ActorSystem
 
 import scala.util.{Failure, Success}
@@ -15,9 +16,7 @@ object ViperServerRunner {
   var httpServer: ViperHttpServer = _
     
     def main(args: Array[String]): Unit = {
-      // Execute ViperCoreServer
-      implicit val system: ActorSystem = ActorSystem("Main")
-      implicit val executionContext: ExecutionContextExecutor = system.dispatcher
+      implicit val executionContext = ExecutionContext.global
 
       import viper.silicon.SiliconFrontend
       import java.nio.file.Paths

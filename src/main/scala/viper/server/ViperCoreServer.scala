@@ -4,7 +4,7 @@ import org.reactivestreams.Publisher
 
 import scala.language.postfixOps
 import scala.collection.mutable
-import scala.concurrent.{ExecutionContextExecutor, Future, Promise}
+import scala.concurrent.{ExecutionContextExecutor, Future, Promise, ExecutionContext}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
@@ -52,9 +52,10 @@ case class JobHandle(controller_actor: ActorRef,
 
 case class VerificationJobHandler(id: Int)
 
-class ViperCoreServer(private var _config: ViperConfig)
-                     (implicit val system: ActorSystem,
-                      implicit val executionContext: ExecutionContextExecutor) {
+class ViperCoreServer(private var _config: ViperConfig) {
+
+  implicit val system: ActorSystem = ActorSystem("Main")
+  implicit val executionContext = ExecutionContext.global
 
   final def config: ViperConfig = _config
 
