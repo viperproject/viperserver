@@ -25,9 +25,11 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
   implicit val jsonStreamingSupport: JsonEntityStreamingSupport = EntityStreamingSupport.json()
   implicit val requestTimeput: RouteTestTimeout = RouteTestTimeout(10.second dilated)
 
+  //val viperHttpServer: ViperHttpServer = new ViperHttpServer(Array())
+
   ViperServerRunner.main(Array())
 
-  private val _routsUnderTest = ViperServerRunner.routes(ViperServerRunner.logger)
+  private val _routsUnderTest = ViperServerRunner.httpServer.routes(ViperServerRunner.httpServer.logger)
 
   def printRequestResponsePair(req: String, res: String): Unit = {
     println(s">>> ViperServer test request `$req` response in the following response: $res")
