@@ -266,20 +266,11 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Option[
     _frontend.setStartTime()
     _frontend.setVerifier( _frontend.createVerifier(args.mkString(" ")) )
 
-    _ast match {
-      case Some(program) =>
-        executeOnAst(args, program)
-      case _ =>
-        None
-    }
-  }
-
-  private def executeOnAst(args: Seq[String], prog: Program): Option[VerificationResult] = {
-    val bool_Res = _frontend.prepare(args)
-
-    if (!bool_Res) return None
+    if (!_frontend.prepare(args)) return None
     _frontend.init( _frontend.verifier )
 
+    if(!_ast.isDefined) return None
+    val prog = _ast.get
     reportProgramStats(prog)
 
     val ver_result: Option[VerificationResult] = if (_frontend.config.disableCaching()) {
@@ -292,7 +283,6 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Option[
     _frontend.verifier.stop()
     ver_result
   }
-
 
   /*
   Tries to determine which of the given errors are caused by the given method.
