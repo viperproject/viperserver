@@ -1,12 +1,7 @@
-import java.io.File
-import java.nio.file.Paths
-
-import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
+import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.{Matchers, WordSpec}
-import org.slf4j.Marker
-import viper.server.{AstGenerator, ViperRequests, ViperServerRunner}
-import viper.silver.logger.{SilentLogger, ViperStdOutLogger}
-import viper.silver.reporter.StdIOReporter
+import viper.server.AstGenerator
+import viper.silver.logger.ViperStdOutLogger
 
 class ParsingTests extends WordSpec with Matchers with ScalatestRouteTest {
   import scala.language.postfixOps
@@ -37,7 +32,11 @@ class ParsingTests extends WordSpec with Matchers with ScalatestRouteTest {
       val ast_gen = new AstGenerator(parseErrorFile, console_logger)
     }
     s"fail when parsing non-existing file." in {
-      val ast_gen = new AstGenerator(nonExistingFile, console_logger)
+      try {
+        val ast_gen = new AstGenerator(nonExistingFile, console_logger)
+      } catch {
+        case e: java.nio.file.NoSuchFileException => console_logger.get.error(s"No file at: ${nonExistingFile}")
+      }
     }
   }
 }

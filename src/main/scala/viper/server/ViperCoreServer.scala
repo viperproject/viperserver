@@ -4,29 +4,26 @@ import org.reactivestreams.Publisher
 
 import scala.language.postfixOps
 import scala.collection.mutable
-import scala.concurrent.{ExecutionContextExecutor, Future, Promise, ExecutionContext}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future, Promise}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
-
 import java.util.NoSuchElementException
 
-import akka.{Done}
+import akka.Done
 import akka.pattern.ask
 import akka.util.Timeout
-import akka.actor.{ActorRef, ActorSystem, Actor, Props, PoisonPill}
-import akka.stream.scaladsl.{SourceQueueWithComplete, Source, Sink, Keep}
+import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
+import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.http.scaladsl.server.Route
-
 import akka.http.scaladsl.Http
-
-import viper.silver.reporter.{Message, Reporter }
+import viper.silver.reporter.{Message, Reporter}
 import viper.silver.ast
-import viper.silver.logger.ViperLogger
+import viper.silver.logger.{ViperLogger}
 import viper.silver.verifier.VerificationResult
 import viper.server.ViperServerProtocol._
-
 import viper.server.ViperBackendConfigs._
+import viper.silver.logger.ViperStdOutLogger
 
 
 /*
@@ -188,7 +185,6 @@ class ViperCoreServer(private var _config: ViperConfig) {
         resetVerificationTask()
         sender ! verify(args, reporter, program, resultPromise)
 
-
       case msg =>
         throw new Exception("Main Actor: unexpected message received: " + msg)
     }
@@ -200,6 +196,9 @@ class ViperCoreServer(private var _config: ViperConfig) {
 
       val my_reporter = system.actorOf(ReporterActor.props(id, queue, resultPromise), s"reporter_$id")
 
+//      logger.get.info("sleeping ...")
+//      Thread.sleep(15000)
+//      logger.get.info("... waking up")
       _verificationTask = new Thread(new VerificationWorker(my_reporter, logger.get, args, program, reporter))
       _verificationTask.start()
 
@@ -246,11 +245,10 @@ class ViperCoreServer(private var _config: ViperConfig) {
     init(None)
   }
 
-
   protected def init(routes: Option[ViperLogger => Route]): Unit = {
     config.verify()
 
-    _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
+    _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, "ALL")
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
     ViperCache.initialize(logger.get, config.backendSpecificCache())
@@ -272,6 +270,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
     }
   }
 
+
   def verify(programID: String, config: ViperBackendConfig, reporter: Reporter, program: ast.Program): VerificationJobHandler = {
     val args: List[String] = config match {
       case _ : SiliconConfig => "silicon" :: config.partialCommandLine
@@ -283,8 +282,12 @@ class ViperCoreServer(private var _config: ViperConfig) {
     createJobHandle(args :+ programID, Some(reporter), Some(program))
   }
 
-  protected def createJobHandle(args: List[String]): VerificationJobHandler = {
-    createJobHandle(args, None, None)
+//  protected def createJobHandle(args: List[String]): VerificationJobHandler = {
+//    createJobHandle(args, None, None)
+//  }
+
+  protected def createJobHandle(args: List[String], prog: Option[ast.Program]): VerificationJobHandler = {
+    createJobHandle(args, None, prog)
   }
 
   private def createJobHandle(args: List[String], reporter: Option[Reporter], program: Option[ast.Program]): VerificationJobHandler = {
@@ -302,6 +305,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
       VerificationJobHandler(-1) // Not able to create a new JobHandle
     }
   }
+
 
   def stop(): Unit = {
     println(s"Stopping ViperCoreServer")

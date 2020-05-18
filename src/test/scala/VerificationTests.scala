@@ -1,20 +1,10 @@
-import java.io.File
-import java.nio.file.Paths
-
-import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSupport}
-import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
-import akka.testkit.TestDuration
+import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.{Matchers, WordSpec}
-import viper.server.{ActorReporter, AstGenerator, AstVerifier, VerificationWorker, ViperBackend, ViperRequests, ViperServerRunner}
-import viper.silicon.SiliconFrontend
+import viper.server.AstGenerator
 import viper.silver.logger.{SilentLogger, ViperStdOutLogger}
-import viper.silver.reporter.{Message, StdIOReporter}
-
-import scala.concurrent.duration._
 
 class VerificationTests extends WordSpec with Matchers with ScalatestRouteTest {
   import scala.language.postfixOps
-  import ViperRequests._
 
   private val verifiableFile = "src\\test\\resources\\viper\\let.vpr"
   private val emptyFile ="src\\test\\resources\\viper\\empty.vpr"
@@ -33,19 +23,19 @@ class VerificationTests extends WordSpec with Matchers with ScalatestRouteTest {
   "VerificationTest" should {
     s"verify the AST of the parsed and translated Viper program 'sum_method'." in {
       val astGen = new AstGenerator(sumFile, SilentLogger())
-      val astVer = new AstVerifier(testSumFile_args, astGen.translated_ast, console_logger)
+      val astVer = new AstVerifier(testSumFile_args, astGen.viper_ast, console_logger)
     }
     s"verify the AST of a parsed and translated Viper program that does not verify." in {
       val astGen : AstGenerator = new AstGenerator(verificationErrorFile, SilentLogger())
-      val astVer = new AstVerifier(testVerificationErrorFile_args, astGen.translated_ast, console_logger)
+      val astVer = new AstVerifier(testVerificationErrorFile_args, astGen.viper_ast, console_logger)
     }
     s"verify the AST of the parsed and translated Viper program 'let'." in {
       val astGen : AstGenerator = new AstGenerator(verifiableFile, SilentLogger())
-      val astVer = new AstVerifier(testSimpleViperCode_args, astGen.translated_ast, console_logger)
+      val astVer = new AstVerifier(testSimpleViperCode_args, astGen.viper_ast, console_logger)
     }
     s"verify the empty AST of the empty Viper programs." in {
       val astGen : AstGenerator = new AstGenerator(emptyFile, SilentLogger())
-      val astVer = new AstVerifier(testEmptyFile_args, astGen.translated_ast, console_logger)
+      val astVer = new AstVerifier(testEmptyFile_args, astGen.viper_ast, console_logger)
     }
   }
 }

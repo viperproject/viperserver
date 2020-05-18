@@ -68,39 +68,39 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
         contentType should ===(ContentTypes.`application/json`)
       }
     }
-//
-//    "respond with the result for session #0" in {
-//      Get("/verify/0") ~> _routsUnderTest ~> check {
-//        //printRequestResponsePair(s"GET, /verify/0", responseAs[String])
-//        responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
-//        status should ===(StatusCodes.OK)
-//        contentType should ===(ContentTypes.`application/json`)
-//      }
-//    }
-//
-//    s"start another verification session using `$tool` " in {
-//      Post("/verify", VerificationRequest(testEmptyFile_cmd)) ~> _routsUnderTest ~> check {
-//        //printRequestResponsePair(s"POST, /verify, $testEmptyFile_cmd", responseAs[String])
-//        status should ===(StatusCodes.OK)
-//        contentType should ===(ContentTypes.`application/json`)
-//      }
-//    }
-//
-//    "respond with the result for session #1" in {
-//      Get("/verify/1") ~> _routsUnderTest ~> check {
-//        //printRequestResponsePair(s"GET, /verify/1", responseAs[String])
-//        responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
-//        status should ===(StatusCodes.OK)
-//        contentType should ===(ContentTypes.`application/json`)
-//      }
-//    }
-//
-//    "stop all running executions and terminate self" in {
-//      Get("/exit") ~> _routsUnderTest ~> check {
-//        //printRequestResponsePair(s"GET, /exit", responseAs[String])
-//        status should ===(StatusCodes.OK)
-//        contentType should ===(ContentTypes.`application/json`)
-//      }
-//    }
+
+    "respond with the result for session #0" in {
+      Get("/verify/0") ~> _routsUnderTest ~> check {
+        //printRequestResponsePair(s"GET, /verify/0", responseAs[String])
+        responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
+        status should ===(StatusCodes.OK)
+        contentType should ===(ContentTypes.`application/json`)
+      }
+    }
+
+    s"start another verification session using `$tool` " in {
+      Post("/verify", VerificationRequest(testEmptyFile_cmd)) ~> _routsUnderTest ~> check {
+        //printRequestResponsePair(s"POST, /verify, $testEmptyFile_cmd", responseAs[String])
+        status should ===(StatusCodes.OK)
+        contentType should ===(ContentTypes.`application/json`)
+      }
+    }
+
+    "respond with the result for session #1" in {
+      Get("/verify/1") ~> _routsUnderTest ~> check {
+        //printRequestResponsePair(s"GET, /verify/1", responseAs[String])
+        responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
+        status should ===(StatusCodes.OK)
+        contentType should ===(ContentTypes.`application/json`)
+      }
+    }
+
+    "stop all running executions and terminate self" in {
+      Get("/exit") ~> _routsUnderTest ~> check {
+        //printRequestResponsePair(s"GET, /exit", responseAs[String])
+        status should ===(StatusCodes.OK)
+        contentType should ===(ContentTypes.`application/json`)
+      }
+    }
   }
 }

@@ -16,56 +16,70 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
   private val nonExistingFile = "src\\test\\resources\\viper\\bla.vpr"
   private val verificationErrorFile = "src\\test\\resources\\viper\\verification_error.vpr"
 
-  private val verifiableFile_id = "let"
-  private val emptyFile_id ="empty"
-  private val sumFile_id = "sum_method"
-  private val nonExistingFile_id = "bla"
-  private val verificationErrorFile_id = "verification_error"
-
-  private val testSimpleViperCode_args = Array("--disableCaching", verifiableFile)
-  private val testEmptyFile_args = Array("--disableCaching", emptyFile)
-  private val testNonExistingFile_args = Array("--disableCaching", nonExistingFile)
-  private val testSumFile_args = Array(sumFile)
-  private val testVerificationErrorFile_args = Array("--disableCaching", verificationErrorFile)
-
   private val console_logger = ViperStdOutLogger("parsingTest logger", "ALL")
   private val console_reporter = new StdIOReporter()
 
+  private def verification(file: String, caching: Boolean): Unit ={
+    val astGen = new AstGenerator(file, console_logger)
+    val config = new ViperConfig(List())
+    config.verify()
+
+    val core = new ViperCoreServer(config)
+    core.start()
+
+    val backendConfig =  if(!caching){
+      SiliconConfig(List("--disableCaching"))
+    }else {
+      SiliconConfig(List())
+    }
+
+    console_logger.get.info("verifying file ...")
+
+    astGen.viper_ast match {
+      case Some(prog) =>
+
+        val handler = core.verify(file, backendConfig, console_reporter, prog)
+        val result = core.getFuture(handler.id)
+
+        console_logger.get.info("Verification not yet done, test thread sent to sleep ...")
+        while(!result.isCompleted){
+          Thread.sleep(1000)
+        }
+        console_logger.get.info("... verification done, test thread waking up")
+
+        result.onComplete({
+          case Success(_) =>
+            console_logger.get.info("Test completed with success")
+          case Failure(_) =>
+            console_logger.get.info("Test completed with failure")
+        })
+      case None =>
+        console_logger.get.error("Test failed because of parsing!")
+    }
+    core.stop()
+  }
+
   "CoreServerTest" should {
-    s"verify the AST of the  Viper program 'sum_method' using VCS." in {
-      val astGen = new AstGenerator(sumFile, console_logger)
-      val config = new ViperConfig(List())
-      config.verify()
-
-      val core = new ViperCoreServer(config)
-      core.start()
-
-      val backendConfig = SiliconConfig(List())
-
-      console_logger.get.info("verifying file ...")
-
-      astGen.translated_ast match {
-        case Some(prog) =>
-//          console_logger.get.info("sleeping ...")
-//          Thread.sleep(15000)
-//          console_logger.get.info("... waking up")
-
-          val handler = core.verify(sumFile_id, backendConfig, console_reporter, prog)
-          val result = core.getFuture(handler.id)
-
-          while(!result.isCompleted){
-            print(".")
-          }
-
-          result.onComplete({
-            case Success(_) =>
-              console_logger.get.info("Completed with success")
-            case Failure(_) =>
-              console_logger.get.info("Completed with failure")
-          })
-        case None =>
-          console_logger.get.error("Parsing failed!")
-      }
+//    s"verify the AST of the  Viper program 'sum_method' using VCS." in {
+//      verification(sumFile, true)
+//    }
+    s"verify the AST of the  Viper program 'sum_method' with caching enabled using VCS." in {
+      verification(sumFile, true)
+    }
+    s"verify the AST of the  Viper program 'sum_method' with caching disabled using VCS." in {
+      verification(sumFile, false)
+    }
+    s"verify the AST of the  Viper program 'let' with caching disabled using VCS." in {
+      verification(verifiableFile, false)
+    }
+    s"verify the AST of the  Viper program 'let' with caching enabled using VCS." in {
+      verification(verifiableFile, true)
+    }
+    s"verify the AST of the  Viper program 'verification_error' with caching disabled using VCS." in {
+      verification(verificationErrorFile, false)
+    }
+    s"verify the AST of the  Viper program 'verification_error' with caching enabled using VCS." in {
+      verification(verificationErrorFile, true)
     }
   }
 }

@@ -10,14 +10,14 @@ package viper.server
 
 
 
-import scala.concurrent.{ Future, ExecutionContextExecutor, ExecutionContext }
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
-import akka.{NotUsed}
+import akka.NotUsed
 import akka.pattern.ask
 import akka.util.Timeout
-import akka.actor.{PoisonPill, ActorSystem}
-import akka.stream.scaladsl.{Source}
+import akka.actor.{ActorSystem, PoisonPill}
+import akka.stream.scaladsl.Source
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import edu.mit.csail.sdg.alloy4.A4Reporter
@@ -26,8 +26,8 @@ import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
 import viper.server.ViperServerProtocol._
 import viper.server.ViperIDEProtocol._
 import viper.silver.reporter._
-import viper.silver.logger.ViperLogger
-import ViperRequests.{ VerificationRequest, CacheResetRequest, AlloyGenerationRequest }
+import viper.silver.logger.{ViperLogger, ViperStdOutLogger}
+import ViperRequests.{AlloyGenerationRequest, CacheResetRequest, VerificationRequest}
 
 import scala.util.Try
 
@@ -88,44 +88,28 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       *   such as <a href="https://bitbucket.org/viperproject/viper_client">viper_client</a> (written in Python)
       */
     post {
-      entity(as[VerificationRequest]) { r =>
-        val arg_list = getArgListFromArgString(r.arg)
-        val jobHandler = createJobHandle(arg_list)
-        val id = jobHandler.id
+        entity(as[VerificationRequest]) { r =>
+          val arg_list = getArgListFromArgString(r.arg)
 
-        if (id >= 0) {
-          complete( VerificationRequestAccept(id) )
-        } else {
-          complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS)."))
-        }
-      }
-    } // TEST (allows the communication with Viperserver by simple get request)#DELETE LATER##################################################################################################################
-  } ~ path("test") {
-    get {
-      println("Hello from Test\n")
-      val arg_list = getArgListFromArgString("silicon wrong.sil")
-      val jobHandler = createJobHandle(arg_list)
-      val id = jobHandler.id
+          val file: String = arg_list.last
+          val astGen = new AstGenerator(file, logger)
 
-      lookupJob(id) match {
-        case Some((handle_future, resultPromise)) => {
-          onComplete(handle_future) {
-            case Success(handle) => {
-              val src: Source[Message, NotUsed] = Source.fromPublisher(handle.publisher)
-              _term_actor ! Terminator.WatchJobQueue(id, handle)
-              complete(s"the verification was done")
-            }
-            case Failure(error) =>
-              complete( VerificationRequestReject(s"The verification job #$id resulted in a terrible error: $error") )
+          val id = astGen.viper_ast match {
+            case Some(prog) =>
+              val jobHandler: VerificationJobHandler = createJobHandle(arg_list, Some(prog))
+              jobHandler.id
+            case None =>
+              -1
           }
-        }
-        case _ =>
-          // Did not find a job with this jid.
-          complete( VerificationRequestReject(s"The verification job #$id does not exist.") )
-      }    
-    } //DELETE LATER#########################################################################################################################
-  } ~ path("verify" / IntNumber) { jid =>
 
+          if (id >= 0) {
+            complete( VerificationRequestAccept(id) )
+          } else {
+            complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS)."))
+          }
+      }
+    }
+  } ~ path("verify" / IntNumber) { jid =>
     /**
       * Send GET request to "/verify/<jid>" where <jid> is a non-negative integer.
       * <jid> must be an ID of an existing verification job.
@@ -180,7 +164,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       *     - Complete request with accepting message
       *
       *  Use case:
-      *  - Client decided to kill a verification job they no linger care about
+      *  - Client decided to kill a verification job they no longer care about
       */
     get {
       lookupJob(jid) match {

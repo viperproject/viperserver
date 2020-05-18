@@ -14,12 +14,11 @@ import scala.concurrent.ExecutionContextExecutor
 class AstGenerator (private val vpr_file_path:String, private val _logger: ViperLogger){
   var ver_backend: SilFrontend = initialize_backend()
   var parse_ast : Option[PProgram] = parse()
-  var translated_ast : Option[Program] = translate()
+  var viper_ast : Option[Program] = translate()
 
-  //TODO deal with non-existing files.
   private def initialize_backend() : SilFrontend = {
     _logger.get.info(s"Creating new verification backend.")
-    new SiliconFrontend(StdIOReporter("some_name", true), _logger.get)
+    new SiliconFrontend(StdIOReporter("Parsing Reporter", true), _logger.get)
   }
 
   private def parse(): Option[PProgram] = {
@@ -30,11 +29,14 @@ class AstGenerator (private val vpr_file_path:String, private val _logger: Viper
     ver_backend.init(ver_backend.verifier)
     ver_backend.reset(Paths.get(ver_backend.config.file()))
     ver_backend.parsing()
+
+    _logger.get.info("Logger test verifier signature " + ver_backend.verifier.signature)
+
     if(ver_backend.errors.isEmpty){
-      _logger.get.info("There was NO error while parsing!")
+      _logger.get.info("There was no error while parsing!")
       Some(ver_backend.parsingResult)
     }else{
-      _logger.get.info("There was SOME error while parsing!")
+      _logger.get.error("There was some error while parsing!")
       None
     }
   }
@@ -44,13 +46,16 @@ class AstGenerator (private val vpr_file_path:String, private val _logger: Viper
       _logger.get.info(s"Translating parsed file.")
       ver_backend.semanticAnalysis()
       ver_backend.translation()
+      ver_backend.consistencyCheck()
       if(ver_backend.errors.isEmpty){
-        _logger.get.info("There was NO error while translating!")
+        _logger.get.info("There was no error while translating!")
+        ver_backend.verifier.stop()
         return Some(ver_backend.translationResult)
       }else {
-        _logger.get.info ("There was SOME error while translating!")
+        _logger.get.error ("There was some error while translating!")
       }
     }
+    ver_backend.verifier.stop()
     None
   }
 }
