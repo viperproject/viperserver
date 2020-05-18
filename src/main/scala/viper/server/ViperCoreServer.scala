@@ -275,7 +275,6 @@ class ViperCoreServer(private var _config: ViperConfig) {
       val (id, jobHandle) = bookNewJob((new_jid: Int) => {
         implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
         val main_actor = system.actorOf(MainActor.props(new_jid, logger), s"main_actor_$new_jid")
-        val resultPromise: Promise[VerificationResult] = Promise[VerificationResult]()
         val new_job_handle: Future[JobHandle] = (main_actor ? ViperServerProtocol.Verify(args, reporter, program)).mapTo[JobHandle]
         new_job_handle
       })
