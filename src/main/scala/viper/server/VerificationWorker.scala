@@ -55,10 +55,6 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
   override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be found."
 }
 
-case class ViperServerPreparationException(name: String) extends ViperServerException {
-  override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be prepared."
-}
-
 
 
 class VerificationWorker(private val reporterActor: ActorRef,
@@ -93,9 +89,6 @@ class VerificationWorker(private val reporterActor: ActorRef,
   private var _backendName: String = _
   def backendName: String = _backendName
 
-  private var _result: Option[VerificationResult] = None
-  def result: Option[VerificationResult] = _result
-
   def run(): Unit = {
     try {
       command match {
@@ -103,17 +96,17 @@ class VerificationWorker(private val reporterActor: ActorRef,
           _backendName = "silicon"
           logger.info("Creating new Silicon verification backend.")   
           backend = new ViperBackend(new SiliconFrontend(new ActorReporter(reporterActor, reporter, "silicon"), logger))
-          _result = backend.execute(args, program)
+          backend.execute(args, program)
         case "carbon" :: args =>
           _backendName = "carbon"
           logger.info("Creating new Carbon verification backend.")
           backend = new ViperBackend(new CarbonFrontend(new ActorReporter(reporterActor, reporter, "carbon"), logger))
-          _result = backend.execute(args, program)
+          backend.execute(args, program)
         case custom :: args =>
           _backendName = custom
           logger.info(s"Creating new verification backend based on class $custom.")
           backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(reporterActor, reporter, custom)).get)
-          _result = backend.execute(args, program)
+          backend.execute(args, program)
         case args =>
           logger.error("invalid arguments: ${args.toString}",
             "You need to specify the verification backend, e.g., `silicon [args]`")
@@ -146,11 +139,6 @@ class VerificationWorker(private val reporterActor: ActorRef,
     } else {
       logger.error(s"The command `${command.mkString(" ")}` did not result in initialization of verification backend.")
       reporterActor ! ReporterProtocol.FinalServerReport(false)
-    }
-
-    result match {
-      case Some(res) => reporterActor ! ReporterProtocol.CompleteOverallResult(res)
-      case None => reporterActor ! ReporterProtocol.FailOverallResult(ViperServerPreparationException(backendName))
     }
   }
 }
@@ -271,7 +259,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
   }
 
 
-  def execute(args: Seq[String], program: Option[Program]): Option[VerificationResult] = {
+  def execute(args: Seq[String], program: Option[Program]) {
     _frontend.setStartTime()
 
     // create the verifier
@@ -312,7 +300,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
       }
 
       case _ => {
-        if (!_frontend.prepare(args)) return None
+        if (!_frontend.prepare(args)) return
 
         // initialize the translator
         _frontend.init( _frontend.verifier )
@@ -346,10 +334,8 @@ class ViperBackend(private val _frontend: SilFrontend) {
 
     _frontend.verifier.stop()
 
-    val result = _frontend.result
-
     // finish by reporting the overall outcome
-    result match {
+    _frontend.result match {
       case Success =>
         _frontend.reporter report OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime)
         // TODO: Think again about where to detect and trigger SymbExLogging
@@ -358,8 +344,6 @@ class ViperBackend(private val _frontend: SilFrontend) {
           // Cached errors will be reporter as soon as they are retrieved from the cache.
           Failure(f.errors.filter { e => !e.cached }))
     }
-
-    Some(result)
   }
 
 
@@ -503,6 +487,7 @@ class ViperBackend(private val _frontend: SilFrontend) {
           }
       }
     })
+
     (methodsToVerify.toList, methodsToCache.toList, errors.toList)
   }
 

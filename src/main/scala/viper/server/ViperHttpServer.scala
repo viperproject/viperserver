@@ -108,7 +108,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       val id = jobHandler.id
 
       lookupJob(id) match {
-        case Some((handle_future, resultPromise)) => {
+        case Some(handle_future) => {
           onComplete(handle_future) {
             case Success(handle) => {
               val src: Source[Message, NotUsed] = Source.fromPublisher(handle.publisher)
@@ -145,7 +145,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       */
     get {
       lookupJob(jid) match {
-        case Some((handle_future, resultPromise)) =>
+        case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>
               // Found a job with this jid.
@@ -184,7 +184,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       */
     get {
       lookupJob(jid) match {
-        case Some((handle_future, resultPromise)) =>
+        case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>
               implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
