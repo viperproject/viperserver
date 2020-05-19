@@ -21,7 +21,6 @@ import viper.silver.reporter
 import viper.silver.reporter.{Reporter, _}
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, _}
-import viper.silver.verifier.VerificationResult
 
 import scala.language.postfixOps
 
@@ -86,24 +85,18 @@ class VerificationWorker(private val reporterActor: ActorRef,
 
   private var backend: ViperBackend = _
 
-  private var _backendName: String = _
-  def backendName: String = _backendName
-
   def run(): Unit = {
     try {
       command match {
         case "silicon" :: args =>
-          _backendName = "silicon"
           logger.info("Creating new Silicon verification backend.")   
           backend = new ViperBackend(new SiliconFrontend(new ActorReporter(reporterActor, reporter, "silicon"), logger))
           backend.execute(args, program)
         case "carbon" :: args =>
-          _backendName = "carbon"
           logger.info("Creating new Carbon verification backend.")
           backend = new ViperBackend(new CarbonFrontend(new ActorReporter(reporterActor, reporter, "carbon"), logger))
           backend.execute(args, program)
         case custom :: args =>
-          _backendName = custom
           logger.info(s"Creating new verification backend based on class $custom.")
           backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(reporterActor, reporter, custom)).get)
           backend.execute(args, program)
@@ -265,16 +258,6 @@ class ViperBackend(private val _frontend: SilFrontend) {
     // create the verifier
     _frontend.setVerifier( _frontend.createVerifier(args.mkString(" ")) )
 
-
-/*
-    if (!_frontend.prepare(args)) return None
-
-    // initialize the translator
-    _frontend.init( _frontend.verifier )
-
-    // set the file we want to verify
-    _frontend.reset( Paths.get(_frontend.config.file()) )
-*/
     program match {
       case Some(prog) => {
         _frontend.configureVerifier(args)
