@@ -85,7 +85,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       * Use case:
       * - Send a request to verify a specific Viper file from the IDE
       * - Send a request to verify a specific Viper file from any other Viper client implementation,
-      *   such as <a href="https://bitbucket.org/viperproject/viper_client">viper_client</a> (written in Python)
+      *   such as <a href="<a href="https://github.com/viperproject/viper_client">viper_client</a>">viper_client</a> (written in Python)
       */
     post {
         entity(as[VerificationRequest]) { r =>
@@ -129,7 +129,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       */
     get {
       lookupJob(jid) match {
-        case Some((handle_future, resultPromise)) =>
+        case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>
               // Found a job with this jid.
@@ -168,7 +168,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       */
     get {
       lookupJob(jid) match {
-        case Some((handle_future, resultPromise)) =>
+        case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>
               implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
