@@ -60,9 +60,6 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
   }
 
   "CoreServerTest" should {
-//    s"verify the AST of the  Viper program 'sum_method' using VCS." in {
-//      verification(sumFile, true)
-//    }
     s"verify the AST of the  Viper program 'sum_method' with caching enabled using VCS." in {
       verification(sumFile, true)
     }

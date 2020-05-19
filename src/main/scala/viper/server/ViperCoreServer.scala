@@ -17,10 +17,10 @@ import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.Http
-import viper.silver.reporter.{Message, Reporter}
+import viper.silver.reporter.{EntityFailureMessage, Message, Reporter}
 import viper.silver.ast
-import viper.silver.logger.{ViperLogger}
-import viper.silver.verifier.VerificationResult
+import viper.silver.logger.ViperLogger
+import viper.silver.verifier.{AbstractError, VerificationError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 import viper.server.ViperServerProtocol._
 import viper.server.ViperBackendConfigs._
 import viper.silver.logger.ViperStdOutLogger
@@ -61,20 +61,20 @@ class ViperCoreServer(private var _config: ViperConfig) {
 
   implicit val materializer: ActorMaterializer = ActorMaterializer()
 
-  private var _job_handles: mutable.Map[Int, (Future[JobHandle], Promise[VerificationResult])] = mutable.Map[Int, (Future[JobHandle], Promise[VerificationResult])]()
+  private var _job_handles: mutable.Map[Int, Future[JobHandle]] = mutable.Map[Int, Future[JobHandle]]()
   private var _next_job_id: Int = 0
   val MAX_ACTIVE_JOBS: Int = 3
 
   private def newJobsAllowed = _job_handles.size < MAX_ACTIVE_JOBS
 
-  private def bookNewJob(job_executor: Int => (Future[JobHandle], Promise[VerificationResult])): (Int, (Future[JobHandle], Promise[VerificationResult])) = {
+    private def bookNewJob(job_executor: Int => Future[JobHandle]): (Int, Future[JobHandle]) = {
     val new_jid = _next_job_id
     _job_handles(new_jid) = job_executor(new_jid)
     _next_job_id = _next_job_id + 1
     (new_jid, _job_handles(new_jid))
   }
 
-  private def discardJob(jid: Int): mutable.Map[Int, (Future[JobHandle], Promise[VerificationResult])] = {
+  private def discardJob(jid: Int): mutable.Map[Int, Future[JobHandle]] = {
     _job_handles -= jid
   }
 
@@ -83,7 +83,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
     *   a) The Future is not yet completed ==> verification in progress.
     *   b) The Future is already completed ==> job done.
     */
-  protected def lookupJob(jid: Int): Option[ (Future[JobHandle], Promise[VerificationResult]) ] = {
+  protected def lookupJob(jid: Int): Option[ Future[JobHandle] ] = {
     _job_handles.get(jid)
   }
 
@@ -95,7 +95,6 @@ class ViperCoreServer(private var _config: ViperConfig) {
   object Terminator {
     case object Exit
     case class WatchJobQueue(jid: Int, handle: JobHandle)
-    case class WatchJobResult(jid: Int, resultPromise: Promise[VerificationResult])
 
     def props(bindingFuture: Future[Http.ServerBinding]): Props = Props(new Terminator(Some(bindingFuture)))
     def props(): Props = Props(new Terminator(None))
@@ -117,16 +116,6 @@ class ViperCoreServer(private var _config: ViperConfig) {
       case Terminator.WatchJobQueue(jid, handle) =>
         val queue_completion_future: Future[Done] = handle.queue.watchCompletion()
         queue_completion_future.onComplete( {
-          case Failure(e) =>
-            println(s"Terminator detected failure in job #$jid: $e")
-            throw e
-          case Success(_) =>
-            discardJob(jid)
-            println(s"Terminator deleted job #$jid")
-        })
-      case Terminator.WatchJobResult(jid, resultPromise) =>
-        val result_future: Future[VerificationResult] = resultPromise.future
-        result_future.onComplete({
           case Failure(e) =>
             println(s"Terminator detected failure in job #$jid: $e")
             throw e
@@ -181,24 +170,21 @@ class ViperCoreServer(private var _config: ViperConfig) {
           }
         }
 
-      case Verify(args, reporter, program, resultPromise) =>
+      case Verify(args, reporter, program) =>
         resetVerificationTask()
-        sender ! verify(args, reporter, program, resultPromise)
+        sender ! verify(args, reporter, program)
 
       case msg =>
         throw new Exception("Main Actor: unexpected message received: " + msg)
     }
 
-    private def verify(args: List[String], reporter: Option[Reporter], program: Option[ast.Program], resultPromise: Promise[VerificationResult]): JobHandle = {
+    private def verify(args: List[String], reporter: Option[Reporter], program: Option[ast.Program]): JobHandle = {
 
       // The maximum number of messages in the reporter's message buffer is 10000.
       val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure).toMat(Sink.asPublisher(false))(Keep.both).run()
 
-      val my_reporter = system.actorOf(ReporterActor.props(id, queue, resultPromise), s"reporter_$id")
+      val my_reporter = system.actorOf(ReporterActor.props(id, queue), s"reporter_$id")
 
-//      logger.get.info("sleeping ...")
-//      Thread.sleep(15000)
-//      logger.get.info("... waking up")
       _verificationTask = new Thread(new VerificationWorker(my_reporter, logger.get, args, program, reporter))
       _verificationTask.start()
 
@@ -213,12 +199,10 @@ class ViperCoreServer(private var _config: ViperConfig) {
   // --- Actor: ReporterActor ---
 
   object ReporterActor {
-    def props(jid: Int,
-              queue: SourceQueueWithComplete[Message],
-              resultPromise: Promise[VerificationResult]): Props = Props(new ReporterActor(jid, queue, resultPromise))
+    def props(jid: Int, queue: SourceQueueWithComplete[Message]): Props = Props(new ReporterActor(jid, queue))
   }
 
-  class ReporterActor(jid: Int, queue: SourceQueueWithComplete[Message], resultPromise: Promise[VerificationResult]) extends Actor {
+  class ReporterActor(jid: Int, queue: SourceQueueWithComplete[Message]) extends Actor {
 
     override def receive: PartialFunction[Any, Unit] = {
       case ReporterProtocol.ClientRequest =>
@@ -232,10 +216,6 @@ class ViperCoreServer(private var _config: ViperConfig) {
         else
           println(s"Job #$jid has been completed ERRONEOUSLY.")
         self ! PoisonPill
-      case ReporterProtocol.CompleteOverallResult(result) =>
-        resultPromise success result
-      case ReporterProtocol.FailOverallResult(ex) =>
-        resultPromise failure ex
       case _ =>
     }
   }
@@ -295,9 +275,8 @@ class ViperCoreServer(private var _config: ViperConfig) {
       val (id, jobHandle) = bookNewJob((new_jid: Int) => {
         implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
         val main_actor = system.actorOf(MainActor.props(new_jid, logger), s"main_actor_$new_jid")
-        val resultPromise: Promise[VerificationResult] = Promise[VerificationResult]()
-        val new_job_handle: Future[JobHandle] = (main_actor ? ViperServerProtocol.Verify(args, reporter, program, resultPromise)).mapTo[JobHandle]
-        (new_job_handle, resultPromise)
+        val new_job_handle: Future[JobHandle] = (main_actor ? ViperServerProtocol.Verify(args, reporter, program)).mapTo[JobHandle]
+        new_job_handle
       })
       VerificationJobHandler(id)
     } else {
@@ -323,7 +302,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
 
 
   protected def getInterruptFutureList(): Future[List[String]] = {
-    val interrupt_future_list: List[Future[String]] = _job_handles map { case (jid, (handle_future, resultPromise)) =>
+    val interrupt_future_list: List[Future[String]] = _job_handles map { case (jid, handle_future) =>
       handle_future.flatMap {
         case JobHandle(actor, _, _) =>
           implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
@@ -346,21 +325,31 @@ class ViperCoreServer(private var _config: ViperConfig) {
    */
   def getFuture(jid: Int): Future[VerificationResult] = {
     lookupJob(jid) match {
-      case Some((handle_future, resultPromise)) =>
-        _term_actor ! Terminator.WatchJobResult(jid, resultPromise)
+      case Some(handle_future) =>
+        val result_future = handle_future.flatMap(handle => {
+          val sink = Sink.fold[Seq[AbstractError], Message](Seq())((errors, msg) => msg match {
+            case EntityFailureMessage(_, _, _, VerificationFailure(errs)) => errs ++ errors
+            case _ => errors
+          })
 
-        resultPromise.future
+          val errors_future: Future[Seq[AbstractError]] = Source.fromPublisher(handle.publisher).toMat(sink)(Keep.right).run()
+
+          val errors = errors_future.map({
+            case Seq() => VerificationSuccess
+            case errs => VerificationFailure(errs)
+          })
+          _term_actor ! Terminator.WatchJobQueue(jid, handle)
+
+          errors
+        })
+        result_future
       case None =>
         val promise = Promise[VerificationResult]()
         promise failure (new NoSuchElementException("Could not find the requested jid."))
         promise.future
-
     }
   }
 }
-
-
-
 
 // CODE FROM THE IDE SYNC MEETING ###########################################################################################
 /*

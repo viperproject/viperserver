@@ -15,6 +15,9 @@ object ViperServerRunner {
 
   var httpServer: ViperHttpServer = _
 
+
+  /** Creates batch script to run python <a href="https://github.com/viperproject/viper_client">viper_client</a>
+    * */
   private def writeBatchScripts(portOption: ScallopOption[Int], file: Option[String]): Unit ={
     if(!portOption.isDefined){
       println("port was not defined, batch files won't be created.")
@@ -51,9 +54,6 @@ object ViperServerRunner {
 
     val config = new ViperConfig(args)
     config.verify()
-
-    // Prepare program to verify ------------------------------------------------------------------------------
-    val otherlogger = ViperLogger("otherViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
 
     httpServer = new ViperHttpServer(config)
     httpServer.start()

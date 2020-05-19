@@ -52,10 +52,6 @@ case class ViperServerWrongTypeException(name: String) extends ViperServerExcept
 case class ViperServerBackendNotFoundException(name: String) extends ViperServerException {
   override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be found."
 }
-case class ViperServerPreparationException(name: String) extends ViperServerException {
-  override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be prepared."
-}
-
 
 class VerificationWorker(private val reporterActor: ActorRef,
                          private val logger: Logger,
@@ -83,32 +79,23 @@ class VerificationWorker(private val reporterActor: ActorRef,
   }
 
   private var backend: ViperBackend = _
-  private var _backendName: String = _
-  def backendName: String = _backendName
-
-  private var _result: Option[VerificationResult] = None
-  def result: Option[VerificationResult] = _result
 
   def run(): Unit = {
 
     try {
       command match {
         case "silicon" :: args =>
-          _backendName = "silicon"
           logger.info("Creating new Silicon verification backend.")
           backend = new ViperBackend(new SiliconFrontend(new ActorReporter(reporterActor, reporter, "silicon"), logger), program)
-
-          _result = backend.execute(args)
+          backend.execute(args)
         case "carbon" :: args =>
-          _backendName = "carbon"
           logger.info("Creating new Carbon verification backend.")
           backend = new ViperBackend(new CarbonFrontend(new ActorReporter(reporterActor, reporter, "carbon"), logger), program)
-          _result = backend.execute(args)
+          backend.execute(args)
         case custom :: args =>
-          _backendName = custom
           logger.info(s"Creating new verification backend based on class $custom.")
           backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(reporterActor, reporter, custom)).get, program)
-          _result = backend.execute(args)
+          backend.execute(args)
         case args =>
           logger.error("invalid arguments: ${args.toString}",
             "You need to specify the verification backend, e.g., `silicon [args]`")
@@ -137,11 +124,6 @@ class VerificationWorker(private val reporterActor: ActorRef,
     } else {
       logger.error(s"The command `${command.mkString(" ")}` did not result in initialization of verification backend.")
       reporterActor ! ReporterProtocol.FinalServerReport(false)
-    }
-
-    result match {
-      case Some(res) => reporterActor ! ReporterProtocol.CompleteOverallResult(res)
-      case None => reporterActor ! ReporterProtocol.FailOverallResult(ViperServerPreparationException(backendName))
     }
   }
 }
@@ -262,26 +244,36 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Option[
 
 
   //Executes backend functionality
-  def execute(args: Seq[String]): Option[VerificationResult] = {
+  def execute(args: Seq[String]){
     _frontend.setStartTime()
     _frontend.setVerifier( _frontend.createVerifier(args.mkString(" ")) )
 
-    if (!_frontend.prepare(args)) return None
+    if (!_frontend.prepare(args)) return
     _frontend.init( _frontend.verifier )
 
-    if(!_ast.isDefined) return None
+    if(!_ast.isDefined) return
     val prog = _ast.get
     reportProgramStats(prog)
 
-    val ver_result: Option[VerificationResult] = if (_frontend.config.disableCaching()) {
+    val temp_result: Option[VerificationResult] = if (_frontend.config.disableCaching()) {
       _frontend.logger.info("Verification with caching disabled")
       Some(_frontend.verifier.verify(prog))
     } else {
       _frontend.logger.info("Verification with caching disabled")
       doCachedVerificationOnAst(prog)
+      _frontend.getVerificationResult
+    }
+
+    temp_result match {
+      case Some(Success) =>
+        _frontend.reporter report OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime)
+      // TODO: Think again about where to detect and trigger SymbExLogging
+      case Some(f@Failure(_)) =>
+        _frontend.reporter report OverallFailureMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime,
+          // Cached errors will be reporter as soon as they are retrieved from the cache.
+          Failure(f.errors.filter { e => !e.cached }))
     }
     _frontend.verifier.stop()
-    ver_result
   }
 
   /*
@@ -313,7 +305,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Option[
     result.toList
   }
 
-  private def doCachedVerificationOnAst(real_program: Program): Option[VerificationResult] = {
+  private def doCachedVerificationOnAst(real_program: Program) = {
     /** Top level branch is here for the same reason as in
       * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
 
@@ -354,12 +346,14 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Option[
       }
     })
 
-
     //combine errors:
     if (cachedErrors.nonEmpty) {
-      _frontend.getVerificationResult
-    }else{
-      _frontend.getVerificationResult
+      _frontend.getVerificationResult.get match {
+        case Failure(errorList) =>
+          _frontend.setVerificationResult(Failure(errorList ++ cachedErrors))
+        case Success =>
+          _frontend.setVerificationResult(Failure(cachedErrors))
+      }
     }
   }
 
