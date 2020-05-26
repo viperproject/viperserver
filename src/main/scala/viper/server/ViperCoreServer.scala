@@ -17,6 +17,7 @@ import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.Http
+import akka.http.scaladsl.model.headers.CacheDirectives.public
 import viper.silver.reporter.{EntityFailureMessage, Message, Reporter}
 import viper.silver.ast
 import viper.silver.logger.ViperLogger
@@ -61,13 +62,13 @@ class ViperCoreServer(private var _config: ViperConfig) {
 
   implicit val materializer: ActorMaterializer = ActorMaterializer()
 
-  private var _job_handles: mutable.Map[Int, Future[JobHandle]] = mutable.Map[Int, Future[JobHandle]]()
+  protected var _job_handles: mutable.Map[Int, Future[JobHandle]] = mutable.Map[Int, Future[JobHandle]]()
   private var _next_job_id: Int = 0
   val MAX_ACTIVE_JOBS: Int = 3
 
   private def newJobsAllowed = _job_handles.size < MAX_ACTIVE_JOBS
 
-    private def bookNewJob(job_executor: Int => Future[JobHandle]): (Int, Future[JobHandle]) = {
+  private def bookNewJob(job_executor: Int => Future[JobHandle]): (Int, Future[JobHandle]) = {
     val new_jid = _next_job_id
     _job_handles(new_jid) = job_executor(new_jid)
     _next_job_id = _next_job_id + 1
@@ -178,14 +179,17 @@ class ViperCoreServer(private var _config: ViperConfig) {
         throw new Exception("Main Actor: unexpected message received: " + msg)
     }
 
-    private def verify(args: List[String], reporter: Option[Reporter], program: Option[ast.Program]): JobHandle = {
-
+    private def verify(args: List[String], reporter: Option[Reporter], program: ast.Program): JobHandle = {
       // The maximum number of messages in the reporter's message buffer is 10000.
       val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure).toMat(Sink.asPublisher(false))(Keep.both).run()
 
-      val my_reporter = system.actorOf(ReporterActor.props(id, queue), s"reporter_$id")
 
-      _verificationTask = new Thread(new VerificationWorker(my_reporter, logger.get, args, program, reporter))
+      val reportingActor = reporter match {
+        case Some(rep) => system.actorOf(ExternalReporterActor.props(id, rep, queue), s"reporter_$id")
+        case None => system.actorOf(ReporterActor.props(id, queue), s"reporter_$id")
+      }
+
+      _verificationTask = new Thread(new VerificationWorker(reportingActor, logger.get, args, program, reporter))
       _verificationTask.start()
 
       println(s"Starting job #$id...")
@@ -194,6 +198,34 @@ class ViperCoreServer(private var _config: ViperConfig) {
     }
   }
 
+
+  // --- Actor: ExternalReporterActor ---
+
+  object ExternalReporterActor {
+    def props(jid: Int, externalReporter: Reporter, queue: SourceQueueWithComplete[Message]): Props
+      = Props(new ExternalReporterActor(jid, externalReporter, queue))
+  }
+
+  class ExternalReporterActor(jid: Int,
+                      externalReporter: Reporter,
+                      queue: SourceQueueWithComplete[Message]) extends Actor {
+
+    override def receive: PartialFunction[Any, Unit] = {
+      case ReporterProtocol.ClientRequest =>
+      case ReporterProtocol.ServerReport(msg) =>
+        //println(msg)
+        queue.offer(msg)
+        externalReporter.report(msg)
+      case ReporterProtocol.FinalServerReport(success) =>
+        queue.complete()
+        if ( success )
+          println(s"Job #$jid has been completed successfully.")
+        else
+          println(s"Job #$jid has been completed ERRONEOUSLY.")
+        self ! PoisonPill
+      case _ =>
+    }
+  }
 
 
   // --- Actor: ReporterActor ---
@@ -228,6 +260,9 @@ class ViperCoreServer(private var _config: ViperConfig) {
   protected def init(routes: Option[ViperLogger => Route]): Unit = {
     config.verify()
 
+//    _logger = ViperStdOutLogger("ViperServerSTDOUTLogger", "ALL")
+//    println(s"Writing [level:ALL] logs to the terminal")
+
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, "ALL")
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
@@ -250,7 +285,6 @@ class ViperCoreServer(private var _config: ViperConfig) {
     }
   }
 
-
   def verify(programID: String, config: ViperBackendConfig, reporter: Reporter, program: ast.Program): VerificationJobHandler = {
     val args: List[String] = config match {
       case _ : SiliconConfig => "silicon" :: config.partialCommandLine
@@ -258,19 +292,14 @@ class ViperCoreServer(private var _config: ViperConfig) {
       // TODO: add custom config
       case _ => "silicon" :: config.partialCommandLine
     }
-
-    createJobHandle(args :+ programID, Some(reporter), Some(program))
+    createJobHandle(args :+ programID, Some(reporter), program)
   }
 
-//  protected def createJobHandle(args: List[String]): VerificationJobHandler = {
-//    createJobHandle(args, None, None)
-//  }
-
-  protected def createJobHandle(args: List[String], prog: Option[ast.Program]): VerificationJobHandler = {
-    createJobHandle(args, None, prog)
+  protected def createJobHandle(args: List[String], program: ast.Program): VerificationJobHandler = {
+    createJobHandle(args, None, program)
   }
 
-  private def createJobHandle(args: List[String], reporter: Option[Reporter], program: Option[ast.Program]): VerificationJobHandler = {
+  private def createJobHandle(args: List[String], reporter: Option[Reporter], program: ast.Program): VerificationJobHandler = {
     if (newJobsAllowed) {
       val (id, jobHandle) = bookNewJob((new_jid: Int) => {
         implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
@@ -284,7 +313,6 @@ class ViperCoreServer(private var _config: ViperConfig) {
       VerificationJobHandler(-1) // Not able to create a new JobHandle
     }
   }
-
 
   def stop(): Unit = {
     println(s"Stopping ViperCoreServer")
@@ -313,7 +341,6 @@ class ViperCoreServer(private var _config: ViperConfig) {
     overall_interrupt_future
   }
 
-
   def flushCache(): Unit = {
     ViperCache.resetCache()
     println(s"The cache has been flushed successfully.")
@@ -327,19 +354,28 @@ class ViperCoreServer(private var _config: ViperConfig) {
     lookupJob(jid) match {
       case Some(handle_future) =>
         val result_future = handle_future.flatMap(handle => {
+          //DEBUG
+//          def fold_fun(errors: Seq[AbstractError], msg: Message): Seq[AbstractError] = {
+//            msg match {
+//              case EntityFailureMessage(_, _, _, VerificationFailure(errs)) => errs ++ errors
+//              case _ => errors
+//            }
+//          }
+//          val sink = Sink.fold[Seq[AbstractError], Message](Seq())(fold_fun)
+
+          //OG
           val sink = Sink.fold[Seq[AbstractError], Message](Seq())((errors, msg) => msg match {
             case EntityFailureMessage(_, _, _, VerificationFailure(errs)) => errs ++ errors
             case _ => errors
           })
-
           val errors_future: Future[Seq[AbstractError]] = Source.fromPublisher(handle.publisher).toMat(sink)(Keep.right).run()
 
           val errors = errors_future.map({
             case Seq() => VerificationSuccess
             case errs => VerificationFailure(errs)
           })
-          _term_actor ! Terminator.WatchJobQueue(jid, handle)
 
+          _term_actor ! Terminator.WatchJobQueue(jid, handle)
           errors
         })
         result_future

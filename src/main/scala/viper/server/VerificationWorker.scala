@@ -28,7 +28,6 @@ import scala.language.postfixOps
 
 // Implementation of the Reporter interface used by the backend.
 class ActorReporter(private val actor_ref: ActorRef,
-                    private val rep: Option[Reporter],
                     val tag: String) extends viper.silver.reporter.Reporter {
 
   val name = s"ViperServer_$tag"
@@ -37,11 +36,6 @@ class ActorReporter(private val actor_ref: ActorRef,
   def report(msg: reporter.Message): Unit = {
     //println(s"ActorReporter reporting >>> ${msg}")
     actor_ref ! ReporterProtocol.ServerReport(msg)
-
-    rep match {
-      case Some(reporter) => reporter.report(msg)
-      case None =>
-    }
   }
 }
 
@@ -56,7 +50,7 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
 class VerificationWorker(private val reporterActor: ActorRef,
                          private val logger: Logger,
                          private val command: List[String],
-                         private val program: Option[Program],
+                         private val program: Program,
                          private val reporter: Option[Reporter]) extends Runnable {
 
   private def resolveCustomBackend(clazzName: String, rep: Reporter): Option[SilFrontend] = {
@@ -86,15 +80,15 @@ class VerificationWorker(private val reporterActor: ActorRef,
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
-          backend = new ViperBackend(new SiliconFrontend(new ActorReporter(reporterActor, reporter, "silicon"), logger), program)
+          backend = new ViperBackend(new SiliconFrontend(new ActorReporter(reporterActor, "silicon"), logger), program)
           backend.execute(args)
         case "carbon" :: args =>
           logger.info("Creating new Carbon verification backend.")
-          backend = new ViperBackend(new CarbonFrontend(new ActorReporter(reporterActor, reporter, "carbon"), logger), program)
+          backend = new ViperBackend(new CarbonFrontend(new ActorReporter(reporterActor, "carbon"), logger), program)
           backend.execute(args)
         case custom :: args =>
           logger.info(s"Creating new verification backend based on class $custom.")
-          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(reporterActor, reporter, custom)).get, program)
+          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(reporterActor, custom)).get, program)
           backend.execute(args)
         case args =>
           logger.error("invalid arguments: ${args.toString}",
@@ -128,7 +122,7 @@ class VerificationWorker(private val reporterActor: ActorRef,
   }
 }
 
-class ViperBackend(private val _frontend: SilFrontend, private val _ast: Option[Program] = None) {
+class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program) {
 
   override def toString: String = {
     if ( _frontend.verifier == null )
@@ -251,16 +245,14 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Option[
     if (!_frontend.prepare(args)) return
     _frontend.init( _frontend.verifier )
 
-    if(!_ast.isDefined) return
-    val prog = _ast.get
-    reportProgramStats(prog)
+    reportProgramStats(_ast)
 
     val temp_result: Option[VerificationResult] = if (_frontend.config.disableCaching()) {
       _frontend.logger.info("Verification with caching disabled")
-      Some(_frontend.verifier.verify(prog))
+      Some(_frontend.verifier.verify(_ast))
     } else {
       _frontend.logger.info("Verification with caching disabled")
-      doCachedVerificationOnAst(prog)
+      doCachedVerificationOnAst(_ast)
       _frontend.getVerificationResult
     }
 

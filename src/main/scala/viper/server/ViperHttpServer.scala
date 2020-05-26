@@ -96,7 +96,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
 
           val id = astGen.viper_ast match {
             case Some(prog) =>
-              val jobHandler: VerificationJobHandler = createJobHandle(arg_list, Some(prog))
+              val jobHandler: VerificationJobHandler = createJobHandle(arg_list, prog)
               jobHandler.id
             case None =>
               -1
@@ -130,9 +130,9 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
     get {
       lookupJob(jid) match {
         case Some(handle_future) =>
+          // Found a job with this jid.
           onComplete(handle_future) {
             case Success(handle) =>
-              // Found a job with this jid.
               val src: Source[Message, NotUsed] = Source.fromPublisher(handle.publisher)
               // We do not remove the current entry from [[_job_handles]] because the handle is
               //  needed in order to terminate the job before streaming is completed.
