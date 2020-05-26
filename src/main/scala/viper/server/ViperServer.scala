@@ -2,21 +2,23 @@ package viper.server
 
 import java.nio.file.Paths
 
+import akka.actor.ActorRef
 import org.rogach.scallop.ScallopOption
 import viper.server.ViperBackendConfigs.SiliconConfig
 import viper.silicon.SiliconFrontend
-import viper.silver.logger.ViperLogger
-import viper.silver.reporter.StdIOReporter
-
+import viper.silver.logger.{SilentLogger, ViperLogger, ViperStdOutLogger}
+import viper.silver.reporter
+import viper.silver.reporter.{ConfigurationConfirmation, CopyrightReport, EntityFailureMessage, EntitySuccessMessage, ExceptionReport, ExecutionTraceReport, ExternalDependenciesReport, InternalWarningMessage, InvalidArgumentsReport, Message, NoopReporter, OverallFailureMessage, OverallSuccessMessage, Reporter, SimpleMessage, StdIOReporter, Time, WarningsDuringParsing, format}
+import viper.silver.verifier.{AbstractError, VerificationError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
+import scala.util.{Failure, Success, Try}
+import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
-import scala.util.{Failure, Success}
 
 object ViperServerRunner {
 
   var httpServer: ViperHttpServer = _
 
-
-  /** Creates batch script to run python <a href="https://github.com/viperproject/viper_client">viper_client</a>
+  /** Creates batch script to run a <a href="https://github.com/viperproject/viper_client">viper_client</a> written in python.
     * */
   private def writeBatchScripts(portOption: ScallopOption[Int], file: Option[String]): Unit ={
     if(!portOption.isDefined){
@@ -49,14 +51,19 @@ object ViperServerRunner {
     ver_writer.close()
   }
 
-  def main(args: Array[String]): Unit = {
+  /** Start VCS in HTTP mode.
+    * */
+  def startHttpServer(args: Array[String]): Unit ={
     implicit val executionContext = ExecutionContext.global
-
     val config = new ViperConfig(args)
     config.verify()
 
     httpServer = new ViperHttpServer(config)
     httpServer.start()
     writeBatchScripts(config.port, Some("sum_method.vpr"))
+  }
+
+  def main(args: Array[String]): Unit = {
+    startHttpServer(args)
   } // method main
 }

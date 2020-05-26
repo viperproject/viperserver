@@ -20,7 +20,8 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
 
   val logLevel: ScallopOption[String] = opt[String]("logLevel",
     descr = s"One of the log levels: ${logging_levels.mkString(",")}.",
-    default = Some("ERROR"),
+//    default = Some("ERROR"),
+    default = Some("ALL"),
     validate = (ll: String) => logging_levels.contains(ll.toUpperCase),
     noshort = true,
     hidden = false
