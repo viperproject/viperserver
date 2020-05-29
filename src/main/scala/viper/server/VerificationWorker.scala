@@ -50,8 +50,7 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
 class VerificationWorker(private val reporterActor: ActorRef,
                          private val logger: Logger,
                          private val command: List[String],
-                         private val program: Program,
-                         private val reporter: Option[Reporter]) extends Runnable {
+                         private val program: Program) extends Runnable {
 
   private def resolveCustomBackend(clazzName: String, rep: Reporter): Option[SilFrontend] = {
     (try {
@@ -98,10 +97,6 @@ class VerificationWorker(private val reporterActor: ActorRef,
       case _: InterruptedException =>
       case _: java.nio.channels.ClosedByInterruptException =>
       case e: Throwable =>
-        reporter match {
-          case Some(rep) => rep.report(ExceptionReport(e))
-          case None =>
-        }
         reporterActor ! ReporterProtocol.ServerReport(ExceptionReport(e))
         logger.trace(s"Creation/Execution of the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
     }finally {

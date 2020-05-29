@@ -1,6 +1,6 @@
 package viper.server
 
-import org.reactivestreams.Publisher
+import org.reactivestreams.{Publisher, Subscriber}
 
 import scala.language.postfixOps
 import scala.collection.mutable
@@ -9,21 +9,23 @@ import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 import java.util.NoSuchElementException
 
-import akka.Done
+import akka.{Done, NotUsed}
 import akka.pattern.ask
 import akka.util.Timeout
 import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
-import akka.http.scaladsl.server.Route
+import akka.http.scaladsl.server.{Route, StandardRoute}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.headers.CacheDirectives.public
-import viper.silver.reporter.{EntityFailureMessage, Message, Reporter}
+import akka.http.scaladsl.server.Directives._
+import viper.silver.reporter.{EntityFailureMessage, ExceptionReport, Message, Reporter}
 import viper.silver.ast
 import viper.silver.logger.ViperLogger
 import viper.silver.verifier.{AbstractError, VerificationError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 import viper.server.ViperServerProtocol._
 import viper.server.ViperBackendConfigs._
+import viper.server.ViperIDEProtocol.VerificationRequestReject
 import viper.silver.logger.ViperStdOutLogger
 
 
@@ -62,7 +64,10 @@ class ViperCoreServer(private var _config: ViperConfig) {
 
   implicit val materializer: ActorMaterializer = ActorMaterializer()
 
-  protected var _job_handles: mutable.Map[Int, Future[JobHandle]] = mutable.Map[Int, Future[JobHandle]]()
+
+  // --- VCS : Jobs ---
+
+  var _job_handles: mutable.Map[Int, Future[JobHandle]] = mutable.Map[Int, Future[JobHandle]]()
   private var _next_job_id: Int = 0
   val MAX_ACTIVE_JOBS: Int = 3
 
@@ -127,14 +132,14 @@ class ViperCoreServer(private var _config: ViperConfig) {
     }
   }
 
-  // --- Actor: MainActor ---
 
-  // (See model description in ViperServerProtocol.scala)
+  // --- Actor: MainActor ---
 
   object MainActor {
     def props(id: Int, logger: ViperLogger): Props = Props(new MainActor(id, logger))
   }
 
+  // (See model description in ViperServerProtocol.scala)
   class MainActor(private val id: Int, private val logger: ViperLogger) extends Actor {
 
     private var _verificationTask: Thread = _
@@ -171,59 +176,27 @@ class ViperCoreServer(private var _config: ViperConfig) {
           }
         }
 
-      case Verify(args, reporter, program) =>
+      case Verify(args, program) =>
         resetVerificationTask()
-        sender ! verify(args, reporter, program)
+        sender ! verify(args, program)
 
       case msg =>
         throw new Exception("Main Actor: unexpected message received: " + msg)
     }
 
-    private def verify(args: List[String], reporter: Option[Reporter], program: ast.Program): JobHandle = {
+    private def verify(args: List[String], program: ast.Program): JobHandle = {
       // The maximum number of messages in the reporter's message buffer is 10000.
-      val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure).toMat(Sink.asPublisher(false))(Keep.both).run()
+      val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure)
+                                     .toMat(Sink.asPublisher(false))(Keep.both)
+                                     .run()
+      val reportingActor = system.actorOf(ReporterActor.props(id, queue), s"reporter_$id")
 
-
-      val reportingActor = reporter match {
-        case Some(rep) => system.actorOf(ExternalReporterActor.props(id, rep, queue), s"reporter_$id")
-        case None => system.actorOf(ReporterActor.props(id, queue), s"reporter_$id")
-      }
-
-      _verificationTask = new Thread(new VerificationWorker(reportingActor, logger.get, args, program, reporter))
+      _verificationTask = new Thread(new VerificationWorker(reportingActor, logger.get, args, program))
       _verificationTask.start()
 
       println(s"Starting job #$id...")
 
       JobHandle(self, queue, publisher)
-    }
-  }
-
-
-  // --- Actor: ExternalReporterActor ---
-
-  object ExternalReporterActor {
-    def props(jid: Int, externalReporter: Reporter, queue: SourceQueueWithComplete[Message]): Props
-      = Props(new ExternalReporterActor(jid, externalReporter, queue))
-  }
-
-  class ExternalReporterActor(jid: Int,
-                      externalReporter: Reporter,
-                      queue: SourceQueueWithComplete[Message]) extends Actor {
-
-    override def receive: PartialFunction[Any, Unit] = {
-      case ReporterProtocol.ClientRequest =>
-      case ReporterProtocol.ServerReport(msg) =>
-        //println(msg)
-        queue.offer(msg)
-        externalReporter.report(msg)
-      case ReporterProtocol.FinalServerReport(success) =>
-        queue.complete()
-        if ( success )
-          println(s"Job #$jid has been completed successfully.")
-        else
-          println(s"Job #$jid has been completed ERRONEOUSLY.")
-        self ! PoisonPill
-      case _ =>
     }
   }
 
@@ -253,15 +226,14 @@ class ViperCoreServer(private var _config: ViperConfig) {
   }
 
 
+  // --- VCS : Core Functions ---
+
   def start(): Unit = {
     init(None)
   }
 
   protected def init(routes: Option[ViperLogger => Route]): Unit = {
     config.verify()
-
-//    _logger = ViperStdOutLogger("ViperServerSTDOUTLogger", "ALL")
-//    println(s"Writing [level:ALL] logs to the terminal")
 
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, "ALL")
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
@@ -285,26 +257,22 @@ class ViperCoreServer(private var _config: ViperConfig) {
     }
   }
 
-  def verify(programID: String, config: ViperBackendConfig, reporter: Reporter, program: ast.Program): VerificationJobHandler = {
+  def verify(programID: String, config: ViperBackendConfig, program: ast.Program): VerificationJobHandler = {
     val args: List[String] = config match {
       case _ : SiliconConfig => "silicon" :: config.partialCommandLine
       case _ : CarbonConfig => "carbon" :: config.partialCommandLine
       // TODO: add custom config
       case _ => "silicon" :: config.partialCommandLine
     }
-    createJobHandle(args :+ programID, Some(reporter), program)
+    createJobHandle(args :+ programID, program)
   }
 
   protected def createJobHandle(args: List[String], program: ast.Program): VerificationJobHandler = {
-    createJobHandle(args, None, program)
-  }
-
-  private def createJobHandle(args: List[String], reporter: Option[Reporter], program: ast.Program): VerificationJobHandler = {
     if (newJobsAllowed) {
       val (id, jobHandle) = bookNewJob((new_jid: Int) => {
         implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
         val main_actor = system.actorOf(MainActor.props(new_jid, logger), s"main_actor_$new_jid")
-        val new_job_handle: Future[JobHandle] = (main_actor ? ViperServerProtocol.Verify(args, reporter, program)).mapTo[JobHandle]
+        val new_job_handle: Future[JobHandle] = (main_actor ? ViperServerProtocol.Verify(args, program)).mapTo[JobHandle]
         new_job_handle
       })
       VerificationJobHandler(id)
@@ -329,6 +297,8 @@ class ViperCoreServer(private var _config: ViperConfig) {
   }
 
 
+  // --- VCS : Auxiliary Functions ---
+
   protected def getInterruptFutureList(): Future[List[String]] = {
     val interrupt_future_list: List[Future[String]] = _job_handles map { case (jid, handle_future) =>
       handle_future.flatMap {
@@ -346,7 +316,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
     println(s"The cache has been flushed successfully.")
   }
 
-  /*
+  /**
    * Returns the future of the Verification Result.
    * Deletes the jobhandle on completion.
    */
@@ -354,21 +324,14 @@ class ViperCoreServer(private var _config: ViperConfig) {
     lookupJob(jid) match {
       case Some(handle_future) =>
         val result_future = handle_future.flatMap(handle => {
-          //DEBUG
-//          def fold_fun(errors: Seq[AbstractError], msg: Message): Seq[AbstractError] = {
-//            msg match {
-//              case EntityFailureMessage(_, _, _, VerificationFailure(errs)) => errs ++ errors
-//              case _ => errors
-//            }
-//          }
-//          val sink = Sink.fold[Seq[AbstractError], Message](Seq())(fold_fun)
-
-          //OG
           val sink = Sink.fold[Seq[AbstractError], Message](Seq())((errors, msg) => msg match {
             case EntityFailureMessage(_, _, _, VerificationFailure(errs)) => errs ++ errors
             case _ => errors
           })
-          val errors_future: Future[Seq[AbstractError]] = Source.fromPublisher(handle.publisher).toMat(sink)(Keep.right).run()
+
+          val errors_future: Future[Seq[AbstractError]] = Source.fromPublisher(handle.publisher)
+                                                                .toMat(sink)(Keep.right)
+                                                                .run()
 
           val errors = errors_future.map({
             case Seq() => VerificationSuccess
@@ -381,9 +344,57 @@ class ViperCoreServer(private var _config: ViperConfig) {
         result_future
       case None =>
         val promise = Promise[VerificationResult]()
-        promise failure (new NoSuchElementException("Could not find the requested jid."))
+        promise failure (new NoSuchElementException(s"The verification job #$jid does not exist."))
         promise.future
     }
+  }
+
+//  private var test_actor: ActorRef = _
+
+  object PublishActor {
+    def props(reporter: Reporter): Props = Props(new PublishActor(reporter))
+  }
+
+  class PublishActor(reporter: Reporter) extends Actor {
+
+    override def receive: PartialFunction[Any, Unit] = {
+      case viper_msg: Message =>
+//        println(s"This is a Viper message ===============")
+//        println(viper_msg)
+        reporter.report(viper_msg)
+      case other_msg =>
+        println(s"This is NOT a Viper message ===============")
+        println(other_msg)
+    }
+  }
+
+  /**
+    * Reports all the messages generated by the backends during verification.
+    * Deletes the jobhandle on completion.
+    */
+  def getMessages(jid: Int, reporter: Reporter): Unit = {
+    val test_actor = system.actorOf(PublishActor.props(reporter),  s"publish_actor_$jid")
+    lookupJob(jid) match {
+      case Some(handle_future) =>
+        // Found a handle for a job with this id.
+        handle_future.onComplete({
+          case Success(handle) =>
+            //Future of handle Successfully completed -> Stream messages
+            val src: Source[Message, NotUsed] = Source.fromPublisher(handle.publisher)
+            val sink = Sink.actorRef(test_actor, PoisonPill)
+            src.runWith(sink)
+            _term_actor ! Terminator.WatchJobQueue(jid, handle)
+          case Failure(error) =>
+            //Future of handle has unsuccessfully completed -> Return ExceptionReport message
+            val failure_msg = ExceptionReport(error)
+            test_actor ! failure_msg
+        })
+      case _ =>
+        // Did not find a handle for a job with this id -> Return an ExceptionReport message
+        val failure_msg = ExceptionReport(new NoSuchElementException(s"The verification job #$jid does not exist."))
+        test_actor ! failure_msg
+    }
+
   }
 }
 
