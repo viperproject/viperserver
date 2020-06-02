@@ -12,14 +12,14 @@ import java.util.NoSuchElementException
 import akka.{Done, NotUsed}
 import akka.pattern.ask
 import akka.util.Timeout
-import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.http.scaladsl.server.{Route, StandardRoute}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.headers.CacheDirectives.public
 import akka.http.scaladsl.server.Directives._
-import viper.silver.reporter.{EntityFailureMessage, ExceptionReport, Message, Reporter}
+import viper.silver.reporter.{EntityFailureMessage, ExceptionReport, Message, PongMessage, Reporter, SimpleMessage}
 import viper.silver.ast
 import viper.silver.logger.ViperLogger
 import viper.silver.verifier.{AbstractError, VerificationError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
@@ -53,7 +53,7 @@ case class JobHandle(controller_actor: ActorRef,
 case class VerificationJobHandler(id: Int)
 
 class ViperCoreServer(private var _config: ViperConfig) {
-
+  // --- VCS : Configuration ---
   implicit val system: ActorSystem = ActorSystem("Main")
   implicit val executionContext = ExecutionContext.global
 
@@ -67,6 +67,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
 
   // --- VCS : Jobs ---
 
+  var BUFFER_SIZE = 1
   var _job_handles: mutable.Map[Int, Future[JobHandle]] = mutable.Map[Int, Future[JobHandle]]()
   private var _next_job_id: Int = 0
   val MAX_ACTIVE_JOBS: Int = 3
@@ -185,11 +186,13 @@ class ViperCoreServer(private var _config: ViperConfig) {
     }
 
     private def verify(args: List[String], program: ast.Program): JobHandle = {
+      //REMOVE ?
       // The maximum number of messages in the reporter's message buffer is 10000.
-      val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure)
+      println(s"working with buffer size: $BUFFER_SIZE")
+      val (queue, publisher) = Source.queue[Message](BUFFER_SIZE, OverflowStrategy.backpressure)
                                      .toMat(Sink.asPublisher(false))(Keep.both)
                                      .run()
-      val reportingActor = system.actorOf(ReporterActor.props(id, queue), s"reporter_$id")
+      val reportingActor = system.actorOf(QueueActor.props(id, queue), s"reporter_$id")
 
       _verificationTask = new Thread(new VerificationWorker(reportingActor, logger.get, args, program))
       _verificationTask.start()
@@ -201,19 +204,23 @@ class ViperCoreServer(private var _config: ViperConfig) {
   }
 
 
-  // --- Actor: ReporterActor ---
+  // --- Actor: QueueActor ---
 
-  object ReporterActor {
-    def props(jid: Int, queue: SourceQueueWithComplete[Message]): Props = Props(new ReporterActor(jid, queue))
+  object QueueActor {
+    def props(jid: Int, queue: SourceQueueWithComplete[Message]): Props = Props(new QueueActor(jid, queue))
   }
 
-  class ReporterActor(jid: Int, queue: SourceQueueWithComplete[Message]) extends Actor {
+  class QueueActor(jid: Int, queue: SourceQueueWithComplete[Message]) extends Actor {
 
     override def receive: PartialFunction[Any, Unit] = {
       case ReporterProtocol.ClientRequest =>
       case ReporterProtocol.ServerReport(msg) =>
         //println(msg)
-        queue.offer(msg)
+        val offer_future = queue.offer(msg)
+        offer_future.onComplete({
+          case Success(some) => println(s"Offer future has completed: $some")
+          case Failure(e) => println(s"Offer future has not completed: $e")
+        })
       case ReporterProtocol.FinalServerReport(success) =>
         queue.complete()
         if ( success )
@@ -261,8 +268,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
     val args: List[String] = config match {
       case _ : SiliconConfig => "silicon" :: config.partialCommandLine
       case _ : CarbonConfig => "carbon" :: config.partialCommandLine
-      // TODO: add custom config
-      case _ => "silicon" :: config.partialCommandLine
+      case _ : CustomConfig => "DummyFrontend" :: config.partialCommandLine
     }
     createJobHandle(args :+ programID, program)
   }
@@ -320,7 +326,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
    * Returns the future of the Verification Result.
    * Deletes the jobhandle on completion.
    */
-  def getFuture(jid: Int): Future[VerificationResult] = {
+  def getVerificationResultsFuture(jid: Int): Future[VerificationResult] = {
     lookupJob(jid) match {
       case Some(handle_future) =>
         val result_future = handle_future.flatMap(handle => {
@@ -349,22 +355,38 @@ class ViperCoreServer(private var _config: ViperConfig) {
     }
   }
 
-//  private var test_actor: ActorRef = _
+  object AckingReceiver {
+    case object Ack
 
-  object PublishActor {
-    def props(reporter: Reporter): Props = Props(new PublishActor(reporter))
+    case object StreamInitialized
+    case object StreamCompleted
+    final case class StreamFailure(ex: Throwable)
   }
 
-  class PublishActor(reporter: Reporter) extends Actor {
+  class AckingReceiver(ackWith: Any, reporter: Reporter) extends Actor with ActorLogging {
+    import AckingReceiver._
 
-    override def receive: PartialFunction[Any, Unit] = {
+    def receive: Receive = {
+
+      case StreamInitialized =>
+        _logger.get.info("Stream initialized!")
+        sender() ! Ack // ack to allow the stream to proceed sending more elements
+
+      //REMOVE
+      case pong_msg: PongMessage =>
+        reporter.report(pong_msg)
+        sender() ! Ack
+
       case viper_msg: Message =>
-//        println(s"This is a Viper message ===============")
-//        println(viper_msg)
+        _logger.get.info(s"Received message: ${viper_msg}")
         reporter.report(viper_msg)
-      case other_msg =>
-        println(s"This is NOT a Viper message ===============")
-        println(other_msg)
+        sender() ! Ack // ack to allow the stream to proceed sending more elements
+
+      case StreamCompleted =>
+        _logger.get.info("Stream completed!")
+
+      case StreamFailure(ex) =>
+        _logger.get.error("Stream failed!", ex)
     }
   }
 
@@ -372,8 +394,13 @@ class ViperCoreServer(private var _config: ViperConfig) {
     * Reports all the messages generated by the backends during verification.
     * Deletes the jobhandle on completion.
     */
-  def getMessages(jid: Int, reporter: Reporter): Unit = {
-    val test_actor = system.actorOf(PublishActor.props(reporter),  s"publish_actor_$jid")
+  def reportBackendMessages(jid: Int, reporter: Reporter): Unit = {
+    val AckMessage = AckingReceiver.Ack
+    val InitMessage = AckingReceiver.StreamInitialized
+    val OnCompleteMessage = AckingReceiver.StreamCompleted
+    val onErrorMessage = (ex: Throwable) => AckingReceiver.StreamFailure(ex)
+
+    val receiver = system.actorOf(Props(new AckingReceiver(ackWith = AckMessage, reporter)))
     lookupJob(jid) match {
       case Some(handle_future) =>
         // Found a handle for a job with this id.
@@ -381,20 +408,21 @@ class ViperCoreServer(private var _config: ViperConfig) {
           case Success(handle) =>
             //Future of handle Successfully completed -> Stream messages
             val src: Source[Message, NotUsed] = Source.fromPublisher(handle.publisher)
-            val sink = Sink.actorRef(test_actor, PoisonPill)
+            val sink = Sink.actorRefWithAck(receiver, onInitMessage = InitMessage, ackMessage = AckMessage,
+                                            onCompleteMessage = OnCompleteMessage, onFailureMessage = onErrorMessage)
             src.runWith(sink)
+
             _term_actor ! Terminator.WatchJobQueue(jid, handle)
           case Failure(error) =>
             //Future of handle has unsuccessfully completed -> Return ExceptionReport message
             val failure_msg = ExceptionReport(error)
-            test_actor ! failure_msg
+            receiver ! failure_msg
         })
       case _ =>
         // Did not find a handle for a job with this id -> Return an ExceptionReport message
         val failure_msg = ExceptionReport(new NoSuchElementException(s"The verification job #$jid does not exist."))
-        test_actor ! failure_msg
+        receiver ! failure_msg
     }
-
   }
 }
 

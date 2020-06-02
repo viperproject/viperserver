@@ -4,16 +4,16 @@ import java.nio.file.Paths
 
 import akka.actor.ActorRef
 import org.rogach.scallop.ScallopOption
-import viper.server.ViperBackendConfigs.SiliconConfig
+import viper.server.ViperBackendConfigs.{CustomConfig, SiliconConfig}
 import viper.silicon.SiliconFrontend
 import viper.silver.logger.{SilentLogger, ViperLogger, ViperStdOutLogger}
 import viper.silver.reporter
-import viper.silver.reporter.{ConfigurationConfirmation, CopyrightReport, EntityFailureMessage, EntitySuccessMessage, ExceptionReport, ExecutionTraceReport, ExternalDependenciesReport, InternalWarningMessage, InvalidArgumentsReport, Message, NoopReporter, OverallFailureMessage, OverallSuccessMessage, Reporter, SimpleMessage, StdIOReporter, Time, WarningsDuringParsing, format}
+import viper.silver.reporter.{ConfigurationConfirmation, CopyrightReport, EntityFailureMessage, EntitySuccessMessage, ExceptionReport, ExecutionTraceReport, ExternalDependenciesReport, InternalWarningMessage, InvalidArgumentsReport, Message, NoopReporter, OverallFailureMessage, OverallSuccessMessage, PongMessage, Reporter, SimpleMessage, StdIOReporter, Time, WarningsDuringParsing, format}
 import viper.silver.verifier.{AbstractError, VerificationError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
+
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
-
 
 case class TestReporter(name: String = "stdout_reporter", timeInfo: Boolean = true) extends Reporter {
 
@@ -27,6 +27,8 @@ case class TestReporter(name: String = "stdout_reporter", timeInfo: Boolean = tr
   private def bulletFmt(num_items: Int): String = s"%${num_items.toString.length}d"
 
   def report(msg: Message): Unit = {
+//    println("sleep")
+//    Thread.sleep(2000)
     println("Reporting to Console from TestReporter =====================================================")
     msg match {
       case OverallFailureMessage(v, t, res) =>
@@ -82,11 +84,13 @@ case class TestReporter(name: String = "stdout_reporter", timeInfo: Boolean = tr
       case EntitySuccessMessage(_, _, _) => println("MSG TYPE: entity success")   // FIXME Currently, we only print overall verification results to STDOUT.
       case EntityFailureMessage(_, _, _, _) => println("MSG TYPE: entity failure")// FIXME Currently, we only print overall verification results to STDOUT.
       case ConfigurationConfirmation(_) =>     // TODO  use for progress reporting
-      //println( s"Configuration confirmation: $text" )
+        println( s"Configuration confirmation:" )
       case InternalWarningMessage(_) =>        // TODO  use for progress reporting
-      //println( s"Internal warning: $text" )
+        println( s"Internal warning:" )
       case sm:SimpleMessage =>
-      //println( sm.text )
+        println( sm.text )
+      case pm: PongMessage =>
+        println(pm.text)
       case _ =>
         println( s"Cannot properly print message of unsupported type: $msg" )
     }
@@ -131,6 +135,37 @@ object ViperServerRunner {
     ver_writer.close()
   }
 
+  def stream_testing(args: Array[String]): Unit = {
+    //CONFIG
+    implicit val executionContext = ExecutionContext.global
+    val backend_config = SiliconConfig(List("--disableCaching"))
+//    val backend_config = CustomConfig(List("--disableCaching"))
+    val config = new ViperConfig(args)
+    config.verify()
+
+    //FILES
+    val file = "src\\test\\resources\\viper\\sum_method.vpr"
+//    val file = "src\\test\\resources\\viper\\verification_error.vpr"
+
+    //LOG & REPORT
+//    val consoleLogger = ViperStdOutLogger("test_logger", "ALL")
+    val consoleLogger = SilentLogger()
+    val reporter = TestReporter()
+//    val reporter = NoopReporter
+
+    //VERIFICATION
+    val core = new ViperCoreServer(config)
+    core.start()
+
+    val parser = new AstGenerator(file, consoleLogger)
+    val vjh = core.verify(file, backend_config, parser.viper_ast.get)
+
+    core.reportBackendMessages(vjh.id, reporter)
+    Thread.sleep(8000)
+
+    core.stop()
+  }
+
   /** Start VCS in HTTP mode.
     * */
   def startHttpServer(args: Array[String]): Unit ={
@@ -144,6 +179,7 @@ object ViperServerRunner {
   }
 
   def main(args: Array[String]): Unit = {
-    startHttpServer(args)
+    stream_testing(args)
+//    startHttpServer(args)
   } // method main
 }
