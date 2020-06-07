@@ -30,8 +30,6 @@ class AstGenerator (private val vpr_file_path:String, private val _logger: Viper
     ver_backend.reset(Paths.get(ver_backend.config.file()))
     ver_backend.parsing()
 
-    _logger.get.info("Logger test verifier signature " + ver_backend.verifier.signature)
-
     if(ver_backend.errors.isEmpty){
       _logger.get.info("There was no error while parsing!")
       Some(ver_backend.parsingResult)

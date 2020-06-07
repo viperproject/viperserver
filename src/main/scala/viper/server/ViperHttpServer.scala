@@ -101,7 +101,6 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
             case None =>
               -1
           }
-
           if (id >= 0) {
             complete( VerificationRequestAccept(id) )
           } else {

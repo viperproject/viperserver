@@ -32,7 +32,7 @@ class ActorReporter(private val actor_ref: ActorRef,
 
   val name = s"ViperServer_$tag"
 
-  // sends report msg to attached reporter Actor
+  // sends report msg to attached instance of QueueActor
   def report(msg: reporter.Message): Unit = {
     //println(s"ActorReporter reporting >>> ${msg}")
     actor_ref ! ReporterProtocol.ServerReport(msg)
@@ -303,7 +303,6 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
         s" cachedErrors: ${cachedErrors.map(_.loggableMessage)};" +
         s" methodsToVerify: ${methodsToVerify.map(_.name)}.")
 
-//    val real_program = _frontend.program.get
     val prog: Program = Program(real_program.domains, real_program.fields, real_program.functions, real_program.predicates,
       methodsToVerify ++ methodsToCache, real_program.extensions)(real_program.pos, real_program.info, real_program.errT)
 
