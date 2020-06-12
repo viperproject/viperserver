@@ -44,7 +44,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       * Send GET request to "/exit".
       *
       * This will do the following:
-      * 1. Map all existing jobs from [[_job_handles]] to a list of futures based on the responses of instances of
+      * 1. Map all existing jobs from [[_jobHandles]] to a list of futures based on the responses of instances of
       *    [[MainActor]] from [[ViperServerProtocol.Stop]] messages (with a 5 second timeout)
       * 2. Merge the list into an overall future
       * 3. Wait for the overall future to complete or timeout
@@ -60,11 +60,11 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
         onComplete(getInterruptFutureList()) { err: Try[List[String]] =>
           err match {
             case Success(_) =>
-              _term_actor ! Terminator.Exit
+              _termActor ! Terminator.Exit
               complete( ServerStopConfirmed("shutting down...") )
             case Failure(err_msg) =>
               println(s"Interrupting one of the verification threads timed out: $err_msg")
-              _term_actor ! Terminator.Exit
+              _termActor ! Terminator.Exit
               complete( ServerStopConfirmed("forcibly shutting down...") )
           }
         }
@@ -78,7 +78,8 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       * 1. If the limit for allowed active verification jobs has been reached, complete with an appropriate reject message
       * 2. Otherwise, create an actor with a fresh ID and pass the arguments provided by the client
       * 3. Send [[ViperServerProtocol.Verify]] message to the newly created instance of [[MainActor]]
-      *   ([[bookNewJob]] will add the actor as an entry to the [[_job_handles]] collection under a fresh ID;
+      *   ([[bookNewJob]] will add the actor as an entry to the [[_jobHandles]] collection under a fresh ID;
+      *
       *    @see [[bookNewJob]])
       * 4. Complete request with accepting message with the ID of the new verification job
       *
@@ -114,13 +115,13 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       * <jid> must be an ID of an existing verification job.
       *
       * This will do the following:
-      * 1. If no job handle future with ID equal to <jid> exists in [[_job_handles]], complete with an appropriate reject message
+      * 1. If no job handle future with ID equal to <jid> exists in [[_jobHandles]], complete with an appropriate reject message
       * 2. Otherwise, once the job handle future is complete:
       *   - If the future completed with a failure, complete with an appropriate reject message
       *   - If the future completed successfully:
       *     - Create a [[Source]] <src> full of [[viper.silver.reporter.Message]]s
       *     - Send [[Terminator.WatchJob]] message to the [[Terminator]] actor, awaiting
-      *       [[SourceQueueWithComplete.watchCompletion]] future before removing current job handle from [[_job_handles]]
+      *       [[SourceQueueWithComplete.watchCompletion]] future before removing current job handle from [[_jobHandles]]
       *     - Complete request with <src>
       *
       * Use case:
@@ -136,7 +137,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
               // We do not remove the current entry from [[_job_handles]] because the handle is
               //  needed in order to terminate the job before streaming is completed.
               //  The Terminator actor will delete the entry upon completion of the stream.
-              _term_actor ! Terminator.WatchJobQueue(jid, handle)
+              _termActor ! Terminator.WatchJobQueue(jid, handle)
               complete(src)
             case Failure(error) =>
               complete( VerificationRequestReject(s"The verification job #$jid resulted in a terrible error: $error") )
@@ -153,7 +154,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       * <jid> must be an ID of an existing verification job.
       *
       * This will do the following:
-      * 1. If no job handle with ID equal to <jid> exists in [[_job_handles]], complete with an appropriate reject message
+      * 1. If no job handle with ID equal to <jid> exists in [[_jobHandles]], complete with an appropriate reject message
       * 2. Otherwise, once the job handle future is complete:
       *   - If the future completed with a failure, complete with an appropriate reject message
       *   - If the future completed successfully:

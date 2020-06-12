@@ -8,36 +8,24 @@
 
 package viper.server
 
-import java.nio.file.Paths
-
-import scala.collection.mutable.ListBuffer
 import akka.actor.ActorRef
+import akka.pattern.ask
+import akka.stream.QueueOfferResult
+import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
-import viper.silver.verifier.VerificationResult
 import viper.silicon.SiliconFrontend
 import viper.silver.ast.{Position, _}
 import viper.silver.frontend.{DefaultStates, SilFrontend}
 import viper.silver.reporter
 import viper.silver.reporter.{Reporter, _}
 import viper.silver.verifier.errors._
-import viper.silver.verifier.{AbstractVerificationError, _}
+import viper.silver.verifier.{AbstractVerificationError, VerificationResult, _}
 
+import scala.collection.mutable.ListBuffer
+import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Future}
 import scala.language.postfixOps
-
-
-// Implementation of the Reporter interface used by the backend.
-class ActorReporter(private val actor_ref: ActorRef,
-                    val tag: String) extends viper.silver.reporter.Reporter {
-
-  val name = s"ViperServer_$tag"
-
-  // sends report msg to attached instance of QueueActor
-  def report(msg: reporter.Message): Unit = {
-    //println(s"ActorReporter reporting >>> ${msg}")
-    actor_ref ! ReporterProtocol.ServerReport(msg)
-  }
-}
 
 class ViperServerException extends Exception
 case class ViperServerWrongTypeException(name: String) extends ViperServerException {
@@ -72,6 +60,32 @@ class VerificationWorker(private val reporterActor: ActorRef,
   }
 
   private var backend: ViperBackend = _
+  implicit val executionContext = ExecutionContext.global
+
+  // Implementation of the Reporter interface used by the backend.
+  class ActorReporter(private val actor_ref: ActorRef,
+                      val tag: String) extends viper.silver.reporter.Reporter {
+
+    val name = s"ViperServer_$tag"
+    var current_offer: Future[QueueOfferResult] = null
+
+    /** Sends massage to the attached actor.
+      *
+      * The actor receving this message offer it to a queue. This offering returns a Future, which will eventually
+      * indicate whether or not the offer was successful. This method is blocking, as it waits for the successful
+      * completion of such an offer.
+      * */
+    def report(msg: reporter.Message): Unit = {
+      implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
+      val answer = actor_ref ? ReporterProtocol.ServerReport(msg)
+      current_offer = answer.flatMap({
+        case res: Future[QueueOfferResult] => res
+      })
+      while(current_offer == null || !current_offer.isCompleted){
+        Thread.sleep(10)
+      }
+    }
+  }
 
   def run(): Unit = {
 
@@ -79,6 +93,7 @@ class VerificationWorker(private val reporterActor: ActorRef,
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
+          val arep = new ActorReporter(reporterActor, "silicon")
           backend = new ViperBackend(new SiliconFrontend(new ActorReporter(reporterActor, "silicon"), logger), program)
           backend.execute(args)
         case "carbon" :: args =>
@@ -246,7 +261,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
       _frontend.logger.info("Verification with caching disabled")
       Some(_frontend.verifier.verify(_ast))
     } else {
-      _frontend.logger.info("Verification with caching disabled")
+      _frontend.logger.info("Verification with caching enabled")
       doCachedVerificationOnAst(_ast)
       _frontend.getVerificationResult
     }
