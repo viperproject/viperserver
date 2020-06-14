@@ -328,6 +328,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
         val result_future = handle_future.flatMap(handle => {
           val sink = Sink.fold[Seq[AbstractError], Message](Seq())((errors, msg) => msg match {
             case EntityFailureMessage(_, _, _, VerificationFailure(errs)) => errs ++ errors
+            case ExceptionReport(e) => throw e
             case _ => errors
           })
 
