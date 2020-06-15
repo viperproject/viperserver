@@ -328,6 +328,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
         val result_future = handle_future.flatMap(handle => {
           val sink = Sink.fold[Seq[AbstractError], Message](Seq())((errors, msg) => msg match {
             case EntityFailureMessage(_, _, _, VerificationFailure(errs)) => errs ++ errors
+            case OverallFailureMessage(_, _, VerificationFailure(errs)) => errs ++ errors
             case ExceptionReport(e) => throw e
             case _ => errors
           })
@@ -351,52 +352,3 @@ class ViperCoreServer(private var _config: ViperConfig) {
     }
   }
 }
-
-
-
-
-// CODE FROM THE IDE SYNC MEETING ###########################################################################################
-/*
-case class VerificationJobHandler(id: Int) extends Serializable //Note: serializable is extended automatically in case classes (think so)
-
-case class ViperServerConfig(/** unspecified for now, Silas, just use the default options for now */)
-
-//Note: this should probably be a class and not a trait.
-trait ViperCoreServer {
-
-  def start(config: ViperServerConfig): Unit // or in the constructor
-  def stop(): Unit
-
-  /*
-   # Not quite sure but I think in the HTTP case the reporter always has to be one of these ActorReporters.
-   */
-  def verify(config: BackendConfig, reporter: Reporter, program: ast.Program): VerificationJobHandler
-
-// Silas, up until here and the parts below if necessary
-
-// TODO: implement these too. (but only for whole cache)
-//  def flushCash(jobId: Int): Unit // maybe required for testing
-
-
-
-
-//  def getFuture(jobId: Int): Future[VerificationResult]
-//  def discardJob(jobId: Int): Boolean
-
-//  def isCompleted(jobId: Int): Boolean // Maybe remove
-//  def hasFailed(jobId: Int): Boolean // Maybe remove
-  // ... some more cash methods
-}
-
-//Note: at the moment this backendConfig should just be the default in the cases (so Config for Silicon, ...)
-trait BackendConfig
-
-case class SiliconConfig(partialCommandLine: Seq[String]) extends BackendConfig
-
-case class CarbonConfig(partialCommandLine: Seq[String]) extends BackendConfig
-
-trait CustomConfig extends BackendConfig {
-  def createVerifier(partialCommandLine: Seq[String]): Verifier
-}
-*/
-//##############################################################################################################################
