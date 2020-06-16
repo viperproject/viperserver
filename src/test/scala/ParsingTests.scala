@@ -1,6 +1,10 @@
+import java.io.FileNotFoundException
+import java.nio.file.NoSuchFileException
+
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.{Matchers, WordSpec}
 import viper.server.AstGenerator
+import viper.silver.ast.Program
 import viper.silver.logger.ViperStdOutLogger
 
 class ParsingTests extends WordSpec with Matchers with ScalatestRouteTest {
@@ -9,33 +13,49 @@ class ParsingTests extends WordSpec with Matchers with ScalatestRouteTest {
   private val verifiableFile = "src\\test\\resources\\viper\\let.vpr"
   private val emptyFile ="src\\test\\resources\\viper\\empty.vpr"
   private val sumFile = "src\\test\\resources\\viper\\sum_method.vpr"
-  private val nonExistingFile = "src\\test\\resources\\viper\\bla.vpr"
   private val typeErrorFile = "src\\test\\resources\\viper\\type_error.vpr"
   private val parseErrorFile = "src\\test\\resources\\viper\\parse_error.vpr"
+  private val nonExistingFile = "src\\test\\resources\\viper\\kajldksfnk.vpr"
+
 
   private val console_logger = ViperStdOutLogger("parsingTest logger", "ALL")
 
   "AstGenerator" should {
-    s"parse and translate the viper file sum_method" in {
-      val ast_gen = new AstGenerator(sumFile, console_logger)
+    var ast_gen: AstGenerator = null
+    s"should be instantiated without errors" in {
+      ast_gen = new AstGenerator(console_logger)
     }
-    s"parse and translate the viper file verifiable_file" in {
-      val ast_gen = new AstGenerator(verifiableFile, console_logger)
+
+    var test_ast: Option[Program] = null
+    s"be able to execute 'generateViperAst()' for the file 'sum_method.vpr'" in {
+      test_ast = ast_gen.generateViperAst(sumFile)
     }
-    s"parse and translate an empty file" in {
-      val ast_gen = new AstGenerator(emptyFile, console_logger)
+
+    s"have 'generateViperAst()' return an defined option for the file 'sum_method.vpr'" in {
+      assert(test_ast.isDefined)
     }
-    s"parse file with type error but fail when translating it." in {
-      val ast_gen = new AstGenerator(typeErrorFile, console_logger)
+
+    s"be able to re-execute 'generateViperAst()' for a different file" in {
+      test_ast = ast_gen.generateViperAst(verifiableFile)
     }
-    s"fail when parsing the file." in {
-      val ast_gen = new AstGenerator(parseErrorFile, console_logger)
+
+    s"have 'generateViperAst()' return an defined option for the file 'empty.vpr'" in {
+      test_ast = ast_gen.generateViperAst(emptyFile)
+      assert(test_ast.isDefined)
     }
-    s"fail when parsing non-existing file." in {
-      try {
-        val ast_gen = new AstGenerator(nonExistingFile, console_logger)
-      } catch {
-        case e: java.nio.file.NoSuchFileException => console_logger.get.error(s"No file at: ${nonExistingFile}")
+
+    s"have 'generateViperAst()' return an empty option for the file 'type_error.vpr'" in {
+      test_ast = ast_gen.generateViperAst(typeErrorFile)
+      assert(!test_ast.isDefined)
+    }
+
+    s"have 'generateViperAst()' return an empty option for the file 'parse_error.vpr'" in {
+      test_ast = ast_gen.generateViperAst(parseErrorFile)
+    }
+
+    s"have 'generateViperAst()' return an empty option for a non-existing file." in {
+      assertThrows[NoSuchFileException] { // Result type: Assertion
+        test_ast = ast_gen.generateViperAst(nonExistingFile)
       }
     }
   }

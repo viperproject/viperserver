@@ -11,25 +11,36 @@ import viper.silver.logger.ViperLogger
 
 import scala.concurrent.ExecutionContextExecutor
 
-class AstGenerator (private val vpr_file_path:String, private val _logger: ViperLogger){
-  var ver_backend: SilFrontend = initialize_backend()
-  var parse_ast : Option[PProgram] = parse()
-  var viper_ast : Option[Program] = translate()
+class AstGenerator (private val _logger: ViperLogger){
+  private var ver_backend: SilFrontend = create_backend()
 
-  private def initialize_backend() : SilFrontend = {
+  /** Creates a backend to work with the file.
+    *
+    */
+  private def create_backend() : SilFrontend = {
     _logger.get.info(s"Creating new verification backend.")
     new SiliconFrontend(StdIOReporter("Parsing Reporter", true), _logger.get)
   }
 
-  private def parse(): Option[PProgram] = {
-    _logger.get.info(s"Parsing viper file.")
+  /** Parses and translates a Viper file into a Viper AST.
+    *
+    */
+  def generateViperAst(vpr_file_path: String): Option[Program] = {
     val args: Array[String] = Array(vpr_file_path)
+    _logger.get.info(s"Parsing viper file.")
     ver_backend.setVerifier(ver_backend.createVerifier(args.mkString(" ")))
     ver_backend.prepare(args)
     ver_backend.init(ver_backend.verifier)
     ver_backend.reset(Paths.get(ver_backend.config.file()))
-    ver_backend.parsing()
+    val parse_ast = parse()
+    translate(parse_ast)
+  }
 
+  /** Parses a Viper file
+    *
+    */
+  private def parse(): Option[PProgram] = {
+    ver_backend.parsing()
     if(ver_backend.errors.isEmpty){
       _logger.get.info("There was no error while parsing!")
       Some(ver_backend.parsingResult)
@@ -39,7 +50,10 @@ class AstGenerator (private val vpr_file_path:String, private val _logger: Viper
     }
   }
 
-  private def translate() : Option[Program] = {
+  /** Translates a Parsed Viper file into a Viper AST
+    *
+    */
+  private def translate(parse_ast : Option[PProgram]) : Option[Program] = {
     if(parse_ast.isDefined){
       _logger.get.info(s"Translating parsed file.")
       ver_backend.semanticAnalysis()

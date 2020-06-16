@@ -29,9 +29,9 @@ object ViperServerRunner {
     term_writer.write(s"cd ..\\viper_client-master & python client.py -c terminate -p $port & cd ..\\viperserver")
     file match {
       case Some(fileName) =>
-      ver_writer.write(s"cd ..\\viper_client-master & " +
-        s"python client.py -c verify -p $port -f ${fileName} &" +
-        s"cd ..\\viperserver")
+        ver_writer.write(s"cd ..\\viper_client-master & " +
+          s"python client.py -c verify -p $port -f ${fileName} &" +
+          s"cd ..\\viperserver")
       case None =>
         ver_writer.write(s"cd ..\\viper_client-master & python client.py -c verify -p $port & cd ..\\viperserver")
     }

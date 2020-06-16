@@ -10,21 +10,18 @@ import viper.silver.reporter._
 import scala.concurrent.Future
 import scala.util.{Failure, Success}
 
-
-
 class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
   import scala.language.postfixOps
 
   implicit var actor_system: ActorSystem = ActorSystem("Test")
-  val client_actor_0 = actor_system.actorOf(ClientActor.props(0))
-  val client_actor_1 = actor_system.actorOf(ClientActor.props(1))
-  val client_actor_2 = actor_system.actorOf(ClientActor.props(2))
-  val actorTestRestults: Array[Option[Boolean]] = Array(None, None, None)
-
+  val test_actor_0 = actor_system.actorOf(ClientActor.props(0))
+  val test_actor_1 = actor_system.actorOf(ClientActor.props(1))
+  val test_actor_2 = actor_system.actorOf(ClientActor.props(2))
+  val actor_tests_restults: Array[Option[Boolean]] = Array(None, None, None)
 
   object ClientActor {
     case object Terminate
-    def props(shouldSucceed: Int): Props = Props(new ClientActor(shouldSucceed))
+    def props(test_no: Int): Props = Props(new ClientActor(test_no))
   }
 
   class ClientActor(private val test_no: Int) extends Actor{
@@ -32,10 +29,10 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
     override def receive: PartialFunction[Any, Unit] = {
       case m: Message =>
         m match {
-          case osm: OverallSuccessMessage =>
-            println("osm")
-          case ofm: OverallFailureMessage =>
-            actorTestRestults(test_no) = Some(false)
+          case _: OverallSuccessMessage =>
+            actor_tests_restults(test_no) = Some(true)
+          case _: OverallFailureMessage =>
+            actor_tests_restults(test_no) = Some(false)
           case _ =>
         }
       case ClientActor.Terminate =>
@@ -44,28 +41,30 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
     }
   }
 
-  private val emptyFile ="src\\test\\resources\\viper\\empty.vpr"
-  private val sumFile = "src\\test\\resources\\viper\\sum_method.vpr"
-  private val verificationErrorFile = "src\\test\\resources\\viper\\verification_error.vpr"
-
-//  private val console_logger = ViperStdOutLogger("parsingTest logger", "ALL")
   private val silent_logger = SilentLogger()
+  private val ast_gen = new AstGenerator(silent_logger)
 
-  val noCacheBackend = SiliconConfig(List("--disableCaching"))
-  val cacheBackend = SiliconConfig(List())
+  private val empty_file ="src\\test\\resources\\viper\\empty.vpr"
+  private val sum_file = "src\\test\\resources\\viper\\sum_method.vpr"
+  private val verificationError_file = "src\\test\\resources\\viper\\verification_error.vpr"
+
+  private val empty_ast = ast_gen.generateViperAst(empty_file).get
+  private val sum_ast = ast_gen.generateViperAst(sum_file).get
+  private val verificationError_ast = ast_gen.generateViperAst(verificationError_file).get
+
+  private val noCache_backend = SiliconConfig(List("--disableCaching"))
+  private val cache_backend = SiliconConfig(List())
 
   "An instance of ViperCoreServer" when {
     "verifying a single file with caching disabled" should {
-      val file = verificationErrorFile
-      val ast_gen = new AstGenerator(file, silent_logger)
-      val ast = ast_gen.viper_ast.get
-
       val config = new ViperConfig(List())
       config.verify()
-      var core = new ViperCoreServer(config)
+      val core = new ViperCoreServer(config)
+
       "be able to execute 'start()' without exceptions" in {
         core.start()
       }
+
       "not be able to execute 'start()' more than once without exceptions" in {
         assertThrows[Throwable]{
           core.start()
@@ -74,13 +73,12 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
 
       var handler: VerificationJobHandler = null
       "be able to execute 'verify()' without exceptions" in {
-        handler = core.verify(file, noCacheBackend, ast)
+        handler = core.verify(verificationError_file, noCache_backend, verificationError_ast)
         assert(handler != null)
       }
 
       "be able to have 'verify()' return a JobHandler with non-negative id when executed" in {
         assert(handler.id >= 0)
-        handler = core.verify(file, noCacheBackend, ast)
       }
 
       var messages_future: Future[Seq[Message]] = null
@@ -94,7 +92,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
           Thread.sleep(100)
         }
         messages_future.onComplete({
-          case Success(verRes) => succeed
+          case Success(_) => succeed
           case Failure(_) => fail()
         })
       }
@@ -105,24 +103,21 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
 
       "not be able to execute 'verify()' after 'stop()' without exceptions" in {
         assertThrows[Throwable] {
-          core.verify(file, noCacheBackend, ast)
+          core.verify(verificationError_file, noCache_backend, verificationError_ast)
         }
       }
     }
     "verifying a single file with caching enabled" should {
-      val file = sumFile
-      val ast_gen = new AstGenerator(file, silent_logger)
-
       val config = new ViperConfig(List())
       config.verify()
-      var core = new ViperCoreServer(config)
+      val core = new ViperCoreServer(config)
       "be able to execute 'start()' without exceptions" in {
         core.start()
       }
 
       var handler: VerificationJobHandler = null
       "be able to execute 'verify()' without exceptions" in {
-        handler = core.verify(file, cacheBackend, ast_gen.viper_ast.get)
+        handler = core.verify(sum_file, cache_backend, sum_ast)
         assert(handler != null)
       }
 
@@ -164,26 +159,23 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
 
       "not be able to execute 'verify()' after 'stop()' without exceptions" in {
         assertThrows[Throwable] {
-          core.verify(file, noCacheBackend, ast_gen.viper_ast.get)
+          core.verify(sum_file, noCache_backend, sum_ast)
         }
       }
     }
     "verifying multiple files with caching disabled and retrieving results via 'getMessagesFuture()'" should {
-      val files: List[String] = List(emptyFile, sumFile, verificationErrorFile)
-      val programs: List[Program] = files.map(f => {
-        val ast_gen = new AstGenerator(f, silent_logger)
-        ast_gen.viper_ast.get
-      })
+      val files: List[String] = List(empty_file, sum_file, verificationError_file)
+      val programs: List[Program] = List(empty_ast, sum_ast, verificationError_ast)
 
       val config = new ViperConfig(List())
       config.verify()
-      var core = new ViperCoreServer(config)
+      val core = new ViperCoreServer(config)
       core.start()
 
       val filesAndProgs: List[(String, Program)] = files.zip(programs)
       var handlers: List[VerificationJobHandler] = null
       "be able to have 'verify()' repeatedly without exceptions" in {
-        handlers = filesAndProgs map { case (f, p) => core.verify(f, noCacheBackend, p) }
+        handlers = filesAndProgs map { case (f, p) => core.verify(f, noCache_backend, p) }
       }
 
       "be able to have 'verify()' return JobHandlers with unique non-negative ids when executed " in {
@@ -205,9 +197,9 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
             case Success(msgs) =>
               msgs.last match {
                 case m: OverallSuccessMessage =>
-                  assert(f != verificationErrorFile)
+                  assert(f != verificationError_file)
                 case m: OverallFailureMessage =>
-                  assert(f == verificationErrorFile)
+                  assert(f == verificationError_file)
                 case _ => fail()
               }
             case Failure(e) => fail()
@@ -220,21 +212,18 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
     "verifying multiple files with caching enabled and retrieving results via 'getMessagesFuture()'" should {
-      val files: List[String] = List(emptyFile, sumFile, verificationErrorFile)
-      val programs: List[Program] = files.map(f => {
-        val ast_gen = new AstGenerator(f, silent_logger)
-        ast_gen.viper_ast.get
-      })
+      val files: List[String] = List(empty_file, sum_file, verificationError_file)
+      val programs: List[Program] = List(empty_ast, sum_ast, verificationError_ast)
 
       val config = new ViperConfig(List())
       config.verify()
-      var core = new ViperCoreServer(config)
+      val core = new ViperCoreServer(config)
       core.start()
 
       val filesAndProgs: List[(String, Program)] = files.zip(programs)
       var handlers: List[VerificationJobHandler] = null
       "be able to have 'verify()' repeatedly without exceptions" in {
-        handlers = filesAndProgs map { case (f, p) => core.verify(f, noCacheBackend, p) }
+        handlers = filesAndProgs map { case (f, p) => core.verify(f, noCache_backend, p) }
       }
 
       "be able to have 'getMessagesFuture()' return a future of a sequence of Viper messages containing the expected verification result" in {
@@ -250,9 +239,9 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
             case Success(msgs) =>
               msgs.last match {
                 case m: OverallSuccessMessage =>
-                  assert(f != verificationErrorFile)
+                  assert(f != verificationError_file)
                 case m: OverallFailureMessage =>
-                  assert(f == verificationErrorFile)
+                  assert(f == verificationError_file)
                 case _ => fail()
               }
             case Failure(e) => fail()
@@ -265,41 +254,34 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
     "verifying multiple files with caching disabled and retrieving results via 'streamMessages()" should {
-      val file1 = emptyFile
-      val file2 = sumFile
-      val file3 = verificationErrorFile
+      val file1 = empty_file
+      val file2 = sum_file
+      val file3 = verificationError_file
 
-      val ast_gen1 = new AstGenerator(file1, silent_logger)
-      val ast_gen2 = new AstGenerator(file2, silent_logger)
-      val ast_gen3 = new AstGenerator(file3, silent_logger)
-      val ast1 = ast_gen1.viper_ast.get
-      val ast2 = ast_gen2.viper_ast.get
-      val ast3 = ast_gen3.viper_ast.get
+      val ast1 = empty_ast
+      val ast2 = sum_ast
+      val ast3 = verificationError_ast
 
       val config = new ViperConfig(List())
       config.verify()
       val core = new ViperCoreServer(config)
       core.start()
 
-      val vjh1 = core.verify(file1, noCacheBackend, ast1)
-      val vjh2 = core.verify(file2, noCacheBackend, ast2)
-      val vjh3 = core.verify(file3, noCacheBackend, ast3)
+      val vjh1 = core.verify(file1, noCache_backend, ast1)
+      val vjh2 = core.verify(file2, noCache_backend, ast2)
+      val vjh3 = core.verify(file3, noCache_backend, ast3)
 
       "be able to have 'streamMessages()' stream a sequence of Viper messages without errors" in {
-        core.streamMessages(vjh1.id, client_actor_0)
-        core.streamMessages(vjh2.id, client_actor_1)
-        core.streamMessages(vjh3.id, client_actor_2)
-//        while(actors_finished <= 2){
-//          Thread.sleep(100)
-//        }
+        core.streamMessages(vjh1.id, test_actor_0)
+        core.streamMessages(vjh2.id, test_actor_1)
+        core.streamMessages(vjh3.id, test_actor_2)
       }
 
-
       "have the stream of messages contain the expected verification result" in {
-        Thread.sleep(15000)
-        assert(actorTestRestults(0) == Some(true))
-        assert(actorTestRestults(1) == Some(true))
-        assert(actorTestRestults(2) == Some(false))
+        Thread.sleep(20000)
+        assert(actor_tests_restults(0) == Some(true))
+        assert(actor_tests_restults(1) == Some(true))
+        assert(actor_tests_restults(2) == Some(false))
       }
 
       "be able to execute 'stop()' without exceptions" in {
@@ -307,17 +289,13 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
     "verifying an incorrect viper program several times with caching enabled" should {
-      val file = verificationErrorFile
-      val ast_gen = new AstGenerator(file, silent_logger)
-      val ast = ast_gen.viper_ast.get
-
       val config = new ViperConfig(List())
       config.verify()
       val core = new ViperCoreServer(config)
       core.start()
 
       "produce an OverallFailure Message with a non-empty error list upon first verification." in {
-        val vjh_original = core.verify(file, cacheBackend, ast)
+        val vjh_original = core.verify(verificationError_file, cache_backend, verificationError_ast)
         val messages_future_original = core.getMessagesFuture(vjh_original.id)
           while (!messages_future_original.isCompleted) {
             Thread.sleep(500)
@@ -334,7 +312,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         }
 
       "produce an OverallFailure Message with an empty error list when re- verified." in {
-        val vjh_cached = core.verify(file, cacheBackend, ast)
+        val vjh_cached = core.verify(verificationError_file, cache_backend, verificationError_ast)
         val messages_future_cached = core.getMessagesFuture(vjh_cached.id)
         while (!messages_future_cached.isCompleted) {
           Thread.sleep(100)
@@ -355,7 +333,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       }
 
       "produce an OverallFailure Message with an empty error list when re- verified after flushing the cache." in {
-        val vjh_flushed = core.verify(file, cacheBackend, ast)
+        val vjh_flushed = core.verify(verificationError_file, cache_backend, verificationError_ast)
         val messages_future_flushed = core.getMessagesFuture(vjh_flushed.id)
         while (!messages_future_flushed.isCompleted) {
           Thread.sleep(100)
@@ -376,21 +354,17 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
     "maximum capacity of verification jobs is exceeded" should {
-      val file = sumFile
-      val ast_gen = new AstGenerator(file, silent_logger)
-      val ast = ast_gen.viper_ast.get
-
       val config = new ViperConfig(List())
       config.verify()
       val core = new ViperCoreServer(config)
       core.start()
 
-      val handler = core.verify(file, SiliconConfig(List()), ast)
-      core.verify(file, noCacheBackend, ast)
-      core.verify(file, noCacheBackend, ast)
+      val handler = core.verify(sum_file, SiliconConfig(List()), sum_ast)
+      core.verify(sum_file, noCache_backend, sum_ast)
+      core.verify(sum_file, noCache_backend, sum_ast)
 
       "have 'verify()' return a VerificationJobHandler with negative id" in {
-        val spillHandler = core.verify(file, noCacheBackend, ast)
+        val spillHandler = core.verify(sum_file, noCache_backend, sum_ast)
         assert(spillHandler.id < 0)
       }
 
@@ -399,7 +373,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         while (!result_future.isCompleted) {
           Thread.sleep(100)
         }
-        val newHandler = core.verify(file, noCacheBackend, ast)
+        val newHandler = core.verify(sum_file, noCache_backend, sum_ast)
         assert(newHandler.id > 0)
       }
 

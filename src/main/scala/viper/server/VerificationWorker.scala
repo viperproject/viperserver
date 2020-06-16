@@ -36,9 +36,13 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
 }
 
 class VerificationWorker(private val reporterActor: ActorRef,
+                         private val viper_config: ViperConfig,
                          private val logger: Logger,
                          private val command: List[String],
                          private val program: Program) extends Runnable {
+
+  private var backend: ViperBackend = _
+  implicit val executionContext = ExecutionContext.global
 
   private def resolveCustomBackend(clazzName: String, rep: Reporter): Option[SilFrontend] = {
     (try {
@@ -59,9 +63,6 @@ class VerificationWorker(private val reporterActor: ActorRef,
     }
   }
 
-  private var backend: ViperBackend = _
-  implicit val executionContext = ExecutionContext.global
-
   // Implementation of the Reporter interface used by the backend.
   class ActorReporter(private val actor_ref: ActorRef,
                       val tag: String) extends viper.silver.reporter.Reporter {
@@ -76,7 +77,7 @@ class VerificationWorker(private val reporterActor: ActorRef,
       * completion of such an offer.
       * */
     def report(msg: reporter.Message): Unit = {
-      implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
+      implicit val askTimeout: Timeout = Timeout(viper_config.actorCommunicationTimeout() milliseconds)
       val answer = actor_ref ? ReporterProtocol.ServerReport(msg)
       current_offer = answer.flatMap({
         case res: Future[QueueOfferResult] => res
@@ -88,7 +89,6 @@ class VerificationWorker(private val reporterActor: ActorRef,
   }
 
   def run(): Unit = {
-
     try {
       command match {
         case "silicon" :: args =>
@@ -133,6 +133,9 @@ class VerificationWorker(private val reporterActor: ActorRef,
 }
 
 class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program) {
+
+  def backendName: String = _frontend.verifier.getClass.getName
+  def file: String = _frontend.config.file()
 
   override def toString: String = {
     if ( _frontend.verifier == null )
@@ -246,8 +249,8 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     _frontend.reporter.report(ProgramDefinitionsReport(collectDefinitions(prog)))
   }
 
-
-  //Executes backend functionality
+  /** Run the backend verification functionality
+    * */
   def execute(args: Seq[String]){
     _frontend.setStartTime()
     _frontend.setVerifier( _frontend.createVerifier(args.mkString(" ")) )
@@ -262,7 +265,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
       Some(_frontend.verifier.verify(_ast))
     } else {
       _frontend.logger.info("Verification with caching enabled")
-      doCachedVerificationOnAst(_ast)
+      doCachedVerification(_ast)
       _frontend.getVerificationResult
     }
 
@@ -272,7 +275,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
       // TODO: Think again about where to detect and trigger SymbExLogging
       case Some(f@Failure(_)) =>
         _frontend.reporter report OverallFailureMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime,
-          // Cached errors will be reporter as soon as they are retrieved from the cache.
+          // Cached errors will be reported as soon as they are retrieved from the cache.
           Failure(f.errors.filter { e => !e.cached }))
     }
     _frontend.verifier.stop()
@@ -307,7 +310,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     result.toList
   }
 
-  private def doCachedVerificationOnAst(real_program: Program) = {
+  private def doCachedVerification(real_program: Program) = {
     /** Top level branch is here for the same reason as in
       * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
 
@@ -357,9 +360,6 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
       }
     }
   }
-
-  def backendName: String = _frontend.verifier.getClass.getName
-  def file: String = _frontend.config.file()
 
   def consultCache(prog: Program): (List[Method], List[Method], List[VerificationError]) = {
     val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()

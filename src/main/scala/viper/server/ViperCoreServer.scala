@@ -30,7 +30,6 @@ case class JobHandle(controller_actor: ActorRef,
                      queue: SourceQueueWithComplete[Message],
                      publisher: Publisher[Message])
 
-
 case class VerificationJobHandler(id: Int)
 
 class ViperCoreServer(private var _config: ViperConfig) {
@@ -133,7 +132,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
       if (_verificationTask != null && _verificationTask.isAlive) {
         _verificationTask.interrupt()
         _verificationTask.join()
-        println(s"Job #$id has been successfully interrupted1.")
+        println(s"Job #$id has been successfully interrupted.")
         return true
       }
       false
@@ -154,7 +153,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
         if (call_back_needed) {
           // If a callback is expected, then the caller must decide when to kill the actor.
           if (did_I_interrupt) {
-            sender ! s"Job #$id has been successfully interrupted2."
+            sender ! s"Job #$id has been successfully interrupted."
           } else {
             sender ! s"Job #$id has already been finalized."
           }
@@ -174,7 +173,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
                                      .run()
       val reportingActor = system.actorOf(QueueActor.props(id, queue), s"reporter_$id")
 
-      _verificationTask = new Thread(new VerificationWorker(reportingActor, logger.get, args, program))
+      _verificationTask = new Thread(new VerificationWorker(reportingActor, config, logger.get, args, program))
       _verificationTask.start()
 
       println(s"Starting job #$id...")
@@ -237,12 +236,10 @@ class ViperCoreServer(private var _config: ViperConfig) {
         val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(routes(logger), "localhost", port)
 
         _termActor = system.actorOf(Terminator.props(bindingFuture), "terminator")
-
         println(s"ViperServer online at http://localhost:$port")
       }
       case None => {
         _termActor = system.actorOf(Terminator.props(), "terminator")
-
         println(s"ViperServer online in CoreServer mode")
       }
     }
@@ -271,7 +268,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
 
     if (newJobsAllowed) {
       val (id, jobHandle) = bookNewJob((new_jid: Int) => {
-        implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
+        implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
         val main_actor = system.actorOf(MainActor.props(new_jid, logger), s"main_actor_$new_jid")
         val answer = main_actor ? ViperServerProtocol.Verify(args, program)
         val new_job_handle: Future[JobHandle] = answer.mapTo[JobHandle]
@@ -314,7 +311,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
     val interrupt_future_list: List[Future[String]] = _jobHandles map { case (jid, handle_future) =>
       handle_future.flatMap {
         case JobHandle(actor, _, _) =>
-          implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
+          implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
           (actor ? Stop(true)).mapTo[String]
       }
     } toList

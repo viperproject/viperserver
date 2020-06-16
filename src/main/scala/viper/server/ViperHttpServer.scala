@@ -8,8 +8,6 @@
 
 package viper.server
 
-
-
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
@@ -93,9 +91,9 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
           val arg_list = getArgListFromArgString(r.arg)
 
           val file: String = arg_list.last
-          val astGen = new AstGenerator(file, logger)
+          val astGen = new AstGenerator(logger)
 
-          val id = astGen.viper_ast match {
+          val id = astGen.generateViperAst(file) match {
             case Some(prog) =>
               val jobHandler: VerificationJobHandler = createJobHandle(arg_list, prog)
               jobHandler.id
@@ -171,7 +169,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
         case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>
-              implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
+              implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
               val interrupt_done: Future[String] = (handle.controller_actor ? Stop(true)).mapTo[String]
               onSuccess(interrupt_done) { msg =>
                 handle.controller_actor ! PoisonPill // the actor played its part.
