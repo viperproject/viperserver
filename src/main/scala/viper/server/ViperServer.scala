@@ -1,7 +1,6 @@
 package viper.server
 
 import org.rogach.scallop.ScallopOption
-
 import scala.concurrent.ExecutionContext
 
 object ViperServerRunner {

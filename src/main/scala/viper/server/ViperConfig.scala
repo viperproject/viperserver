@@ -68,6 +68,25 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     hidden = false
   )
 
+  @deprecated
+  val ideMode: ScallopOption[Boolean] = opt[Boolean]("ideMode",
+    descr = ("Used for VS Code IDE. Report errors in json format, and write"
+      + "errors in the format '<file>,<line>:<col>,<line>:<col>,<message>' to"
+      + "a file (see option ideModeErrorFile)."),
+    default = Some(false),
+    noshort = true,
+    hidden = false
+  )
+  @deprecated
+  val ideModeAdvanced: ScallopOption[Boolean] = opt[Boolean]("ideModeAdvanced",
+    descr = ("Used for VS Code IDE. Write symbolic execution log into .vscode/executionTreeData.js file, "
+      + "write execution tree graph into .vscode/dot_input.dot, "
+      + "and output z3's counter example models."),
+    default = Some(false),
+    noshort = true,
+    hidden = true
+  )
+
   dependsOnAll(ideModeAdvanced, ideMode :: Nil)
 
   val port: ScallopOption[Int] = opt[Int]("port", 'p',
@@ -86,30 +105,11 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     hidden = false)
 
   val actorCommunicationTimeout: ScallopOption[Int] = opt[Int]("actorCommunicationTimeout", 'a',
-    descr = ("Specifies the amount of time that actors will wait when communicating requesting messages from other actors."
+    descr = ("Specifies the maximal amount of time that actors will wait when communicating requesting messages from other actors."
       + s"The number is of unit milliseconds and must be positive integer."
       + "If the option is omitted, a default timeout of 5000 milliseconds will be set."),
     default = Some(5000),
     noshort = false,
     hidden = false
-  )
-
-  @deprecated
-  val ideMode: ScallopOption[Boolean] = opt[Boolean]("ideMode",
-    descr = ("Used for VS Code IDE. Report errors in json format, and write"
-      + "errors in the format '<file>,<line>:<col>,<line>:<col>,<message>' to"
-      + "a file (see option ideModeErrorFile)."),
-    default = Some(false),
-    noshort = true,
-    hidden = false
-  )
-  @deprecated
-  val ideModeAdvanced: ScallopOption[Boolean] = opt[Boolean]("ideModeAdvanced",
-    descr = ("Used for VS Code IDE. Write symbolic execution log into .vscode/executionTreeData.js file, "
-      + "write execution tree graph into .vscode/dot_input.dot, "
-      + "and output z3's counter example models."),
-    default = Some(false),
-    noshort = true,
-    hidden = true
   )
 }

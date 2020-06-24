@@ -11,7 +11,7 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.{Failure, Success}
 
-object ViperCoreServerUtils{
+object ViperCoreServerUtils {
   implicit private val executionContext = ExecutionContext.global
 
   private object SeqActor {
@@ -19,7 +19,7 @@ object ViperCoreServerUtils{
     def props(): Props = Props(new SeqActor())
   }
 
-  class SeqActor() extends Actor{
+  class SeqActor() extends Actor {
 
     var messages: List[Message] = List()
     var messages_promise: Promise[List[Message]] = Promise[List[Message]]()
@@ -28,7 +28,7 @@ object ViperCoreServerUtils{
       case m: Message =>
         messages = messages :+ m
         m match {
-          //once the overall messages are last to arrive and indicate that the promise can be finalized with success.
+          //Messages reporting the overall state are last to arrive and indicate that the promise can be finalized with success.
           case _: OverallSuccessMessage =>
             messages_promise success messages
           case _: OverallFailureMessage =>
@@ -51,7 +51,7 @@ object ViperCoreServerUtils{
     *
     * Deletes the jobhandle on completion.
     */
-  def getMessagesFuture(core: ViperCoreServer, jid: Int, actor_system: ActorSystem): Future[List[Message]] = {
+  def getMessagesFuture(core: ViperCoreServer, jid: Int)(implicit actor_system: ActorSystem): Future[List[Message]] = {
     val actor = actor_system.actorOf(SeqActor.props())
     core.streamMessages(jid, actor)
     implicit val askTimeout: Timeout = Timeout(core.config.actorCommunicationTimeout() milliseconds)
@@ -69,11 +69,11 @@ object ViperCoreServerUtils{
     *
     * Deletes the jobhandle on completion.
     */
-  def getResultsFuture(core: ViperCoreServer, jid: Int, actor_system: ActorSystem): Future[VerificationResult] = {
-    val messages_future = getMessagesFuture(core, jid, actor_system)
+  def getResultsFuture(core: ViperCoreServer, jid: Int)(implicit actor_system: ActorSystem): Future[VerificationResult] = {
+    val messages_future = getMessagesFuture(core, jid)
     val result_future: Future[VerificationResult] = messages_future.map(msgs => {
 
-      val abstract_errors: Seq[AbstractError] = msgs.foldLeft(Seq(): Seq[AbstractError]){(errors, msg) =>
+      val abstract_errors: Seq[AbstractError] = msgs.foldLeft(Seq(): Seq[AbstractError]) {(errors, msg) =>
         msg match {
           case EntityFailureMessage(_, _, _, VerificationFailure(errs)) => errs ++ errors
           case _ => errors

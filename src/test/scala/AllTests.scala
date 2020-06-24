@@ -14,7 +14,7 @@ import akka.http.scaladsl.model.{StatusCodes, _}
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
 import akka.testkit.TestDuration
 import org.scalatest.{Matchers, WordSpec}
-import viper.server.{ViperRequests, ViperServerRunner}
+import viper.server.{ViperHttpServer, ViperRequests, ViperServerRunner}
 
 import scala.concurrent.duration._
 
@@ -24,8 +24,6 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
   import ViperRequests._
   implicit val jsonStreamingSupport: JsonEntityStreamingSupport = EntityStreamingSupport.json()
   implicit val requestTimeput: RouteTestTimeout = RouteTestTimeout(10.second dilated)
-
-  //val viperHttpServer: ViperHttpServer = new ViperHttpServer(Array())
 
   ViperServerRunner.main(Array())
 
