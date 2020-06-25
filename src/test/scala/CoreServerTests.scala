@@ -44,9 +44,9 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
   private val silent_logger = SilentLogger()
 
   private val ast_gen = new AstGenerator(silent_logger)
-  private val empty_file ="src\\test\\resources\\viper\\empty.vpr"
-  private val sum_file = "src\\test\\resources\\viper\\sum_method.vpr"
-  private val verificationError_file = "src\\test\\resources\\viper\\verification_error.vpr"
+  private val empty_file = "src/test/resources/viper/empty.vpr"
+  private val sum_file = "src/test/resources/viper/sum_method.vpr"
+  private val verificationError_file = "src/test/resources/viper/verification_error.vpr"
 
   private val empty_ast = ast_gen.generateViperAst(empty_file).get
   private val sum_ast = ast_gen.generateViperAst(sum_file).get
