@@ -3,7 +3,7 @@ import java.nio.file.{NoSuchFileException, Paths}
 
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.{Matchers, WordSpec}
-import viper.server.AstGenerator
+import viper.server.utility.AstGenerator
 import viper.silver.ast.Program
 import viper.silver.logger.ViperStdOutLogger
 

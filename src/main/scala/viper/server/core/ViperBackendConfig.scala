@@ -1,4 +1,4 @@
-package viper.server
+package viper.server.core
 
 trait ViperBackendConfig {
   val partialCommandLine: List[String]

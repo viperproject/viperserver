@@ -21,11 +21,14 @@ import akka.http.scaladsl.server.Route
 import edu.mit.csail.sdg.alloy4.A4Reporter
 import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
-import viper.server.ViperServerProtocol._
-import viper.server.ViperIDEProtocol._
+import viper.server.protocol.ViperServerProtocol._
+import viper.server.protocol.ViperIDEProtocol._
 import viper.silver.reporter._
 import viper.silver.logger.{ViperLogger, ViperStdOutLogger}
 import ViperRequests.{AlloyGenerationRequest, CacheResetRequest, VerificationRequest}
+import viper.server.core.{ViperCache, ViperCoreServer}
+import viper.server.protocol.ViperServerProtocol
+import viper.server.utility.AstGenerator
 
 import scala.util.Try
 

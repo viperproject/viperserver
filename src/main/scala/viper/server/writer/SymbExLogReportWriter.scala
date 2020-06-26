@@ -1,18 +1,16 @@
-package viper.server
+package viper.server.writer
 
-import viper.silicon.verifier.Verifier
-import viper.silicon._
-
-import scala.collection.immutable.VectorBuilder
 import spray.json._
 import viper.silicon.interfaces.state.Chunk
 import viper.silicon.resources.{FieldID, PredicateID}
 import viper.silicon.rules.InverseFunctions
-import viper.silicon.state.{utils => _, _}
+import viper.silicon.state._
+import viper.silicon.verifier.Verifier
+import viper.silicon.{utils => blub, _}
 import viper.silver.ast.AbstractLocalVar
 
+import scala.collection.immutable.VectorBuilder
 
-// TODO: Clean this up
 /** Wrapper for the SymbExLogReport conversion to JSON. */
 object SymbExLogReportWriter {
 
@@ -150,7 +148,7 @@ object SymbExLogReportWriter {
       JsObject(
         "kind" -> JsString("MethodCall"),
         "value" -> JsString(mc.value.toString()),
-        "pos" -> JsString(utils.ast.sourceLineColumn(mc.value)),
+        "pos" -> JsString(blub.ast.sourceLineColumn(mc.value)),
         "children" -> JsArray(
           JsObject(
             "kind" -> JsString("parameters"),
@@ -188,25 +186,25 @@ object SymbExLogReportWriter {
         case e: ExecuteRecord =>
           Vector(
             "type" -> JsString("execute"),
-            "pos" -> JsString(utils.ast.sourceLineColumn(e.value)),
+            "pos" -> JsString(blub.ast.sourceLineColumn(e.value)),
             "value" -> JsString(e.value.toString())
           )
         case e: EvaluateRecord =>
           Vector(
             "type" -> JsString("evaluate"),
-            "pos" -> JsString(utils.ast.sourceLineColumn(e.value)),
+            "pos" -> JsString(blub.ast.sourceLineColumn(e.value)),
             "value" -> JsString(e.value.toString())
           )
         case p: ProduceRecord =>
           Vector(
             "type" -> JsString("produce"),
-            "pos" -> JsString(utils.ast.sourceLineColumn(p.value)),
+            "pos" -> JsString(blub.ast.sourceLineColumn(p.value)),
             "value" -> JsString(p.value.toString())
           )
         case c: ConsumeRecord =>
           Vector(
             "type" -> JsString("produce"),
-            "pos" -> JsString(utils.ast.sourceLineColumn(c.value)),
+            "pos" -> JsString(blub.ast.sourceLineColumn(c.value)),
             "value" -> JsString(c.value.toString())
           )
         case _: WellformednessCheckRecord =>

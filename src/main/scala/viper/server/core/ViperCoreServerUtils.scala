@@ -1,7 +1,6 @@
-package viper.server
+package viper.server.core
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
-import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
+import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
 import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessage, OverallSuccessMessage}
@@ -9,7 +8,6 @@ import viper.silver.verifier.{AbstractError, VerificationError, VerificationResu
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
-import scala.util.{Failure, Success}
 
 object ViperCoreServerUtils {
   implicit private val executionContext = ExecutionContext.global

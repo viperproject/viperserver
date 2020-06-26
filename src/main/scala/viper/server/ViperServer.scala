@@ -48,6 +48,8 @@ object ViperServerRunner {
 
     httpServer = new ViperHttpServer(config)
     httpServer.start()
+    httpServer.stop()
+
     writeBatchScripts(config.port, Some("sum_method.vpr"))
   }
 

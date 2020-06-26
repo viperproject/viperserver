@@ -1,8 +1,10 @@
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.{Matchers, WordSpec}
-import viper.server.ViperBackendConfigs.SiliconConfig
-import viper.server.{AstGenerator, VerificationJobHandler, ViperConfig, ViperCoreServer, ViperCoreServerUtils}
+import viper.server.core.ViperBackendConfigs.SiliconConfig
+import viper.server.core.{VerificationJobHandler, ViperCoreServer, ViperCoreServerUtils}
+import viper.server.utility.AstGenerator
+import viper.server.{VerificationJobHandler, ViperConfig, ViperCoreServerUtils}
 import viper.silver.ast.Program
 import viper.silver.logger.SilentLogger
 import viper.silver.reporter._

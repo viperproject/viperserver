@@ -1,15 +1,13 @@
-package viper.server
+package viper.server.utility
 
 import java.nio.file.Paths
 
 import viper.silicon.SiliconFrontend
 import viper.silver.ast.Program
 import viper.silver.frontend.SilFrontend
-import viper.silver.parser.PProgram
-import viper.silver.reporter.{Message, StdIOReporter}
 import viper.silver.logger.ViperLogger
-
-import scala.concurrent.ExecutionContextExecutor
+import viper.silver.parser.PProgram
+import viper.silver.reporter.StdIOReporter
 
 class AstGenerator (private val _logger: ViperLogger){
   private var ver_backend: SilFrontend = create_backend()
