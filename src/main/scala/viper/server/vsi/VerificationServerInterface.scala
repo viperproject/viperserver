@@ -5,75 +5,84 @@ import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.http.scaladsl.Http
 import akka.pattern.ask
 import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
-import akka.stream.{ActorMaterializer, OverflowStrategy}
+import akka.stream.{ActorMaterializer, OverflowStrategy, QueueOfferResult}
 import akka.util.Timeout
 import org.reactivestreams.Publisher
-import viper.server.protocol.ReporterProtocol
-import viper.silver.reporter.Message
 
 import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
-trait VerificationServerInterface {
+case class JobHandle(controller_actor: ActorRef,
+                     queue: SourceQueueWithComplete[Letter],
+                     publisher: Publisher[Letter])
 
-  case class VerificationJobHandler(id: Int)
-  case class JobHandle(controller_actor: ActorRef,
-                     queue: SourceQueueWithComplete[Message],
-                     publisher: Publisher[Message])
-
-  def initializeVerificationProcess(taskCreator: ActorRef => Thread) = {
-    if (newJobsAllowed) {
-      def createJob(new_jid: Int): Future[JobHandle] = {
-        implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-        val job_actor = system.actorOf(JobActor.props(new_jid), s"job_actor_$new_jid")
-        val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure)
-                                       .toMat(Sink.asPublisher(false))(Keep.both)
-                                       .run()
-        val reportingActor = system.actorOf(QueueActor.props(new_jid, queue), s"queue_actor_$new_jid")
-        val backendTask = taskCreator(reportingActor)
-        val answer = job_actor ? VerificationProtocol.Verify(backendTask, queue, publisher)
-        val new_job_handle: Future[JobHandle] = answer.mapTo[JobHandle]
-        new_job_handle
-      }
-      val (id, jobHandle) = bookNewJob(createJob)
-      VerificationJobHandler(id)
-    } else {
-      println(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS).")
-      VerificationJobHandler(-1) // Not able to create a new JobHandle
-    }
-  }
-
-  implicit val system: ActorSystem = ActorSystem("Main")
-  implicit val executionContext = ExecutionContext.global
-  implicit val materializer: ActorMaterializer = ActorMaterializer()
-
-  var _jobHandles: mutable.Map[Int, Future[JobHandle]] = mutable.Map[Int, Future[JobHandle]]()
+class JobPool(val MAX_ACTIVE_JOBS: Int = 3){
+  var jobHandles: mutable.Map[Int, Future[JobHandle]] = mutable.Map[Int, Future[JobHandle]]()
   private var _nextJobId: Int = 0
-  val MAX_ACTIVE_JOBS: Int = 3
 
-  protected def newJobsAllowed = _jobHandles.size < MAX_ACTIVE_JOBS
+  def newJobsAllowed = jobHandles.size < MAX_ACTIVE_JOBS
 
   /** Creates a Future of a JobHandle, representing the new job
     *
     * For the next available job ID the function job_executor will set up a JobActor that will start
     * a verification process and thereby eventually produce the JobHandle that's returned as a Future.
     * */
-  protected def bookNewJob(job_executor: Int => Future[JobHandle]): (Int, Future[JobHandle]) = {
+  def bookNewJob(job_executor: Int => Future[JobHandle]): (Int, Future[JobHandle]) = {
     val new_jid = _nextJobId
-    _jobHandles(new_jid) = job_executor(new_jid)
+    jobHandles(new_jid) = job_executor(new_jid)
     _nextJobId = _nextJobId + 1
-    (new_jid, _jobHandles(new_jid))
+    (new_jid, jobHandles(new_jid))
   }
 
-  protected def discardJob(jid: Int): mutable.Map[Int, Future[JobHandle]] = {
-    _jobHandles -= jid
+  def discardJob(jid: Int): mutable.Map[Int, Future[JobHandle]] = {
+    jobHandles -= jid
   }
 
-  protected def lookupJob(jid: Int): Option[ Future[JobHandle] ] = {
-    _jobHandles.get(jid)
+  def lookupJob(jid: Int): Option[ Future[JobHandle] ] = {
+    jobHandles.get(jid)
   }
+}
+
+
+trait VerificationServerInterface {
+
+  case class VerificationJobHandler(id: Int)
+
+  implicit val system: ActorSystem = ActorSystem("Main")
+  implicit val executionContext = ExecutionContext.global
+  implicit val materializer: ActorMaterializer = ActorMaterializer()
+
+  val jobs = new JobPool()
+
+  def createTask(queueActor: ActorRef, task:VerificationTask): Thread = {
+    task.setQueueActor(queueActor)
+    new Thread(task)
+  }
+
+  def initializeVerificationProcess(task:VerificationTask): VerificationJobHandler = {
+    if (jobs.newJobsAllowed) {
+      def createJob(new_jid: Int): Future[JobHandle] = {
+        implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
+        val job_actor = system.actorOf(JobActor.props(new_jid), s"job_actor_$new_jid")
+        val (queue, publisher) = Source.queue[Letter](10000, OverflowStrategy.backpressure)
+                                       .toMat(Sink.asPublisher(false))(Keep.both)
+                                       .run()
+        val reportingActor = system.actorOf(QueueActor.props(new_jid, queue), s"queue_actor_$new_jid")
+        val backendTask = createTask(reportingActor, task)
+        val answer = job_actor ? VerificationProtocol.Verify(backendTask, queue, publisher)
+        val new_job_handle: Future[JobHandle] = answer.mapTo[JobHandle]
+        new_job_handle
+      }
+      val (id, jobHandle) = jobs.bookNewJob(createJob)
+      VerificationJobHandler(id)
+    } else {
+      println(s"the maximum number of active verification jobs are currently running ($jobs.MAX_ACTIVE_JOBS).")
+      VerificationJobHandler(-1) // Not able to create a new JobHandle
+    }
+  }
+
 
   protected var _termActor: ActorRef = _
 
@@ -106,7 +115,7 @@ trait VerificationServerInterface {
             println(s"Terminator detected failure in job #$jid: $e")
             throw e
           case Success(_) =>
-            discardJob(jid)
+            jobs.discardJob(jid)
             println(s"Terminator deleted job #$jid")
         })
     }
@@ -163,7 +172,7 @@ trait VerificationServerInterface {
         throw new Exception("Main Actor: unexpected message received: " + msg)
     }
 
-    private def startJob(task: Thread, queue: SourceQueueWithComplete[Message], publisher: Publisher[Message]): JobHandle = {
+    private def startJob(task: Thread, queue: SourceQueueWithComplete[Letter], publisher: Publisher[Letter]): JobHandle = {
       _verificationTask = task
       _verificationTask.start()
       println(s"Starting job #$id...")
@@ -175,17 +184,17 @@ trait VerificationServerInterface {
   // --- Actor: QueueActor ---
 
   object QueueActor {
-    def props(jid: Int, queue: SourceQueueWithComplete[Message]): Props = Props(new QueueActor(jid, queue))
+    def props(jid: Int, queue: SourceQueueWithComplete[Letter]): Props = Props(new QueueActor(jid, queue))
   }
 
-  class QueueActor(jid: Int, queue: SourceQueueWithComplete[Message]) extends Actor {
+  class QueueActor(jid: Int, queue: SourceQueueWithComplete[Letter]) extends Actor {
 
     override def receive: PartialFunction[Any, Unit] = {
-      case ReporterProtocol.ClientRequest =>
-      case ReporterProtocol.ServerReport(msg) =>
+      case TaskProtocol.ClientRequest =>
+      case TaskProtocol.ServerReport(msg) =>
         val offer_status = queue.offer(msg)
         sender() ! offer_status
-      case ReporterProtocol.FinalServerReport(success) =>
+      case TaskProtocol.FinalServerReport(success) =>
         queue.complete()
         if ( success )
           println(s"Job #$jid has been completed successfully.")
@@ -209,7 +218,7 @@ trait VerificationServerInterface {
   }
 
   protected def getInterruptFutureList(): Future[List[String]] = {
-    val interrupt_future_list: List[Future[String]] = _jobHandles map { case (jid, handle_future) =>
+    val interrupt_future_list: List[Future[String]] = jobs.jobHandles map { case (jid, handle_future) =>
       handle_future.flatMap {
         case JobHandle(actor, _, _) =>
           implicit val askTimeout: Timeout = Timeout(1000 milliseconds)
@@ -221,17 +230,27 @@ trait VerificationServerInterface {
   }
 }
 
-object VerificationProtocol {
+abstract class VerificationTask()(implicit val executionContext: ExecutionContext) extends Runnable {
 
-  // Main Actor requests Verification with File Name
-  case class Verify(task: Thread, queue: SourceQueueWithComplete[Message], publisher: Publisher[Message])
+  protected var q_actor: ActorRef = _
 
-  // Main Actor requests Verification with AST Program
-  // case class VerifyAst(config: List[String], reporter: viper.silver.reporter.Reporter, program: viper.silver.ast.Program)
+  def setQueueActor(actor: ActorRef): Unit = q_actor = actor
 
-  // VerificationActor sends backend to Main Actor
-  case class Backend(backend: viper.silver.verifier.Verifier)
-
-  // Verification interrupt request to Main Actor
-  case class Stop(call_me_back: Boolean)
+  /** Sends massage to the attached actor.
+    *
+    * The actor receiving this message offers it to a queue. This offering returns a Future, which will eventually
+    * indicate whether or not the offer was successful. This method is blocking, as it waits for the successful
+    * completion of such an offer.
+    * */
+  protected def enqueueMessages(letter:Letter): Unit = {
+    var current_offer: Future[QueueOfferResult] = null
+    implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
+    val answer = q_actor ? letter
+    current_offer = answer.flatMap({
+      case res: Future[QueueOfferResult] => res
+    })
+    while(current_offer == null || !current_offer.isCompleted){
+      Thread.sleep(10)
+    }
+  }
 }

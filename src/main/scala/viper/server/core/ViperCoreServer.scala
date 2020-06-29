@@ -8,7 +8,7 @@ import akka.http.scaladsl.server.Route
 import akka.stream.scaladsl.{Sink, Source}
 import viper.server.ViperConfig
 import viper.server.core.ViperBackendConfigs._
-import viper.server.vsi.VerificationServerInterface
+import viper.server.vsi.{VerificationServerInterface, VerificationTask}
 import viper.silver.ast
 import viper.silver.logger.ViperLogger
 
@@ -22,7 +22,6 @@ class ViperCoreServer(private var _config: ViperConfig) extends VerificationServ
   // --- VCS : Configuration ---
   var isRunning: Boolean = true
   final def config: ViperConfig = _config
-
 
   private var _logger: ViperLogger = _
   final def logger: ViperLogger = _logger
@@ -83,13 +82,8 @@ class ViperCoreServer(private var _config: ViperConfig) extends VerificationServ
     if(!isRunning) {
       throw new IllegalStateException("Instance of ViperCoreServer already stopped")
     }
-
-    def someFun(qa: ActorRef): Thread = {
-      val task_backend = new VerificationWorker(config, logger.get, args, program)
-      task_backend.setReporterActor(qa)
-      new Thread(task_backend)
-    }
-    initializeVerificationProcess(someFun)
+    val task_backend = new VerificationWorker(config, logger.get, args, program)
+    initializeVerificationProcess(task_backend)
   }
 
   /** Stops an instance of ViperCoreServer from running.
@@ -124,7 +118,7 @@ class ViperCoreServer(private var _config: ViperConfig) extends VerificationServ
     if(!isRunning) {
       throw new IllegalStateException("Instance of ViperCoreServer already stopped")
     }
-    lookupJob(jid) match {
+    jobs.lookupJob(jid) match {
       case Some(handle_future) =>
         handle_future.onComplete({
           case Success(handle) =>
