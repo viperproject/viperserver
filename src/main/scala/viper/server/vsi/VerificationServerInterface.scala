@@ -8,18 +8,13 @@ import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.Timeout
 import org.reactivestreams.Publisher
-import viper.server.ViperConfig
 import viper.server.protocol.ReporterProtocol
-import viper.silver.logger._
 import viper.silver.reporter.Message
 
 import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
-
-
-
 
 trait VerificationServerInterface {
 
@@ -28,14 +23,11 @@ trait VerificationServerInterface {
                      queue: SourceQueueWithComplete[Message],
                      publisher: Publisher[Message])
 
-  def getServerConfig(): ViperConfig
-  def getServerLogger(): ViperLogger
-
   def initializeVerificationProcess(taskCreator: ActorRef => Thread) = {
     if (newJobsAllowed) {
       def createJob(new_jid: Int): Future[JobHandle] = {
         implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-        val job_actor = system.actorOf(JobActor.props(new_jid, getServerLogger()), s"job_actor_$new_jid")
+        val job_actor = system.actorOf(JobActor.props(new_jid), s"job_actor_$new_jid")
         val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure)
                                        .toMat(Sink.asPublisher(false))(Keep.both)
                                        .run()
@@ -124,10 +116,10 @@ trait VerificationServerInterface {
   // --- Actor: MainActor ---
 
   object JobActor {
-    def props(id: Int, logger: ViperLogger): Props = Props(new JobActor(id, logger))
+    def props(id: Int): Props = Props(new JobActor(id))
   }
 
-  class JobActor(private val id: Int, private val logger: ViperLogger) extends Actor {
+  class JobActor(private val id: Int) extends Actor {
 
     //Agnostic
     private var _verificationTask: Thread = _
@@ -180,8 +172,6 @@ trait VerificationServerInterface {
   }
 
 
-
-
   // --- Actor: QueueActor ---
 
   object QueueActor {
@@ -203,6 +193,18 @@ trait VerificationServerInterface {
           println(s"Job #$jid has been completed ERRONEOUSLY.")
         self ! PoisonPill
       case _ =>
+    }
+  }
+
+  def stop(): Unit = {
+    getInterruptFutureList() onComplete {
+      case Success(_) =>
+        _termActor ! Terminator.Exit
+        println(s"shutting down...")
+      case Failure(err_msg) =>
+        println(s"Interrupting one of the verification threads timed out: $err_msg")
+        _termActor ! Terminator.Exit
+        println(s"forcibly shutting down...")
     }
   }
 

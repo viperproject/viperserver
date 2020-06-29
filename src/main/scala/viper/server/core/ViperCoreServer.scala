@@ -22,12 +22,10 @@ class ViperCoreServer(private var _config: ViperConfig) extends VerificationServ
   // --- VCS : Configuration ---
   var isRunning: Boolean = true
   final def config: ViperConfig = _config
-  override def getServerConfig(): ViperConfig = config
 
 
   private var _logger: ViperLogger = _
   final def logger: ViperLogger = _logger
-  override def getServerLogger(): ViperLogger = logger
 
 
   /** Configures an instance of ViperCoreServer.
@@ -87,24 +85,11 @@ class ViperCoreServer(private var _config: ViperConfig) extends VerificationServ
     }
 
     def someFun(qa: ActorRef): Thread = {
-      val task_backend = new VerificationWorker(getServerConfig(), logger.get, args, program)
+      val task_backend = new VerificationWorker(config, logger.get, args, program)
       task_backend.setReporterActor(qa)
       new Thread(task_backend)
     }
     initializeVerificationProcess(someFun)
-    //    if (newJobsAllowed) {
-    //      val (id, jobHandle) = bookNewJob((new_jid: Int) => {
-    //        implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-    //        val main_actor = system.actorOf(JobActor.props(new_jid, logger), s"main_actor_$new_jid")
-    //        val answer = main_actor ? ViperServerProtocol.Verify(args, program)
-    //        val new_job_handle: Future[JobHandle] = answer.mapTo[JobHandle]
-    //        new_job_handle
-    //      })
-    //      VerificationJobHandler(id)
-    //    } else {
-    //      println(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS).")
-    //      VerificationJobHandler(-1) // Not able to create a new JobHandle
-    //    }
   }
 
   /** Stops an instance of ViperCoreServer from running.
@@ -112,23 +97,14 @@ class ViperCoreServer(private var _config: ViperConfig) extends VerificationServ
     * As such it should be the ultimate method called. Calling any other function after 'stop()' will result in an
     * IllegalStateException.
     * */
-  def stop(): Unit = {
+  override def stop(): Unit = {
     if(!isRunning) {
       throw new IllegalStateException("Instance of ViperCoreServer already stopped")
     }
     isRunning = false
 
     println(s"Stopping ViperCoreServer")
-
-    getInterruptFutureList() onComplete {
-      case Success(_) =>
-        _termActor ! Terminator.Exit
-        println(s"shutting down...")
-      case Failure(err_msg) =>
-        println(s"Interrupting one of the verification threads timed out: $err_msg")
-        _termActor ! Terminator.Exit
-        println(s"forcibly shutting down...")
-    }
+    super.stop()
   }
 
   def flushCache(): Unit = {
