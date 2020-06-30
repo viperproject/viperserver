@@ -3,11 +3,13 @@ package viper.server.core
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
+import viper.server.vsi.Letter
 import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessage, OverallSuccessMessage}
 import viper.silver.verifier.{AbstractError, VerificationError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.util.{Failure, Success}
 
 object ViperCoreServerUtils {
   implicit private val executionContext = ExecutionContext.global
@@ -23,22 +25,17 @@ object ViperCoreServerUtils {
     var messages_promise: Promise[List[Message]] = Promise[List[Message]]()
 
     override def receive: PartialFunction[Any, Unit] = {
+//      case SilverLetter(m) =>
+//        messages = messages :+ m
       case m: Message =>
         messages = messages :+ m
-        m match {
-          //Messages reporting the overall state are last to arrive and indicate that the promise can be finalized with success.
-          case _: OverallSuccessMessage =>
-            messages_promise success messages
-          case _: OverallFailureMessage =>
-            messages_promise success messages
-          case _ =>
-        }
       case SeqActor.Result =>
         messages_promise.future
         sender() ! messages_promise
       case e: Throwable =>
         //receiving an error means the promise can be finalized with failure.
         messages_promise failure e
+      case Success => messages_promise success messages
     }
   }
 

@@ -38,7 +38,6 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
 case class SilverLetter(msg:Message) extends Letter
 
 
-
 class VerificationWorker(private val viper_config: ViperConfig,
                          private val logger: Logger,
                          private val command: List[String],
@@ -72,7 +71,7 @@ class VerificationWorker(private val viper_config: ViperConfig,
   class ActorReporter(val tag: String) extends Reporter {
     val name = s"ViperServer_$tag"
 
-    def report(msg: reporter.Message): Unit = {
+    def report(msg: Message): Unit = {
       enqueueMessages(SilverLetter(msg))
     }
   }

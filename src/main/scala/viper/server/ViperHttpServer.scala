@@ -15,7 +15,7 @@ import akka.NotUsed
 import akka.pattern.ask
 import akka.util.Timeout
 import akka.actor.{ActorSystem, PoisonPill}
-import akka.stream.scaladsl.Source
+import akka.stream.scaladsl.{Flow, Source}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import edu.mit.csail.sdg.alloy4.A4Reporter
@@ -26,9 +26,10 @@ import viper.server.protocol.ViperIDEProtocol._
 import viper.silver.reporter._
 import viper.silver.logger.{ViperLogger, ViperStdOutLogger}
 import ViperRequests.{AlloyGenerationRequest, CacheResetRequest, VerificationRequest}
-import viper.server.core.{ViperCache, ViperCoreServer}
+import viper.server.core.{SilverLetter, ViperCache, ViperCoreServer}
 import viper.server.protocol.ViperServerProtocol
 import viper.server.utility.AstGenerator
+import viper.server.vsi.{Letter, VerificationJobHandler}
 
 import scala.util.Try
 
@@ -106,7 +107,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
           if (id >= 0) {
             complete( VerificationRequestAccept(id) )
           } else {
-            complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS)."))
+            complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS})."))
           }
       }
     }
@@ -129,17 +130,21 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       * - Ask ViperServer to begin streaming the results corresponding to the verification job with provided <jid>
       */
     get {
-      lookupJob(jid) match {
+      jobs.lookupJob(jid) match {
         case Some(handle_future) =>
           // Found a job with this jid.
           onComplete(handle_future) {
             case Success(handle) =>
-              val src: Source[Message, NotUsed] = Source.fromPublisher(handle.publisher)
+              val src_letter: Source[Letter, NotUsed] = Source.fromPublisher((handle.publisher))
+              val src_msg: Source[Message, NotUsed] = src_letter.map({
+                case SilverLetter(msg) => msg
+                case _ => throw new Throwable("Wrong message type")
+              })
               // We do not remove the current entry from [[_job_handles]] because the handle is
               //  needed in order to terminate the job before streaming is completed.
               //  The Terminator actor will delete the entry upon completion of the stream.
               _termActor ! Terminator.WatchJobQueue(jid, handle)
-              complete(src)
+              complete(src_msg)
             case Failure(error) =>
               complete( VerificationRequestReject(s"The verification job #$jid resulted in a terrible error: $error") )
           }
@@ -168,7 +173,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       *  - Client decided to kill a verification job they no longer care about
       */
     get {
-      lookupJob(jid) match {
+      jobs.lookupJob(jid) match {
         case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>

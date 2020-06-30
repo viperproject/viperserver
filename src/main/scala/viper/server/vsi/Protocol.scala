@@ -4,7 +4,6 @@ import akka.stream.scaladsl.SourceQueueWithComplete
 import org.reactivestreams.Publisher
 
 object TaskProtocol {
-  //Todo: Rework this.
   case object ClientRequest
   case class ServerReport(msg: Letter)
   case class FinalServerReport(success: Boolean)
