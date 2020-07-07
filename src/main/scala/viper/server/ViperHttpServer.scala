@@ -8,40 +8,37 @@
 
 package viper.server
 
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
-import scala.concurrent.duration._
-import scala.util.{Failure, Success}
 import akka.NotUsed
 import akka.pattern.ask
 import akka.util.Timeout
-import akka.actor.{ActorSystem, PoisonPill}
-import akka.stream.scaladsl.{Flow, Source}
+import akka.actor.PoisonPill
+import akka.stream.scaladsl.Source
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import edu.mit.csail.sdg.alloy4.A4Reporter
 import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
+
+import spray.json.DefaultJsonProtocol
+
+import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, SiliconConfig}
+import viper.server.core.{SilverEnvelope, ViperBackendConfig, ViperCache, ViperCoreServer}
 import viper.server.protocol.ViperServerProtocol._
 import viper.server.protocol.ViperIDEProtocol._
-import viper.silver.reporter._
-import viper.silver.logger.{ViperLogger, ViperStdOutLogger}
-import ViperRequests.{AlloyGenerationRequest, CacheResetRequest, VerificationRequest}
-import viper.server.core.{SilverLetter, ViperCache, ViperCoreServer}
-import viper.server.protocol.ViperServerProtocol
 import viper.server.utility.AstGenerator
-import viper.server.vsi.{Letter, VerificationJobHandler}
+import viper.server.vsi.Requests.{CacheResetRequest, VerificationRequest}
+import viper.server.vsi.{Envelope, HttpServerInterface, VerificationJobHandler}
+import viper.silver.reporter._
 
+import scala.concurrent.Future
+import scala.concurrent.duration._
+import scala.util.{Failure, Success}
 import scala.util.Try
 
 
-class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(_config) {
+class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(_config) with HttpServerInterface {
 
-  override def start(): Unit = {
-    init(Some(routes))
-  }
- 
-  def routes(logger: ViperLogger): Route = {
-    
+  def routes(): Route = {
     /**
       * Send GET request to "/exit".
       *
@@ -91,24 +88,34 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       *   such as <a href="<a href="https://github.com/viperproject/viper_client">viper_client</a>">viper_client</a> (written in Python)
       */
     post {
-        entity(as[VerificationRequest]) { r =>
-          val arg_list = getArgListFromArgString(r.arg)
+      entity(as[VerificationRequest]) { r =>
+        val arg_list = getArgListFromArgString(r.arg)
 
-          val file: String = arg_list.last
-          val astGen = new AstGenerator(logger)
+        val file: String = arg_list.last
+        val astGen = new AstGenerator(logger)
+        val ast_option = astGen.generateViperAst(file)
 
-          val id = astGen.generateViperAst(file) match {
-            case Some(prog) =>
-              val jobHandler: VerificationJobHandler = createJobHandle(arg_list, prog)
-              jobHandler.id
-            case None =>
-              -1
-          }
-          if (id >= 0) {
-            complete( VerificationRequestAccept(id) )
-          } else {
-            complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS})."))
-          }
+        val backend_option: Option[ViperBackendConfig] = arg_list match {
+          case "silicon" :: args => Some(SiliconConfig(args))
+          case "carbon" :: args => Some(CarbonConfig(args))
+          case custom :: args => Some(CustomConfig(args))
+          case args =>
+            logger.get.error("invalid arguments: ${args.toString}",
+              "You need to specify the verification backend, e.g., `silicon [args]`")
+            None
+        }
+
+        val id: Int = if (ast_option.isDefined && backend_option.isDefined) {
+          val jobHandler: VerificationJobHandler = verify(file, backend_option.get, ast_option.get)
+          jobHandler.id
+        } else {
+          -1
+        }
+        if (id >= 0) {
+          complete( VerificationRequestAccept(id) )
+        } else {
+          complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS})."))
+        }
       }
     }
   } ~ path("verify" / IntNumber) { jid =>
@@ -135,16 +142,17 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
           // Found a job with this jid.
           onComplete(handle_future) {
             case Success(handle) =>
-              val src_letter: Source[Letter, NotUsed] = Source.fromPublisher((handle.publisher))
-              val src_msg: Source[Message, NotUsed] = src_letter.map({
-                case SilverLetter(msg) => msg
-                case _ => throw new Throwable("Wrong message type")
-              })
+              val src_letter: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
               // We do not remove the current entry from [[_job_handles]] because the handle is
               //  needed in order to terminate the job before streaming is completed.
               //  The Terminator actor will delete the entry upon completion of the stream.
+              val src_message: Source[Message, NotUsed] = src_letter.map({
+                case SilverEnvelope(msg) => msg
+                case _ => throw new Throwable("Wrong message type")
+              })
+              src_message
               _termActor ! Terminator.WatchJobQueue(jid, handle)
-              complete(src_msg)
+              complete(src_message)
             case Failure(error) =>
               complete( VerificationRequestReject(s"The verification job #$jid resulted in a terrible error: $error") )
           }
@@ -232,7 +240,11 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       * This will generate an instance of the given model.
       */
     post {
-      entity(as[AlloyGenerationRequest]) { r =>
+      object AlloyRequest extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
+        case class AlloyGenerationRequest(arg: String, solver: String)
+        implicit val generateStuff = jsonFormat2(AlloyGenerationRequest.apply)
+      }
+      entity(as[AlloyRequest.AlloyGenerationRequest]) { r =>
         try {
           val reporter: A4Reporter = new A4Reporter()
 
@@ -271,5 +283,4 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       case a => a
     }
   }
-
 }

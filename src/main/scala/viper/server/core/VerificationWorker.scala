@@ -12,11 +12,10 @@ import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperConfig
 import viper.server.protocol.ReporterProtocol
-import viper.server.vsi.{Letter, TaskProtocol, VerificationTask}
+import viper.server.vsi.{Envelope, TaskProtocol, VerificationTask}
 import viper.silicon.SiliconFrontend
 import viper.silver.ast.{Position, _}
 import viper.silver.frontend.{DefaultStates, SilFrontend}
-import viper.silver.reporter
 import viper.silver.reporter.{Reporter, _}
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, VerificationResult, _}
@@ -34,19 +33,14 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
   override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be found."
 }
 
-
-case class SilverLetter(msg:Message) extends Letter
-
+case class SilverEnvelope(msg: Message) extends Envelope
 
 class VerificationWorker(private val viper_config: ViperConfig,
                          private val logger: Logger,
                          private val command: List[String],
                          private val program: Program)(implicit val ec: ExecutionContext) extends VerificationTask {
 
-
   private var backend: ViperBackend = _
-//  implicit val executionContext = ExecutionContext.global
-
 
   private def resolveCustomBackend(clazzName: String, rep: Reporter): Option[SilFrontend] = {
     (try {
@@ -72,7 +66,7 @@ class VerificationWorker(private val viper_config: ViperConfig,
     val name = s"ViperServer_$tag"
 
     def report(msg: Message): Unit = {
-      enqueueMessages(SilverLetter(msg))
+      enqueueMessages(new SilverEnvelope(msg))
     }
   }
 

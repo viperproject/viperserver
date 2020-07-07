@@ -5,17 +5,14 @@ import org.reactivestreams.Publisher
 
 object TaskProtocol {
   case object ClientRequest
-  case class ServerReport(msg: Letter)
+  case class ServerReport(msg: Envelope)
   case class FinalServerReport(success: Boolean)
 }
 
 object VerificationProtocol {
 
   // Main Actor requests Verification with File Name
-  case class Verify(task: Thread, queue: SourceQueueWithComplete[Letter], publisher: Publisher[Letter])
-
-  // Main Actor requests Verification with AST Program
-  // case class VerifyAst(config: List[String], reporter: viper.silver.reporter.Reporter, program: viper.silver.ast.Program)
+  case class Verify(task: Thread, queue: SourceQueueWithComplete[Envelope], publisher: Publisher[Envelope])
 
   // VerificationActor sends backend to Main Actor
   case class Backend(backend: viper.silver.verifier.Verifier)

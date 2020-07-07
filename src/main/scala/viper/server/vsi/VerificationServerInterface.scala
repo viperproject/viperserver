@@ -5,12 +5,12 @@ import java.util.NoSuchElementException
 import akka.{Done, NotUsed}
 import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.http.scaladsl.Http
+import akka.http.scaladsl.server.Route
 import akka.pattern.ask
 import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.stream.{ActorMaterializer, OverflowStrategy, QueueOfferResult}
 import akka.util.Timeout
 import org.reactivestreams.Publisher
-import viper.server.core.SilverLetter
 import viper.silver.reporter.Message
 
 import scala.collection.mutable
@@ -18,10 +18,14 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
-case class JobHandle(controller_actor: ActorRef,
-                     queue: SourceQueueWithComplete[Letter],
-                     publisher: Publisher[Letter])
 
+class VerificationServerException extends Exception
+case class JobNotFoundException() extends VerificationServerException
+
+case class VerificationJobHandler(id: Int)
+case class JobHandle(controller_actor: ActorRef,
+                     queue: SourceQueueWithComplete[Envelope],
+                     publisher: Publisher[Envelope])
 
 /** This class manages the verification jobs the server receives.
   */
@@ -52,13 +56,23 @@ class JobPool(val MAX_ACTIVE_JOBS: Int = 3){
   }
 }
 
-case class VerificationJobHandler(id: Int)
-
 /** This trait provides common functionality for verification servers such as
   *
   * Server state management
   * Server processes management
+  * (caching)
   *
+  * The server runs on Akka's actor system. This means that the entire server's state
+  * and process management are run by actors. The 3 actors in charge are:
+  *
+  *   1) Job Actor
+  *   2) Queue Actor
+  *   3) Terminator Actor
+  *
+  *  The first two manage individual verification processes. I.e., on initializeVerificationProcess()
+  *  and instance of each actor is created. The JobActor launches the actual VerificationTask, while
+  *  the QueueActor acts as a middleman for communication between a VerificationTask's backend and the
+  *  server. The Terminator Actor is in charge of terminating both processes and the server.
   */
 trait VerificationServerInterface {
 
@@ -67,7 +81,6 @@ trait VerificationServerInterface {
   implicit val materializer: ActorMaterializer = ActorMaterializer()
 
   protected val jobs = new JobPool()
-
 
   // --- Actor: Terminator ---
 
@@ -117,11 +130,8 @@ trait VerificationServerInterface {
 
   class JobActor(private val id: Int) extends Actor {
 
-    //Agnostic
     private var _verificationTask: Thread = _
 
-    // blocking
-    //Agnostic
     private def interrupt: Boolean = {
       if (_verificationTask != null && _verificationTask.isAlive) {
         _verificationTask.interrupt()
@@ -131,7 +141,7 @@ trait VerificationServerInterface {
       }
       false
     }
-    //Agnostic
+
     private def resetVerificationTask(): Unit = {
       if (_verificationTask != null && _verificationTask.isAlive) {
         _verificationTask.interrupt()
@@ -159,7 +169,7 @@ trait VerificationServerInterface {
         throw new Exception("Main Actor: unexpected message received: " + msg)
     }
 
-    private def startJob(task: Thread, queue: SourceQueueWithComplete[Letter], publisher: Publisher[Letter]): JobHandle = {
+    private def startJob(task: Thread, queue: SourceQueueWithComplete[Envelope], publisher: Publisher[Envelope]): JobHandle = {
       _verificationTask = task
       _verificationTask.start()
       println(s"Starting job #$id...")
@@ -171,10 +181,10 @@ trait VerificationServerInterface {
   // --- Actor: MessageActor ---
 
   object MessageActor {
-    def props(jid: Int, queue: SourceQueueWithComplete[Letter]): Props = Props(new MessageActor(jid, queue))
+    def props(jid: Int, queue: SourceQueueWithComplete[Envelope]): Props = Props(new MessageActor(jid, queue))
   }
 
-  class MessageActor(jid: Int, queue: SourceQueueWithComplete[Letter]) extends Actor {
+  class MessageActor(jid: Int, queue: SourceQueueWithComplete[Envelope]) extends Actor {
 
     override def receive: PartialFunction[Any, Unit] = {
       case TaskProtocol.ClientRequest =>
@@ -192,19 +202,18 @@ trait VerificationServerInterface {
     }
   }
 
+  protected def start()
+
   /** This method starts an individual verification process.
     *
-    * It accepts an instance of VerificationTask, which
-    *  - implements runnable
-    *  - provides a reference to a queue actor, allowing to communicate messages from the verification
-    *    process to the server.
+    * As such, it accepts an instance of a VerificationTask.
     */
   protected def initializeVerificationProcess(task:VerificationTask): VerificationJobHandler = {
     if (jobs.newJobsAllowed) {
       def createJob(new_jid: Int): Future[JobHandle] = {
         implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
         val job_actor = system.actorOf(JobActor.props(new_jid), s"job_actor_$new_jid")
-        val (queue, publisher) = Source.queue[Letter](10000, OverflowStrategy.backpressure)
+        val (queue, publisher) = Source.queue[Envelope](10000, OverflowStrategy.backpressure)
                                        .toMat(Sink.asPublisher(false))(Keep.both)
                                        .run()
         val message_actor = system.actorOf(MessageActor.props(new_jid, queue), s"queue_actor_$new_jid")
@@ -265,6 +274,17 @@ trait VerificationServerInterface {
   }
 }
 
+
+/** This trait is a generic wrapper for a any sort of verification a VerificationServer might
+  * work on.
+  *
+  * It has the following properties:
+  *  - implements runnable
+  *  - provides a reference to a queue actor.
+  *
+  *  The first serves the purpose of running the process concurrently. The second allows to
+  *  communicate from the verification process to the server.
+  * */
 abstract class VerificationTask()(implicit val executionContext: ExecutionContext) extends Runnable {
 
   protected var q_actor: ActorRef = _
@@ -277,7 +297,7 @@ abstract class VerificationTask()(implicit val executionContext: ExecutionContex
     * indicate whether or not the offer was successful. This method is blocking, as it waits for the successful
     * completion of such an offer.
     * */
-  protected def enqueueMessages(letter: Letter): Unit = {
+  protected def enqueueMessages(letter: Envelope): Unit = {
     var current_offer: Future[QueueOfferResult] = null
     implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
     val answer = q_actor ? TaskProtocol.ServerReport(letter)

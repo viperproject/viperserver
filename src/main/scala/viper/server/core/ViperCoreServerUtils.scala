@@ -3,13 +3,12 @@ package viper.server.core
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
-import viper.server.vsi.Letter
-import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessage, OverallSuccessMessage}
-import viper.silver.verifier.{AbstractError, VerificationError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
+import viper.silver.reporter.{EntityFailureMessage, Message}
+import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
-import scala.util.{Failure, Success}
+import scala.util.{Success}
 
 object ViperCoreServerUtils {
   implicit private val executionContext = ExecutionContext.global
@@ -25,8 +24,6 @@ object ViperCoreServerUtils {
     var messages_promise: Promise[List[Message]] = Promise[List[Message]]()
 
     override def receive: PartialFunction[Any, Unit] = {
-//      case SilverLetter(m) =>
-//        messages = messages :+ m
       case m: Message =>
         messages = messages :+ m
       case SeqActor.Result =>

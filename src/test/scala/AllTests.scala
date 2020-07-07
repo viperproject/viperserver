@@ -13,21 +13,23 @@ import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSup
 import akka.http.scaladsl.model.{StatusCodes, _}
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
 import akka.testkit.TestDuration
+
 import org.scalatest.{Matchers, WordSpec}
-import viper.server.{ViperHttpServer, ViperRequests, ViperServerRunner}
+
+import viper.server.{ViperHttpServer, ViperServerRunner}
+import viper.server.vsi.Requests._
 
 import scala.concurrent.duration._
 
 class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
 
   import scala.language.postfixOps
-  import ViperRequests._
   implicit val jsonStreamingSupport: JsonEntityStreamingSupport = EntityStreamingSupport.json()
   implicit val requestTimeput: RouteTestTimeout = RouteTestTimeout(10.second dilated)
 
   ViperServerRunner.main(Array())
 
-  private val _routsUnderTest = ViperServerRunner.httpServer.routes(ViperServerRunner.httpServer.logger)
+  private val _routsUnderTest = ViperServerRunner.newViperHttpServer.routes()
 
   def printRequestResponsePair(req: String, res: String): Unit = {
     println(s">>> ViperServer test request `$req` response in the following response: $res")

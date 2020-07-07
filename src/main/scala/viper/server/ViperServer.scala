@@ -1,11 +1,16 @@
 package viper.server
 
 import org.rogach.scallop.ScallopOption
+
 import scala.concurrent.ExecutionContext
 
 object ViperServerRunner {
 
-  var httpServer: ViperHttpServer = _
+//  var viperHttpBasic: ViperHttpBasic = _
+//  var viperHttpStandard: ViperHttpStandard = _
+//  var viperHttpCustom: ViperHttpCustom = _
+//  var viperHttpServer: ViperHttpServer = _
+  var newViperHttpServer: NewViperHttpServer = _
 
   /** Creates batch script to run a <a href="https://github.com/viperproject/viper_client">viper_client</a> written in python.
     * */
@@ -39,20 +44,66 @@ object ViperServerRunner {
     ver_writer.close()
   }
 
+//  def exampleBasic(args: Array[String]): Unit ={
+//    implicit val executionContext = ExecutionContext.global
+//    val config = new ViperConfig(args)
+//    config.verify()
+//
+//    viperHttpBasic = new ViperHttpBasic(config)
+//    viperHttpBasic.start(Some(viperHttpBasic.routes()))
+//
+//    writeBatchScripts(config.port, Some("sum_method.vpr"))
+//  }
+//
+//  def exampleStandard(args: Array[String]): Unit ={
+//    implicit val executionContext = ExecutionContext.global
+//    val config = new ViperConfig(args)
+//    config.verify()
+//
+//    viperHttpStandard = new ViperHttpStandard(config)
+//    viperHttpStandard.start(Some(viperHttpStandard.routes()))
+//
+//    writeBatchScripts(config.port, Some("sum_method.vpr"))
+//  }
+//
+//  def exampleCustomizable(args: Array[String]): Unit ={
+//    implicit val executionContext = ExecutionContext.global
+//    val config = new ViperConfig(args)
+//    config.verify()
+//
+//    viperHttpCustom = new ViperHttpCustom(config)
+//    viperHttpCustom.start(Some(viperHttpCustom.routes()))
+//
+//    writeBatchScripts(config.port, Some("sum_method.vpr"))
+//  }
+
   /** Start VCS in HTTP mode.
     * */
   def startHttpServer(args: Array[String]): Unit ={
+//    implicit val executionContext = ExecutionContext.global
+//    val config = new ViperConfig(args)
+//    config.verify()
+//
+//    viperHttpServer = new ViperHttpServer(config)
+//    viperHttpServer.start(Some(viperHttpServer.routes()))
+//
+//    writeBatchScripts(config.port, Some("sum_method.vpr"))
+  }
+
+  /** Start VCS in HTTP mode.
+    * */
+  def startNewHttpServer(args: Array[String]): Unit ={
     implicit val executionContext = ExecutionContext.global
     val config = new ViperConfig(args)
     config.verify()
 
-    httpServer = new ViperHttpServer(config)
-    httpServer.start()
+    newViperHttpServer = new NewViperHttpServer(config)
+    newViperHttpServer.start()
 
     writeBatchScripts(config.port, Some("sum_method.vpr"))
   }
 
   def main(args: Array[String]): Unit = {
-    startHttpServer(args)
+    startNewHttpServer(args)
   } // method main
 }

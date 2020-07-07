@@ -1,5 +1,4 @@
 package viper.server.vsi
 
-trait Letter {
-
+trait Envelope{
 }
