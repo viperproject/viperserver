@@ -1,7 +1,6 @@
 package viper.server
 
 import akka.NotUsed
-import akka.actor.ActorRef
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshalling.ToResponseMarshallable
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
@@ -22,7 +21,7 @@ import viper.server.protocol.ViperIDEProtocol.{AlloyGenerationRequestComplete, A
 import viper.silver.reporter.Message
 import viper.server.utility.AstGenerator
 import viper.server.vsi.Requests.CacheResetRequest
-import viper.server.vsi.{Envelope, HttpVerificationServerInterface, JobHandle, JobNotFoundException, Requests, VerificationJobHandler}
+import viper.server.vsi.{Envelope, HttpVerificationServerInterface, JobNotFoundException, Requests, VerificationJobHandler}
 
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
@@ -60,10 +59,11 @@ class NewViperHttpServer(private var _config: ViperConfig) extends ViperCoreServ
 
     val arg_list = getArgListFromArgString(vr.arg)
     val file: String = arg_list.last
+    val arg_list_partial = arg_list.dropRight(1)
     val astGen = new AstGenerator(logger)
     val ast_option = astGen.generateViperAst(file)
 
-    val backend_option: Option[ViperBackendConfig] = arg_list match {
+    val backend_option: Option[ViperBackendConfig] = arg_list_partial match {
       case "silicon" :: args => Some(SiliconConfig(args))
       case "carbon" :: args => Some(CarbonConfig(args))
       case custom :: args => Some(CustomConfig(args))

@@ -90,14 +90,14 @@ trait HttpVerificationServerInterface extends VerificationServerInterface
           // Found a job with this jid.
           onComplete(handle_future) {
             case Success(handle) =>
-              _termActor ! Terminator.WatchJobQueue(jid, handle)
               val s: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
+              _termActor ! Terminator.WatchJobQueue(jid, handle)
               complete(unpackMessages(s))
             case Failure(error) =>
               complete(verificationRequestRejection(jid, error))
           }
         case _ =>
-          complete(verificationRequestRejection(jid, new JobNotFoundException()))
+          complete(verificationRequestRejection(jid, JobNotFoundException()))
       }
     }
   } ~ path("discard" / IntNumber) { jid =>

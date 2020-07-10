@@ -4,8 +4,6 @@ import java.util.NoSuchElementException
 
 import akka.NotUsed
 import akka.actor.ActorRef
-import akka.http.scaladsl.Http
-import akka.http.scaladsl.server.Route
 import akka.stream.scaladsl.{Sink, Source}
 import viper.server.ViperConfig
 import viper.server.core.ViperBackendConfigs._
@@ -85,9 +83,10 @@ class ViperCoreServer(private var _config: ViperConfig) extends VerificationServ
 
 
   override def successHandleCallback(handle: JobHandle, clientActor: ActorRef): Unit = {
-    val src_letter: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
-    val src_msg: Source[Message, NotUsed] = src_letter.map({
+    val src_envelope: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
+    val src_msg: Source[Message, NotUsed] = src_envelope.map({
       case SilverEnvelope(msg) =>
+        println(s"this is a message during tranlastion: $msg")
         msg
     })
     src_msg.runWith(Sink.actorRef(clientActor, Success))

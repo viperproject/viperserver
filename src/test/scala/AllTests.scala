@@ -13,10 +13,9 @@ import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSup
 import akka.http.scaladsl.model.{StatusCodes, _}
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
 import akka.testkit.TestDuration
-
 import org.scalatest.{Matchers, WordSpec}
 
-import viper.server.{ViperHttpServer, ViperServerRunner}
+import viper.server.ViperServerRunner
 import viper.server.vsi.Requests._
 
 import scala.concurrent.duration._

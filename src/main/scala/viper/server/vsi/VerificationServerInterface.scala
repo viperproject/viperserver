@@ -1,17 +1,13 @@
 package viper.server.vsi
 
-import java.util.NoSuchElementException
-
-import akka.{Done, NotUsed}
+import akka.{Done}
 import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.server.Route
 import akka.pattern.ask
 import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.stream.{ActorMaterializer, OverflowStrategy, QueueOfferResult}
 import akka.util.Timeout
 import org.reactivestreams.Publisher
-import viper.silver.reporter.Message
 
 import scala.collection.mutable
 import scala.concurrent.duration._
@@ -259,6 +255,10 @@ trait VerificationServerInterface {
 
   protected def successHandleCallback(handle: JobHandle, clientActor: ActorRef)
 
+  /** A verification process ends after the results are retrieved.
+    *
+    * This should be done providing an actor that can receive the envelopes stored in the Queue actor's source queue
+    */
   protected def terminateVerificationProcess(jid: Int, clientActor: ActorRef): Unit ={
     jobs.lookupJob(jid) match {
       case Some(handle_future) =>
@@ -268,8 +268,7 @@ trait VerificationServerInterface {
             _termActor ! Terminator.WatchJobQueue(jid, handle)
           case Failure(e) =>  clientActor ! e
         })
-      case None =>
-        throw new NoSuchElementException(s"The verification job #$jid does not exist.")
+      case None => clientActor ! JobNotFoundException()
     }
   }
 }
