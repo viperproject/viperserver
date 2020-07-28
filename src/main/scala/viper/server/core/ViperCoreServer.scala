@@ -86,7 +86,6 @@ class ViperCoreServer(private var _config: ViperConfig) extends VerificationServ
     val src_envelope: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
     val src_msg: Source[Message, NotUsed] = src_envelope.map({
       case SilverEnvelope(msg) =>
-        println(s"this is a message during tranlastion: $msg")
         msg
     })
     src_msg.runWith(Sink.actorRef(clientActor, Success))

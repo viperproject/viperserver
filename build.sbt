@@ -45,6 +45,7 @@ lazy val server = (project in file("."))
 
         // Run settings
         run / javaOptions += "-Xss128m",
+        run / connectInput := true,
 
         // Test settings
         fork := true,

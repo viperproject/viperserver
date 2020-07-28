@@ -1,155 +1,58 @@
-/**
-  * This Source Code Form is subject to the terms of the Mozilla Public
-  * License, v. 2.0. If a copy of the MPL was not distributed with this
-  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
-  *
-  * Copyright (c) 2011-2019 ETH Zurich.
-  */
-
 package viper.server.core
 
 import ch.qos.logback.classic.Logger
-import viper.silver.ast._
+import viper.server.vsi
+import viper.server.vsi.VerificationServerInterfaceCache
+import viper.server.vsi.CacheEntry
+import viper.silver.ast.{Cached, ConsInfo, Forall, Hashable, Method, Node, Program}
+import viper.silver.logger.SilentLogger
 import viper.silver.utility.CacheHelper
 import viper.silver.verifier.{AbstractVerificationError, errors}
 
 import scala.collection.mutable
 
-object ViperCache {
-//  /**
-//    * At the top level we store file caches via keys (backend, file) -> String.
-//    *
-//    * Each file cache is a map of the form (hash -> List[CacheEntry]), because
-//    *  we potentially store many verification results for each method.
-//    */
-  /** The cache infrastructure is a nested MutableMap. They can be described as follows:
-    * (FileName -> (EntityHashString -> CacheEntries))
-    *
-    * The inner map is usually referred to as the fileCache. As the name indicates, it stores,
-    * for each file, a number of hashes and corresponding cache entries.
-    */
-  private val _cache = collection.mutable.Map[String, collection.mutable.Map[String, List[CacheEntry]]]()
+class NewViperCache(private var _logger: Logger = SilentLogger().get,
+                    private var _backendSpecificCache: Boolean = false)
+  extends VerificationServerInterfaceCache {
 
-  /**
-    * This map contains priorly computed hashes of AST nodes for which the hash is not already computed lazily.
-    * This optimization might be beneficial because not all instances of [[Node]] are [[Hashable]].
-    * */
   private val _node_hash_memo = mutable.Map.empty[String, mutable.Map[Node, String]]
 
-  override def toString: String = _cache.toString
-
-
-  //Specific
-  private var _backendSpecificCache: Boolean = false
-
-  //Specific
-  var _logger: Logger = _
+  def backendSpecificCache: Boolean = _backendSpecificCache
   def logger: Logger = _logger
 
-  //Specific
-  def initialize(logger: Logger, backendSpecificCache: Boolean): Unit = {
-    _backendSpecificCache = backendSpecificCache
-    _logger = logger
-  }
-
-  // ===== (GENERIC) UTILITY METHODS ==================================================================
-
-  /** Key constructor for the cache.
-    *
-    *
-    *
-    * */
-  private def getKey(backendName: String, file: String): String = (if (_backendSpecificCache) backendName else "") + file
-
-  /** Return contents of the cache corresponding to a file and method.
-    *
-    * If the file has cache associated and the methods hash is in that cache return the cached entries
-    * Else, return empty list.
-    * */
-  def get(backendName: String, file: String, m: Method): List[CacheEntry] = {
-    assert(m.entityHash != null)
-    val key = getKey(backendName, file)
-
-    _cache.get(key) match {
-      case Some(fileCache) =>
-        fileCache.get(m.entityHash) match {
-          case Some(cache_entry_list) => cache_entry_list
-          case None => Nil
-        }
-      case None => Nil
-    }
-  }
-
-  /** Utility function to check whether the cache contains cache entries for a given file
-    * and.
-    * */
-  def contains(backendName: String, file: String, m: Method): Boolean = {
-    get(backendName, file, m).nonEmpty
-  }
-
-  /** Updates the cache's content
-    *
-    * Given a file, add a new cache entry to its fileCache. Note that a cacheEntry is specific to a method.
-    * This means that the update will either add a new pair (Hash, cacheEntries) or add a new one. The
-    * cacheEntry then contains (a mapped version of) that method's verification errors.
-    * */
-  def update(backendName: String, file: String, p: Program, m: Method, errors: List[AbstractVerificationError]): List[CacheEntry] = {
-    assert(m.entityHash != null)
-    implicit val key: String = getKey(backendName, file)
-
-    _cache.get(key) match {
-      case Some(fileCache) =>
-        // If a fileChace exists for given file ...
-        try {
-          // ... map the errors to localizedErrors and wrap them into a cacheEntry
-          val localizedErrors = errors.map(err =>
-            LocalizedError(err,
-              getAccessPath(err.offendingNode, p),
-              getAccessPath(err.reason.offendingNode, p),
-              backendName))
-          val new_entry = new CacheEntry(localizedErrors, p.dependencyHashMap(m))
-
-          //get exisitng list of entries (or an empty list, if none exist yet) and prepend new entry
-          val existing_entries = fileCache.getOrElse(m.entityHash, Nil)
-          val updated_cacheEntries = new_entry :: existing_entries
-
-          //set new hash/cacheEntries pair in map
-          fileCache(m.entityHash) = updated_cacheEntries
-          updated_cacheEntries
-        } catch {
-          case e: Exception =>
-            logger.error("Error getting the access path; the errors could not be stored in the cache: " + e )
-            fileCache(m.entityHash)
-        }
-      case None =>
-        //if file not in cache yet, create new map entry for it, restart the function
-        _cache += (key -> collection.mutable.Map[String, List[CacheEntry]]())
-        update(backendName, file, p, m, errors)
-    }
-  }
-
- /** Removes a specific a file from the cache
-   *
-   * I.e., removes the file and its corresponding file cache
-   * */
-  def forgetFile(backendName: String, file: String): Option[String] = {
+  override def forgetFile(backendName: String, file: String): Option[String] = {
     val key = getKey(backendName, file)
     _node_hash_memo.remove(key)
-
     _cache.remove(key) match {
-      case Some(_) => Some(key) //If file removed return that file's name
+      case Some(_) => Some(key)
       case None => None
     }
   }
 
-  /** Clear all the caches.
-    * */
-  def resetCache(): Unit = {
+  override def resetCache(): Unit = {
     _node_hash_memo.clear()
     _cache.clear()
   }
 
-  // ===== (SPECIFIC) UTILITY METHODS ==================================================================
+  override def getKey(backendName: String, file: String): String = {
+    (if (_backendSpecificCache) backendName else "") + file
+  }
+
+  def getMethodHash(m: Method): String = {
+    m.entityHash
+  }
+
+  def createCacheEntry(backendName: String, file: String, p: Program, m: Method, errors: List[AbstractVerificationError]): CacheEntry = {
+    implicit val key: String = getKey(backendName, file)
+
+    // map the errors to localizedErrors and wrap them into a cacheEntry
+    val localizedErrors = errors.map(err =>
+      LocalizedError(err,
+        getAccessPath(err.offendingNode, p),
+        getAccessPath(err.reason.offendingNode, p),
+        backendName))
+    new ViperCacheEntry(localizedErrors, p.dependencyHashMap(m))
+  }
 
   /**
     * This method is used for computing unique-ish hashes of AST nodes.
@@ -219,7 +122,7 @@ object ViperCache {
       // Both nodes are equal, return an empty Path (I.e., some empty list)
       Some(Nil)
     } else if (nodeToFind.isInstanceOf[Forall] && curr.isInstanceOf[Forall]
-               && posEquals(nodeToFind, curr.asInstanceOf[Forall].autoTrigger)) {
+      && posEquals(nodeToFind, curr.asInstanceOf[Forall].autoTrigger)) {
       // Special case for auto triggers
       Some(Nil)
     } else {
@@ -254,15 +157,7 @@ object ViperCache {
     }
   }
 
-  /** Removes a method's body
-    *
-    * Returns a new copy of the method with body field null.
-    * */
-  def removeBody(m: Method): Method = m.copy(body = None)(m.pos, ConsInfo(m.info, Cached), m.errT)
-
   private def str(n: Node)(implicit key: String) = s"(${n.toOneLinerStr()} -> ${getHashForNode(n).hashCode.toHexString})"
-  private def hex(h: String) = h.hashCode.toHexString
-
 
   /** Finds a node in a program by traversing the provided accessPath
     *
@@ -298,11 +193,13 @@ object ViperCache {
       None
     }
   }
+
+  def removeBody(m: Method): Method = m.copy(body = None)(m.pos, ConsInfo(m.info, Cached), m.errT)
 }
 
-/** A cache entry holds a [[LocalizedError]] and a hash [[String]]
+/** A cache entry holds an errors of type [[LocalizedError]] and hashes of type [[String]]
   * */
-class CacheEntry(val errors: List[LocalizedError], val dependencyHash: String) {
+class ViperCacheEntry(val errors: List[LocalizedError], val dependencyHash: String) extends vsi.CacheEntry {
   override def toString = s"CacheEntry(errors=$errors, dependencyHash=${dependencyHash.hashCode.toHexString})"
 }
 
@@ -319,4 +216,3 @@ case class LocalizedError(error: AbstractVerificationError, accessPath: List[Str
 class AccessPath(val accessPath: List[Number]) {
   override def toString = s"AccessPath(accessPath=${accessPath.map(_.hashCode.toHexString)})"
 }
-

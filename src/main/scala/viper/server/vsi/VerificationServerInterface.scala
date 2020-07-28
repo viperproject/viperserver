@@ -274,7 +274,7 @@ trait VerificationServerInterface {
 }
 
 
-/** This trait is a generic wrapper for a any sort of verification a VerificationServer might
+/** This class is a generic wrapper for a any sort of verification a VerificationServer might
   * work on.
   *
   * It has the following properties:

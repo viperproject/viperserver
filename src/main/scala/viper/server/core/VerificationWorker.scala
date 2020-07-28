@@ -255,20 +255,21 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
         _frontend.reporter report OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime)
       // TODO: Think again about where to detect and trigger SymbExLogging
       case Some(f@Failure(_)) =>
-        _frontend.reporter report OverallFailureMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime,
           // Cached errors will be reported as soon as they are retrieved from the cache.
-          Failure(f.errors.filter { e => !e.cached }))
+        _frontend.reporter report OverallFailureMessage(_frontend.getVerifierName,
+                                                        System.currentTimeMillis() - _frontend.startTime,
+                                                        Failure(f.errors.filter { e => !e.cached }))
     }
     _frontend.verifier.stop()
   }
 
-  /*
-  Tries to determine which of the given errors are caused by the given method.
-  If an error's scope field is set, this information is used.
-  Otherwise, if both the given method and the error have line/column position information, we calculate if the error's
-  position is inside the method.
-  If at least one error has no scope set and no position, or the method's position is not set, we cannot determine
-  if the error belongs to the method and return None.
+  /**
+    * Tries to determine which of the given errors are caused by the given method.
+    * If an error's scope field is set, this information is used.
+    * Otherwise, if both the given method and the error have line/column position information, we calculate if the error's
+    * position is inside the method.
+    * If at least one error has no scope set and no position, or the method's position is not set, we cannot determine
+    * if the error belongs to the method and return None.
    */
   private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): Option[List[AbstractVerificationError]] = {
     val methodPos = m.pos match {
