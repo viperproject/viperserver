@@ -1,24 +1,31 @@
 package viper.server.core
 
 import ch.qos.logback.classic.Logger
-import viper.server.vsi
 import viper.server.vsi.VerificationServerInterfaceCache
 import viper.server.vsi.CacheEntry
 import viper.silver.ast.{Cached, ConsInfo, Forall, Hashable, Method, Node, Program}
-import viper.silver.logger.SilentLogger
 import viper.silver.utility.CacheHelper
 import viper.silver.verifier.{AbstractVerificationError, errors}
 
 import scala.collection.mutable
 
-class NewViperCache(private var _logger: Logger = SilentLogger().get,
-                    private var _backendSpecificCache: Boolean = false)
+object NewViperCache
   extends VerificationServerInterfaceCache {
 
   private val _node_hash_memo = mutable.Map.empty[String, mutable.Map[Node, String]]
 
-  def backendSpecificCache: Boolean = _backendSpecificCache
-  def logger: Logger = _logger
+    //Specific
+    private var _backendSpecificCache: Boolean = false
+
+    //Specific
+    var _logger: Logger = _
+    def logger: Logger = _logger
+
+    //Specific
+    def initialize(logger: Logger, backendSpecificCache: Boolean): Unit = {
+      _backendSpecificCache = backendSpecificCache
+      _logger = logger
+    }
 
   override def forgetFile(backendName: String, file: String): Option[String] = {
     val key = getKey(backendName, file)
@@ -42,7 +49,10 @@ class NewViperCache(private var _logger: Logger = SilentLogger().get,
     m.entityHash
   }
 
-  def createCacheEntry(backendName: String, file: String, p: Program, m: Method, errors: List[AbstractVerificationError]): CacheEntry = {
+  def createCacheEntry(backendName: String,
+                       file: String, p: Program,
+                       m: Method,
+                       errors: List[AbstractVerificationError]): ViperCacheEntry = {
     implicit val key: String = getKey(backendName, file)
 
     // map the errors to localizedErrors and wrap them into a cacheEntry
@@ -199,7 +209,7 @@ class NewViperCache(private var _logger: Logger = SilentLogger().get,
 
 /** A cache entry holds an errors of type [[LocalizedError]] and hashes of type [[String]]
   * */
-class ViperCacheEntry(val errors: List[LocalizedError], val dependencyHash: String) extends vsi.CacheEntry {
+class ViperCacheEntry(val errors: List[LocalizedError], val dependencyHash: String) extends CacheEntry {
   override def toString = s"CacheEntry(errors=$errors, dependencyHash=${dependencyHash.hashCode.toHexString})"
 }
 

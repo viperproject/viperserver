@@ -9,7 +9,7 @@ import scala.concurrent.ExecutionContext
 
 object ViperServerRunner {
 
-  var newViperHttpServer: NewViperHttpServer = _
+  var newViperHttpServer: ViperHttpServer = _
 
   /** Start VCS in HTTP mode.
     * */
@@ -18,7 +18,7 @@ object ViperServerRunner {
     val config = new ViperConfig(args)
     config.verify()
 
-    newViperHttpServer = new NewViperHttpServer(config)
+    newViperHttpServer = new ViperHttpServer(config)
     newViperHttpServer.start()
   }
 

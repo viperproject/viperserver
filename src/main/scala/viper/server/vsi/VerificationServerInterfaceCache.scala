@@ -1,12 +1,6 @@
 package viper.server.vsi
 
 import ch.qos.logback.classic.Logger
-import viper.server.core.ViperCache.{_backendSpecificCache, _cache, _node_hash_memo, get, getHashForNode}
-import viper.silver.ast.{Method, Node, Program}
-import viper.silver.verifier.AbstractVerificationError
-
-import scala.collection.mutable
-
 import scala.collection.mutable.{Map => MutableMap}
 
 

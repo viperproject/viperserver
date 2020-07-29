@@ -329,7 +329,9 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
           val errorsToCacheMaybe = getMethodSpecificErrors(m, errors)
           errorsToCacheMaybe match {
             case Some(errorsToCache) => {
-              ViperCache.update(backendName, file, prog, m, errorsToCache) match {
+              val method_hash = NewViperCache.getMethodHash(m)
+              val cache_entries = NewViperCache.createCacheEntry(backendName, file, prog, m, errorsToCache)
+              NewViperCache.update(backendName, file, method_hash, cache_entries) match {
                 case e :: es =>
                   _frontend.logger.debug(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
                 case Nil =>
@@ -339,7 +341,9 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
             case None =>
           }
         case Success =>
-          ViperCache.update(backendName, file, prog, m, Nil) match {
+          val method_hash = NewViperCache.getMethodHash(m)
+          val cache_entries = NewViperCache.createCacheEntry(backendName, file, prog, m, Nil)
+          NewViperCache.update(backendName, file, method_hash, cache_entries) match {
             case e :: es =>
               _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
             case Nil =>
@@ -368,7 +372,8 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
 
     //read errors from cache
     prog.methods.foreach((m: Method) => {
-      ViperCache.get(backendName, file, m) match {
+      val methodHash = NewViperCache.getMethodHash(m)
+      NewViperCache.get(backendName, file, methodHash).asInstanceOf[List[ViperCacheEntry]] match {
         case Nil =>
           methodsToVerify += m
         case cache_entry_list =>
@@ -382,7 +387,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
               try {
                 val cachedErrors: Seq[VerificationError] = updateErrorLocation(prog, m, matched_entry)
                 errors ++= cachedErrors
-                methodsToCache += ViperCache.removeBody(m)
+                methodsToCache += NewViperCache.removeBody(m)
                 //Send the intermediate results to the user as soon as they are available. Approximate the time with zero.
                 if ( cachedErrors.isEmpty ) {
                   _frontend.reporter.report(EntitySuccessMessage(_frontend.getVerifierName, m, 0))
@@ -401,7 +406,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     (methodsToVerify.toList, methodsToCache.toList, errors.toList)
   }
 
-  private def updateErrorLocation(p: Program, m: Method, cacheEntry: CacheEntry): List[VerificationError] = {
+  private def updateErrorLocation(p: Program, m: Method, cacheEntry: ViperCacheEntry): List[VerificationError] = {
     cacheEntry.errors.map(updateErrorLocation(p, m, _))
   }
 
@@ -410,8 +415,8 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
 
     //get the corresponding offending node in the new AST
     //TODO: are these casts ok?
-    val offendingNode = ViperCache.getNode(backendName, file, p, error.accessPath, error.error.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
-    val reasonOffendingNode = ViperCache.getNode(backendName, file, p, error.reasonAccessPath, error.error.reason.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
+    val offendingNode = NewViperCache.getNode(backendName, file, p, error.accessPath, error.error.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
+    val reasonOffendingNode = NewViperCache.getNode(backendName, file, p, error.reasonAccessPath, error.error.reason.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
 
     if (offendingNode.isEmpty || reasonOffendingNode.isEmpty) {
       throw new Exception(s"Cache error: no corresponding node found for error: $error")
