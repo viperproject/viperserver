@@ -8,13 +8,13 @@
 
 package viper.server
 
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
+import scala.concurrent.{Future}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 import akka.NotUsed
 import akka.pattern.ask
 import akka.util.Timeout
-import akka.actor.{ActorSystem, PoisonPill}
+import akka.actor.{PoisonPill}
 import akka.stream.scaladsl.Source
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
@@ -24,7 +24,7 @@ import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
 import viper.server.ViperServerProtocol._
 import viper.server.ViperIDEProtocol._
 import viper.silver.reporter._
-import viper.silver.logger.{ViperLogger, ViperStdOutLogger}
+import viper.silver.logger.{ViperLogger}
 import ViperRequests.{AlloyGenerationRequest, CacheResetRequest, VerificationRequest}
 
 import scala.util.Try
@@ -248,7 +248,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
             complete( AlloyGenerationRequestReject(s"Model could not be satisfied.") )
           }
         } catch {
-          case e => complete( AlloyGenerationRequestReject(s"An exception occurred during model-generation:\n${e.toString}") )
+          case e: Throwable => complete( AlloyGenerationRequestReject(s"An exception occurred during model-generation:\n${e.toString}") )
         }
       }
     }

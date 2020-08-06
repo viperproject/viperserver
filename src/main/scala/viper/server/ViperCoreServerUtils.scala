@@ -1,15 +1,13 @@
 package viper.server
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
-import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
+import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
 import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessage, OverallSuccessMessage}
-import viper.silver.verifier.{AbstractError, VerificationError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
+import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
-import scala.util.{Failure, Success}
 
 object ViperCoreServerUtils {
   implicit private val executionContext = ExecutionContext.global
@@ -52,6 +50,8 @@ object ViperCoreServerUtils {
     * Deletes the jobhandle on completion.
     */
   def getMessagesFuture(core: ViperCoreServer, jid: Int)(implicit actor_system: ActorSystem): Future[List[Message]] = {
+    import scala.language.postfixOps
+
     val actor = actor_system.actorOf(SeqActor.props())
     core.streamMessages(jid, actor)
     implicit val askTimeout: Timeout = Timeout(core.config.actorCommunicationTimeout() milliseconds)
