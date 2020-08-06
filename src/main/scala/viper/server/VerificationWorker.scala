@@ -403,9 +403,9 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
                 methodsToCache += ViperCache.removeBody(m)
                 //Send the intermediate results to the user as soon as they are available. Approximate the time with zero.
                 if ( cachedErrors.isEmpty ) {
-                  _frontend.reporter.report(EntitySuccessMessage(_frontend.getVerifierName, m, 0))
+                  _frontend.reporter.report(EntitySuccessMessage(_frontend.getVerifierName, m, 0, true))
                 } else {
-                  _frontend.reporter.report(EntityFailureMessage(_frontend.getVerifierName, m, 0, Failure(cachedErrors)))
+                  _frontend.reporter.report(EntityFailureMessage(_frontend.getVerifierName, m, 0, Failure(cachedErrors), true))
                 }
               } catch {
                 case e: Exception =>
