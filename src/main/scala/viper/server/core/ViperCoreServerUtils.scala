@@ -67,7 +67,7 @@ object ViperCoreServerUtils {
 
       val abstract_errors: Seq[AbstractError] = msgs.foldLeft(Seq(): Seq[AbstractError]) {(errors, msg) =>
         msg match {
-          case EntityFailureMessage(_, _, _, VerificationFailure(errs)) => errs ++ errors
+          case EntityFailureMessage(_, _, _, VerificationFailure(errs), _) => errs ++ errors
           case _ => errors
         }
       }

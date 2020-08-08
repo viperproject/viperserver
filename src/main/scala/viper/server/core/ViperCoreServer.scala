@@ -83,6 +83,7 @@ class ViperCoreServer(private var _config: ViperConfig) extends VerificationServ
   }
 
 
+
   override def successHandleCallback(handle: JobHandle, clientActor: ActorRef): Unit = {
     val src_envelope: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
     val src_msg: Source[Message, NotUsed] = src_envelope.map({

@@ -1,31 +1,31 @@
 package viper.server.core
 
 import ch.qos.logback.classic.Logger
-import viper.server.vsi.VerificationServerInterfaceCache
-import viper.server.vsi.CacheEntry
+import viper.server.vsi.{CacheEntry, VerificationServerInterfaceCache}
 import viper.silver.ast.{Cached, ConsInfo, Forall, Hashable, Method, Node, Program}
 import viper.silver.utility.CacheHelper
 import viper.silver.verifier.{AbstractVerificationError, errors}
 
 import scala.collection.mutable
 
-object NewViperCache
-  extends VerificationServerInterfaceCache {
+object NewViperCache extends VerificationServerInterfaceCache {
 
+  private var _backendSpecificCache: Boolean = false
   private val _node_hash_memo = mutable.Map.empty[String, mutable.Map[Node, String]]
 
-    //Specific
-    private var _backendSpecificCache: Boolean = false
+  var _logger: Logger = _
+  def logger: Logger = _logger
 
-    //Specific
-    var _logger: Logger = _
-    def logger: Logger = _logger
+  def initialize(logger: Logger, backendSpecificCache: Boolean): Unit = {
+    _backendSpecificCache = backendSpecificCache
+    _logger = logger
+  }
 
-    //Specific
-    def initialize(logger: Logger, backendSpecificCache: Boolean): Unit = {
-      _backendSpecificCache = backendSpecificCache
-      _logger = logger
-    }
+  type Preimage = ViperAst
+  type Hash = String
+  def hashFunction(in: ViperAst): String = {
+    in.m.entityHash
+  }
 
   override def forgetFile(backendName: String, file: String): Option[String] = {
     val key = getKey(backendName, file)
@@ -41,20 +41,16 @@ object NewViperCache
     _cache.clear()
   }
 
-  override def getKey(backendName: String, file: String): String = {
+  override def getKey(file: String, backendName: String): String = {
     (if (_backendSpecificCache) backendName else "") + file
-  }
-
-  def getMethodHash(m: Method): String = {
-    m.entityHash
   }
 
   def createCacheEntry(backendName: String,
                        file: String, p: Program,
                        m: Method,
                        errors: List[AbstractVerificationError]): ViperCacheEntry = {
-    implicit val key: String = getKey(backendName, file)
 
+    implicit val key: String = getKey(backendName, file)
     // map the errors to localizedErrors and wrap them into a cacheEntry
     val localizedErrors = errors.map(err =>
       LocalizedError(err,
@@ -122,7 +118,7 @@ object NewViperCache
     }
   }
 
-  /** Computes an path from one Node to another.
+  /** Computes a path from one Node to another.
     *
     * The returned strings are node hashes. The List of string therefore is the list of nodes (hashes)
     * that are found on the path from the current node to the sought node.
@@ -156,7 +152,7 @@ object NewViperCache
 
   /** Computes a node's path through the program.
     *
-    * Note that a program is itseld a (root-) node.
+    * Note that a program is itself a (root-) node.
     * */
   def getAccessPath(nodeToFind: Node, p: Program)(implicit key: String): List[String] = {
     logger.trace(s"Computing access path for node ${nodeToFind.toOneLinerStr()}...")
@@ -209,14 +205,20 @@ object NewViperCache
 
 /** A cache entry holds an errors of type [[LocalizedError]] and hashes of type [[String]]
   * */
-class ViperCacheEntry(val errors: List[LocalizedError], val dependencyHash: String) extends CacheEntry {
+class ViperCacheEntry(val errors: List[LocalizedError],
+                      val dependencyHash: String) extends CacheEntry {
+
   override def toString = s"CacheEntry(errors=$errors, dependencyHash=${dependencyHash.hashCode.toHexString})"
 }
 
 /** A localized error contains the Abstract Verification Error, paths
   *
   * */
-case class LocalizedError(error: AbstractVerificationError, accessPath: List[String], reasonAccessPath: List[String], backendName: String) {
+case class LocalizedError(error: AbstractVerificationError,
+                          accessPath: List[String],
+                          reasonAccessPath: List[String],
+                          backendName: String) {
+
   override def toString = s"LocalizedError(error=${error.loggableMessage}, accessPath=${accessPath.map(_.hashCode.toHexString)}, reasonAccessPath=${reasonAccessPath.map(_.hashCode.toHexString)}, backendName=$backendName)"
 }
 
@@ -224,5 +226,8 @@ case class LocalizedError(error: AbstractVerificationError, accessPath: List[Str
   *
   * */
 class AccessPath(val accessPath: List[Number]) {
+
   override def toString = s"AccessPath(accessPath=${accessPath.map(_.hashCode.toHexString)})"
 }
+
+case class ViperAst(p: Program, m: Method)

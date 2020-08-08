@@ -6,27 +6,43 @@ import scala.collection.mutable.{Map => MutableMap}
 
 trait VerificationServerInterfaceCache {
 
-  /** The cache infrastructure is a nested MutableMap. They can be described as follows:
-    * (FileName -> (hashString -> cacheEntries))
+  override def toString: String = _cache.toString
+
+  /** This abstract types define a generic version of a cache.
+    *
+    * The [[Preimage]] is the Input type to the hash function, [[Hash]] the output. Typically, a
+    * Preimage would be overriden to some notion of an AST while the Hash would likely be a String.
+    * */
+  type Preimage
+  type Hash
+  def hashFunction(in: Preimage): Hash
+
+  /** The cache infrastructure is a nested, mutable Map. The maps can be described in terms of their
+    * key and values as follows:  (FileName -> (hashString -> cacheEntries)).
     *
     * The inner map is referred to as the fileCache. As the name indicates, it stores,
     * for each file, a number of hashes and corresponding cache entries.
     */
-  protected val _cache = MutableMap[String, MutableMap[String, List[CacheEntry]]]()
+  type FileCash = MutableMap[Hash, List[CacheEntry]]
+  protected val _cache = MutableMap[String, FileCash]()
 
-  override def toString: String = _cache.toString
+  /** This is a utility function that generates Filenames for specific backends.
+    *
+    * This can be used when extending VsiCache as a single object while verifying files with
+    * various backends. In that case this method need overriding to produce the desired tag.
+    * */
+  protected def getKey(file: String, backendName: String = ""): String = file
 
-  def contains(backendName: String, file: String, hash: String): Boolean = {
-    get(backendName, file, hash).nonEmpty
+  def contains(backendName: String, file: String, p: Preimage): Boolean = {
+    get(backendName, file, p).nonEmpty
   }
 
-  protected def getKey(backendName: String, file: String): String = file
-
-  def get(backendName: String, file: String, hash: String): List[CacheEntry] = {
+  def get(backendName: String, file: String, key: Preimage): List[CacheEntry] = {
+    val hash: Hash = hashFunction(key)
     assert(hash != null)
-    val key = getKey(backendName, file)
+    val file_key = getKey(backendName, file)
 
-    _cache.get(key) match {
+    _cache.get(file_key) match {
       case Some(fileCache) =>
         fileCache.get(hash) match {
           case Some(cache_entry_list) => cache_entry_list
@@ -36,15 +52,16 @@ trait VerificationServerInterfaceCache {
     }
   }
 
-  //consider making users pass cache entries directly!
-  def update(backendName: String, file: String, hash: String, cacheEntry: CacheEntry): List[CacheEntry] = {
+  def update(backendName: String, file: String, key: Preimage, cacheEntry: CacheEntry): List[CacheEntry] = {
+    val hash: Hash = hashFunction(key)
     assert(hash != null)
-    implicit val key: String = getKey(backendName, file)
+    implicit val fileKey: String = getKey(backendName, file)
 
-    _cache.get(key) match {
+    _cache.get(fileKey) match {
       case Some(fileCache) =>
         // If a fileChace exists for given file ...
-        try {
+
+        try { //TODO find out if try catch ever does something
           //get exisitng list of entries (or an empty list, if none exist yet) and prepend new entry
           val existing_entries = fileCache.getOrElse(hash, Nil)
           val updated_cacheEntries = cacheEntry :: existing_entries
@@ -58,12 +75,10 @@ trait VerificationServerInterfaceCache {
         }
       case None =>
         //if file not in cache yet, create new map entry for it, restart the function
-        _cache += (key -> collection.mutable.Map[String, List[CacheEntry]]())
-        update(backendName, file, hash, cacheEntry)
+        _cache += (fileKey -> collection.mutable.Map[Hash, List[CacheEntry]]())
+        update(backendName, file, key, cacheEntry)
     }
   }
-
-
 
   def forgetFile(backendName: String, file: String): Option[String] = {
     val key = getKey(backendName, file)
@@ -77,16 +92,14 @@ trait VerificationServerInterfaceCache {
     _cache.clear()
   }
 
-  protected def hex(h: String) = h.hashCode.toHexString
+  protected def hex(h: Hash) = h.hashCode.toHexString
 }
 
 
-// ===== AUXILIARY CLASSES ==================================================================
-
+// ===== AUXILIARY TRAITS ==================================================================
 /** This trait is a generic wrapper for cache entries.
   *
   * Extending this specifies what the cache will be holding.
   * */
 trait CacheEntry {
-
 }

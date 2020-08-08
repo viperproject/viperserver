@@ -12,7 +12,7 @@ import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperConfig
 import viper.server.protocol.ReporterProtocol
-import viper.server.vsi.{Envelope, TaskProtocol, VerificationTask}
+import viper.server.vsi.{Envelope, Letter, TaskProtocol, VerificationTask}
 import viper.silicon.SiliconFrontend
 import viper.silver.ast.{Position, _}
 import viper.silver.frontend.{DefaultStates, SilFrontend}
@@ -33,7 +33,14 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
   override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be found."
 }
 
+//TODO move this to CoreServer
 case class SilverEnvelope(msg: Message) extends Envelope
+
+class SilverLetter(val m: Message) extends Letter {
+  override type M = Message
+
+  def unpack(): M = m
+}
 
 class VerificationWorker(private val viper_config: ViperConfig,
                          private val logger: Logger,
@@ -329,9 +336,8 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
           val errorsToCacheMaybe = getMethodSpecificErrors(m, errors)
           errorsToCacheMaybe match {
             case Some(errorsToCache) => {
-              val method_hash = NewViperCache.getMethodHash(m)
               val cache_entries = NewViperCache.createCacheEntry(backendName, file, prog, m, errorsToCache)
-              NewViperCache.update(backendName, file, method_hash, cache_entries) match {
+              NewViperCache.update(backendName, file, ViperAst(prog, m), cache_entries) match {
                 case e :: es =>
                   _frontend.logger.debug(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
                 case Nil =>
@@ -341,9 +347,8 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
             case None =>
           }
         case Success =>
-          val method_hash = NewViperCache.getMethodHash(m)
           val cache_entries = NewViperCache.createCacheEntry(backendName, file, prog, m, Nil)
-          NewViperCache.update(backendName, file, method_hash, cache_entries) match {
+          NewViperCache.update(backendName, file, ViperAst(prog, m), cache_entries) match {
             case e :: es =>
               _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
             case Nil =>
@@ -372,11 +377,10 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
 
     //read errors from cache
     prog.methods.foreach((m: Method) => {
-      val methodHash = NewViperCache.getMethodHash(m)
-      NewViperCache.get(backendName, file, methodHash).asInstanceOf[List[ViperCacheEntry]] match {
+      NewViperCache.get(backendName, file, ViperAst(prog, m)) match {
         case Nil =>
           methodsToVerify += m
-        case cache_entry_list =>
+        case cache_entry_list: List[ViperCacheEntry] =>
           cache_entry_list.find { e =>
             prog.dependencyHashMap(m) == e.dependencyHash
           } match {

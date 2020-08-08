@@ -97,7 +97,7 @@ trait VerificationServerInterface {
         bindingFuture match {
           case Some(future) =>
             future
-              .flatMap(_.unbind()) // trigger unbinidng from the port
+              .flatMap(_.unbind()) // trigger unbinding from the port
               .onComplete(_ => {
                 system.terminate() // and shutdown when done
               })
