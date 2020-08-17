@@ -6,10 +6,8 @@ import viper.silicon.SiliconFrontend
 import viper.silver.ast.Program
 import viper.silver.frontend.SilFrontend
 import viper.silver.parser.PProgram
-import viper.silver.reporter.{Message, StdIOReporter}
+import viper.silver.reporter.{StdIOReporter}
 import viper.silver.logger.ViperLogger
-
-import scala.concurrent.ExecutionContextExecutor
 
 class AstGenerator (private val _logger: ViperLogger){
   private var ver_backend: SilFrontend = create_backend()

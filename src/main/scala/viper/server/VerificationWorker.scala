@@ -17,8 +17,7 @@ import viper.carbon.CarbonFrontend
 import viper.silicon.SiliconFrontend
 import viper.silver.ast.{Position, _}
 import viper.silver.frontend.{DefaultStates, SilFrontend}
-import viper.silver.reporter
-import viper.silver.reporter.{Reporter, _}
+import viper.silver.reporter._
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, VerificationResult, _}
 
@@ -72,11 +71,11 @@ class VerificationWorker(private val reporterActor: ActorRef,
 
     /** Sends massage to the attached actor.
       *
-      * The actor receving this message offer it to a queue. This offering returns a Future, which will eventually
+      * The actor receiving this message offers it to a queue. This offer returns a Future, which will eventually
       * indicate whether or not the offer was successful. This method is blocking, as it waits for the successful
       * completion of such an offer.
       * */
-    def report(msg: reporter.Message): Unit = {
+    def report(msg: Message): Unit = {
       implicit val askTimeout: Timeout = Timeout(viper_config.actorCommunicationTimeout() milliseconds)
       val answer = actor_ref ? ReporterProtocol.ServerReport(msg)
       current_offer = answer.flatMap({
@@ -403,9 +402,9 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
                 methodsToCache += ViperCache.removeBody(m)
                 //Send the intermediate results to the user as soon as they are available. Approximate the time with zero.
                 if ( cachedErrors.isEmpty ) {
-                  _frontend.reporter.report(EntitySuccessMessage(_frontend.getVerifierName, m, 0, true))
+                  _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, m, Success))
                 } else {
-                  _frontend.reporter.report(EntityFailureMessage(_frontend.getVerifierName, m, 0, Failure(cachedErrors), true))
+                  _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, m, Failure(cachedErrors)))
                 }
               } catch {
                 case e: Exception =>
