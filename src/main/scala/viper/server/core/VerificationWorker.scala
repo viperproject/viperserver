@@ -336,8 +336,9 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
           val errorsToCacheMaybe = getMethodSpecificErrors(m, errors)
           errorsToCacheMaybe match {
             case Some(errorsToCache) => {
-              val cache_entries = NewViperCache.createCacheEntry(backendName, file, prog, m, errorsToCache)
-              NewViperCache.update(backendName, file, ViperAst(prog, m), cache_entries) match {
+              val dependencies = prog.getDependencies(prog, m).map(d => ViperAst(prog, d))
+              val content = NewViperCache.createCacheContent(backendName, file, prog, m, errorsToCache)
+              NewViperCache.update(backendName, file, ViperAst(prog, m), dependencies, content) match {
                 case e :: es =>
                   _frontend.logger.debug(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
                 case Nil =>
@@ -347,8 +348,9 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
             case None =>
           }
         case Success =>
-          val cache_entries = NewViperCache.createCacheEntry(backendName, file, prog, m, Nil)
-          NewViperCache.update(backendName, file, ViperAst(prog, m), cache_entries) match {
+          val dependencies = prog.getDependencies(prog, m).map(d => ViperAst(prog, d))
+          val content = NewViperCache.createCacheContent(backendName, file, prog, m, Nil)
+          NewViperCache.update(backendName, file, ViperAst(prog, m), dependencies, content) match {
             case e :: es =>
               _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
             case Nil =>
@@ -377,41 +379,28 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
 
     //read errors from cache
     prog.methods.foreach((m: Method) => {
-      NewViperCache.get(backendName, file, ViperAst(prog, m)) match {
-        case Nil =>
-          methodsToVerify += m
-        case cache_entry_list: List[ViperCacheEntry] =>
-          cache_entry_list.find { e =>
-            prog.dependencyHashMap(m) == e.dependencyHash
-          } match {
-            case None =>
-              //even if the method itself did not change, a re-verification is required if it's dependencies changed
-              methodsToVerify += m
-            case Some(matched_entry) =>
-              try {
-                val cachedErrors: Seq[VerificationError] = updateErrorLocation(prog, m, matched_entry)
-                errors ++= cachedErrors
-                methodsToCache += NewViperCache.removeBody(m)
-                //Send the intermediate results to the user as soon as they are available. Approximate the time with zero.
-                if ( cachedErrors.isEmpty ) {
-                  _frontend.reporter.report(EntitySuccessMessage(_frontend.getVerifierName, m, 0))
-                } else {
-                  _frontend.reporter.report(EntityFailureMessage(_frontend.getVerifierName, m, 0, Failure(cachedErrors)))
-                }
-              } catch {
-                case e: Exception =>
-                  _frontend.logger.warn("The cache lookup failed: " + e)
-                  //Defaults to verifying the method in case the cache lookup fails.
-                  methodsToVerify += m
-              }
+      NewViperCache.get(backendName, file, ViperAst(prog, m), prog.dependencyHashMap(m)) match {
+        case Some(matched_entry) =>
+          val matched_content = matched_entry.cacheContent.asInstanceOf[ViperCacheContent]
+          val cachedErrors: Seq[VerificationError] = updateErrorLocation(prog, m, matched_content)
+          errors ++= cachedErrors
+          methodsToCache += NewViperCache.removeBody(m)
+          //Send the intermediate results to the user as soon as they are available. Approximate the time with zero.
+          if ( cachedErrors.isEmpty ) {
+            _frontend.reporter.report(EntitySuccessMessage(_frontend.getVerifierName, m, 0))
+          } else {
+            _frontend.reporter.report(EntityFailureMessage(_frontend.getVerifierName, m, 0, Failure(cachedErrors)))
           }
+        case None =>
+          //Nothing in cache, request verification
+          methodsToVerify += m
       }
     })
     (methodsToVerify.toList, methodsToCache.toList, errors.toList)
   }
 
-  private def updateErrorLocation(p: Program, m: Method, cacheEntry: ViperCacheEntry): List[VerificationError] = {
-    cacheEntry.errors.map(updateErrorLocation(p, m, _))
+  private def updateErrorLocation(p: Program, m: Method, cacheContent: ViperCacheContent): List[VerificationError] = {
+    cacheContent.errors.map(updateErrorLocation(p, m, _))
   }
 
   private def updateErrorLocation(p: Program, m: Method, error: LocalizedError): VerificationError = {
