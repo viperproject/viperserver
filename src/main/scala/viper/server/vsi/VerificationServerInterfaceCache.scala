@@ -45,16 +45,18 @@ trait VerificationServerInterfaceCache {
     * */
   protected def getKey(file: String, backendName: String = ""): String = file
 
-  def get(backendName: String, file: String, key: Concerning, dependecyHash: Hash): Option[CacheEntry] = {
-    val hash: Hash = hashFunction(key)
-    assert(hash != null)
+  def get(backendName: String, file: String, key: Concerning, dependencies: List[Concerning]): Option[CacheEntry] = {
+    val concerning_hash = hashFunction(key)
+    val dependencies_hash = dependencies.map(hashFunction).mkString(" ")
+    val dependency_hash = CacheHelper.buildHash(concerning_hash + dependencies_hash)
+    assert(concerning_hash != null)
     val file_key = getKey(backendName, file)
 
     _cache.get(file_key) match {
       case Some(fileCache) =>
-        fileCache.get(hash) match {
+        fileCache.get(concerning_hash) match {
           case Some(cacheEntries) =>
-            cacheEntries.find(_.depencyHash == dependecyHash)
+            cacheEntries.find(_.depencyHash == dependency_hash)
           case None => None
         }
       case None => None

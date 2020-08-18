@@ -379,7 +379,8 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
 
     //read errors from cache
     prog.methods.foreach((m: Method) => {
-      NewViperCache.get(backendName, file, ViperAst(prog, m), prog.dependencyHashMap(m)) match {
+      val dependencies = prog.getDependencies(prog, m).map(d => ViperAst(prog, d))
+      NewViperCache.get(backendName, file, ViperAst(prog, m), dependencies) match {
         case Some(matched_entry) =>
           val matched_content = matched_entry.cacheContent.asInstanceOf[ViperCacheContent]
           val cachedErrors: Seq[VerificationError] = updateErrorLocation(prog, m, matched_content)
