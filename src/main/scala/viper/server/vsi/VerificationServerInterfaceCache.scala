@@ -50,17 +50,13 @@ trait VerificationServerInterfaceCache {
     val dependencies_hash = dependencies.map(hashFunction).mkString(" ")
     val dependency_hash = CacheHelper.buildHash(concerning_hash + dependencies_hash)
     assert(concerning_hash != null)
-    val file_key = getKey(backendName, file)
 
-    _cache.get(file_key) match {
-      case Some(fileCache) =>
-        fileCache.get(concerning_hash) match {
-          case Some(cacheEntries) =>
-            cacheEntries.find(_.depencyHash == dependency_hash)
-          case None => None
-        }
-      case None => None
-    }
+    val file_key = getKey(backendName, file)
+    for {
+      fileCache <- _cache.get(file_key)
+      cacheEntries <- fileCache.get(concerning_hash)
+      validEntry <- cacheEntries.find(_.depencyHash == dependency_hash)
+    } yield validEntry
   }
 
   def update(backendName: String, file: String, key: Concerning, dependencies: List[Concerning], content: Content): List[CacheEntry] = {
