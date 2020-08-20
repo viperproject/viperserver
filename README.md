@@ -1,3 +1,5 @@
+![Scala CI](https://github.com/viperproject/viperserver/workflows/Scala%20CI/badge.svg?branch=master)
+
 # README #
 
 This is ViperServer, an HTTP server that manages verification requests to different tools from the Viper tool stack.
