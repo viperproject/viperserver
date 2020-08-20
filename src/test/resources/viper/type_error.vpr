@@ -1,0 +1,16 @@
+method sum(n: Int) returns (res: Int)
+  requires 0 <= n
+  ensures  res == n * (n + 1) / 2
+{
+  res := 0
+  var i: Int := 0;
+  var b: Bool := true;
+  var c: Int := i+b;
+  while(i <= n)
+    invariant i <= (n + 1)
+    invariant res == (i - 1) * i / 2
+  {
+    res := res + i
+    i := i + 1
+  }
+}

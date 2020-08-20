@@ -48,6 +48,7 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
       java.nio.file.Paths.get(System.getProperty("user.dir"), some_file_path).toFile
     }
   }
+
   def getLogFileWithGuarantee: String = {
     val cf: File = canonizedLogFile(logFile())
     if ( cf.isDirectory ) {
@@ -58,34 +59,12 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     }
   }
 
-  @deprecated
-  val ideMode: ScallopOption[Boolean] = opt[Boolean]("ideMode",
-    descr = ("Used for VS Code IDE. Report errors in json format, and write"
-      + "errors in the format '<file>,<line>:<col>,<line>:<col>,<message>' to"
-      + "a file (see option ideModeErrorFile)."),
-    default = Some(false),
-    noshort = true,
-    hidden = false
-  )
-
   val backendSpecificCache: ScallopOption[Boolean] = opt[Boolean]("backendSpecificCache",
     descr = "Use a separate cache for each backend?",
     default = Some(false),
     noshort = true,
     hidden = false
   )
-
-  @deprecated
-  val ideModeAdvanced: ScallopOption[Boolean] = opt[Boolean]("ideModeAdvanced",
-    descr = ("Used for VS Code IDE. Write symbolic execution log into .vscode/executionTreeData.js file, "
-      + "write execution tree graph into .vscode/dot_input.dot, "
-      + "and output z3's counter example models."),
-    default = Some(false),
-    noshort = true,
-    hidden = true
-  )
-
-  dependsOnAll(ideModeAdvanced, ideMode :: Nil)
 
   val port: ScallopOption[Int] = opt[Int]("port", 'p',
     descr = ("Specifies the port on which ViperServer will be started."
@@ -101,4 +80,22 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     },
     noshort = false,
     hidden = false)
+
+  val actorCommunicationTimeout: ScallopOption[Int] = opt[Int]("actorCommunicationTimeout", 'a',
+    descr = ("Specifies the maximal amount of time that actors will wait when communicating requesting messages from other actors."
+      + s"The number is of unit milliseconds and must be positive integer."
+      + "If the option is omitted, a default timeout of 5000 milliseconds will be set."),
+    default = Some(5000),
+    noshort = false,
+    hidden = false
+  )
+
+  val maximumActiveJobs: ScallopOption[Int] = opt[Int]("maximumActiveJobs", 'm',
+    descr = ("Specifies the maximal amount of jobs that may run concurrently."
+      + s"The number must be positive integer."
+      + "If the option is omitted, a default number of 3 jobs will be set."),
+    default = Some(3),
+    noshort = false,
+    hidden = false
+  )
 }

@@ -27,7 +27,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
 
   ViperServerRunner.main(Array())
 
-  private val _routsUnderTest = ViperServerRunner.routes(ViperServerRunner.logger)
+  private val _routsUnderTest = ViperServerRunner.httpServer.routes(ViperServerRunner.httpServer.logger)
 
   def printRequestResponsePair(req: String, res: String): Unit = {
     println(s">>> ViperServer test request `$req` response in the following response: $res")
@@ -50,15 +50,15 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
   }
 
   private val verifiableFile = "viper/let.vpr"
-  //private val nonExistingFile = "viper/bla.vpr"
-  private val emptyFile ="viper/empty.vpr"
+  private val nonExistingFile = "viper/bla.vpr"
+  private val emptyFile = "viper/empty.vpr"
 
   private val tool = "silicon"
   private val testSimpleViperCode_cmd = s"$tool --disableCaching ${getResourcePath(verifiableFile)}"
   private val testEmptyFile_cmd = s"$tool --disableCaching ${getResourcePath(emptyFile)}"
+  private val testNonExistingFile_cmd = s"$tool --disableCaching ${getResourcePath(nonExistingFile)}"
 
   "ViperServer" should {
-
     s"start a verification session using `$tool` over a small Viper program" in {
       Post("/verify", VerificationRequest(testSimpleViperCode_cmd)) ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"POST, /verify, $testSimpleViperCode_cmd", responseAs[String])
@@ -69,7 +69,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
 
     "respond with the result for session #0" in {
       Get("/verify/0") ~> _routsUnderTest ~> check {
-        //printRequestResponsePair(s"GET, /verify/0", responseAs[String])
+//        printRequestResponsePair(s"GET, /verify/0", responseAs[String])
         responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
@@ -101,5 +101,4 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
   }
-
 }

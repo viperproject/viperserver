@@ -101,7 +101,6 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
 
   implicit val abstractError_writer: RootJsonFormat[AbstractError] = lift(new RootJsonWriter[AbstractError] {
     override def write(obj: AbstractError) = JsObject(
-      "cached" -> JsBoolean(obj.cached),
       "tag" -> JsString(obj.fullId),
       "text" -> JsString(obj.readableMessage),
       "position" -> (obj.pos match {
@@ -121,7 +120,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: EntitySuccessMessage): JsObject = {
       JsObject(
         "entity" -> obj.concerning.toJson,
-        "time" -> obj.verificationTime.toJson)
+        "time" -> obj.verificationTime.toJson,
+        "cached" -> obj.cached.toJson)
     }
   })
 
@@ -129,7 +129,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: EntityFailureMessage): JsValue = JsObject(
       "entity" -> obj.concerning.toJson,
       "time" -> obj.verificationTime.toJson,
-      "result" -> obj.result.toJson)
+      "result" -> obj.result.toJson,
+      "cached" -> obj.cached.toJson)
   })
 
   implicit val overallSuccessMessage_writer: RootJsonFormat[OverallSuccessMessage] = lift(new RootJsonWriter[OverallSuccessMessage] {
