@@ -14,7 +14,7 @@ import akka.http.scaladsl.model.{StatusCodes, _}
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
 import akka.testkit.TestDuration
 import org.scalatest.{Matchers, WordSpec}
-import viper.server.{ViperHttpServer, ViperRequests, ViperServerRunner}
+import viper.server.{ViperRequests, ViperServerRunner}
 
 import scala.concurrent.duration._
 
@@ -51,7 +51,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
 
   private val verifiableFile = "viper/let.vpr"
   private val nonExistingFile = "viper/bla.vpr"
-  private val emptyFile ="viper/empty.vpr"
+  private val emptyFile = "viper/empty.vpr"
 
   private val tool = "silicon"
   private val testSimpleViperCode_cmd = s"$tool --disableCaching ${getResourcePath(verifiableFile)}"
@@ -69,7 +69,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
 
     "respond with the result for session #0" in {
       Get("/verify/0") ~> _routsUnderTest ~> check {
-        //printRequestResponsePair(s"GET, /verify/0", responseAs[String])
+//        printRequestResponsePair(s"GET, /verify/0", responseAs[String])
         responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)

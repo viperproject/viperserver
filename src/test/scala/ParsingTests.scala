@@ -1,5 +1,5 @@
-import java.io.{File, FileNotFoundException}
-import java.nio.file.{NoSuchFileException, Paths}
+
+import java.nio.file.{NoSuchFileException}
 
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.{Matchers, WordSpec}
@@ -7,11 +7,12 @@ import viper.server.AstGenerator
 import viper.silver.ast.Program
 import viper.silver.logger.ViperStdOutLogger
 
+
 class ParsingTests extends WordSpec with Matchers with ScalatestRouteTest {
   import scala.language.postfixOps
 
   private val verifiableFile = "src/test/resources/viper/let.vpr"
-  private val emptyFile ="src/test/resources/viper/empty.vpr"
+  private val emptyFile = "src/test/resources/viper/empty.vpr"
   private val sumFile = "src/test/resources/viper/sum_method.vpr"
   private val typeErrorFile = "src/test/resources/viper/type_error.vpr"
   private val parseErrorFile = "src/test/resources/viper/parse_error.vpr"

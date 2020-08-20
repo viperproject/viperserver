@@ -19,7 +19,7 @@ import viper.silver.reporter.Message
 
 import scala.collection.mutable
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.concurrent.{ExecutionContext, Future}
 import scala.language.postfixOps
 import scala.util.{Failure, Success}
 
@@ -32,12 +32,14 @@ case class JobHandle(controller_actor: ActorRef,
 
 case class VerificationJobHandler(id: Int)
 
-class ViperCoreServer(private var _config: ViperConfig) {
+class ViperCoreServer(private val _args: Array[String]) {
+
   // --- VCS : Configuration ---
   var isRunning: Boolean = true
   implicit val system: ActorSystem = ActorSystem("Main")
   implicit val executionContext = ExecutionContext.global
 
+  private var _config: ViperConfig = _
   final def config: ViperConfig = _config
 
   private var _logger: ViperLogger = _
@@ -49,7 +51,7 @@ class ViperCoreServer(private var _config: ViperConfig) {
   // --- VCS : Jobs ---
   var _jobHandles: mutable.Map[Int, Future[JobHandle]] = mutable.Map[Int, Future[JobHandle]]()
   private var _nextJobId: Int = 0
-  val MAX_ACTIVE_JOBS: Int = 3
+  var MAX_ACTIVE_JOBS: Int = _
 
   private def newJobsAllowed = _jobHandles.size < MAX_ACTIVE_JOBS
 
@@ -221,10 +223,13 @@ class ViperCoreServer(private var _config: ViperConfig) {
     * This method replaces 'start()' when running ViperCoreServer in HTTP mode. It should therefore be called before any other.
     * */
   protected def init(routes: Option[ViperLogger => Route]): Unit = {
+    _config = new ViperConfig(_args)
     config.verify()
 
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
+
+    MAX_ACTIVE_JOBS = config.maximumActiveJobs()
 
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 

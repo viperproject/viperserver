@@ -30,7 +30,7 @@ import ViperRequests.{AlloyGenerationRequest, CacheResetRequest, VerificationReq
 import scala.util.Try
 
 
-class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(_config) {
+class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(_args) {
 
   override def start(): Unit = {
     init(Some(routes))

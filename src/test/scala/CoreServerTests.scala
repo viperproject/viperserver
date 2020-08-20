@@ -2,7 +2,7 @@ import akka.actor.{Actor, ActorSystem, Props}
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.{Matchers, WordSpec}
 import viper.server.ViperBackendConfigs.SiliconConfig
-import viper.server.{AstGenerator, VerificationJobHandler, ViperConfig, ViperCoreServer, ViperCoreServerUtils}
+import viper.server.{AstGenerator, VerificationJobHandler, ViperCoreServer, ViperCoreServerUtils}
 import viper.silver.ast.Program
 import viper.silver.logger.SilentLogger
 import viper.silver.reporter._
@@ -36,7 +36,6 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
           case _ =>
         }
       case ClientActor.Terminate =>
-        println("terminating external actor system")
         system.terminate()
     }
   }
@@ -55,11 +54,11 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
   private val noCache_backend = SiliconConfig(List("--disableCaching"))
   private val cache_backend = SiliconConfig(List())
 
+  private val empty_args: Array[String] = Array()
+
   "An instance of ViperCoreServer" when {
     "verifying a single file with caching disabled" should {
-      val config = new ViperConfig(List())
-      config.verify()
-      val core = new ViperCoreServer(config)
+      val core = new ViperCoreServer(empty_args)
 
       "be able to execute 'start()' without exceptions" in {
         core.start()
@@ -102,9 +101,8 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
     "verifying a single file with caching enabled" should {
-      val config = new ViperConfig(List())
-      config.verify()
-      val core = new ViperCoreServer(config)
+      val core = new ViperCoreServer(empty_args)
+
       "be able to execute 'start()' without exceptions" in {
         core.start()
       }
@@ -161,9 +159,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       val files: List[String] = List(empty_file, sum_file, verificationError_file)
       val programs: List[Program] = List(empty_ast, sum_ast, verificationError_ast)
 
-      val config = new ViperConfig(List())
-      config.verify()
-      val core = new ViperCoreServer(config)
+      val core = new ViperCoreServer(empty_args)
       core.start()
 
       val filesAndProgs: List[(String, Program)] = files.zip(programs)
@@ -209,9 +205,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       val files: List[String] = List(empty_file, sum_file, verificationError_file)
       val programs: List[Program] = List(empty_ast, sum_ast, verificationError_ast)
 
-      val config = new ViperConfig(List())
-      config.verify()
-      val core = new ViperCoreServer(config)
+      val core = new ViperCoreServer(empty_args)
       core.start()
 
       val filesAndProgs: List[(String, Program)] = files.zip(programs)
@@ -256,9 +250,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       val ast2 = sum_ast
       val ast3 = verificationError_ast
 
-      val config = new ViperConfig(List())
-      config.verify()
-      val core = new ViperCoreServer(config)
+      val core = new ViperCoreServer(empty_args)
       core.start()
 
       val vjh1 = core.verify(file1, noCache_backend, ast1)
@@ -283,9 +275,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
     "verifying an incorrect viper program several times with caching enabled" should {
-      val config = new ViperConfig(List())
-      config.verify()
-      val core = new ViperCoreServer(config)
+      val core = new ViperCoreServer(empty_args)
       core.start()
 
       "produce an OverallFailure Message with a non-empty error list upon first verification." in {
@@ -348,9 +338,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
     "maximum capacity of verification jobs is exceeded" should {
-      val config = new ViperConfig(List())
-      config.verify()
-      val core = new ViperCoreServer(config)
+      val core = new ViperCoreServer(empty_args)
       core.start()
 
       val handler = core.verify(sum_file, noCache_backend, sum_ast)

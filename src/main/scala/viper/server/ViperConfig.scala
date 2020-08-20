@@ -89,4 +89,13 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     noshort = false,
     hidden = false
   )
+
+  val maximumActiveJobs: ScallopOption[Int] = opt[Int]("maximumActiveJobs", 'm',
+    descr = ("Specifies the maximal amount of jobs that may run concurrently."
+      + s"The number must be positive integer."
+      + "If the option is omitted, a default number of 3 jobs will be set."),
+    default = Some(3),
+    noshort = false,
+    hidden = false
+  )
 }

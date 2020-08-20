@@ -49,7 +49,7 @@ class VerificationWorker(private val reporterActor: ActorRef,
         classOf[viper.silver.reporter.Reporter],
         classOf[ch.qos.logback.classic.Logger])
       Some(constructor.newInstance(rep, logger))
-    }catch {
+    } catch {
       case e: ClassNotFoundException => None
     })
     match {
@@ -107,16 +107,16 @@ class VerificationWorker(private val reporterActor: ActorRef,
           logger.error("invalid arguments: ${args.toString}",
             "You need to specify the verification backend, e.g., `silicon [args]`")
       }
-    }catch {
+    } catch {
       case _: InterruptedException =>
       case _: java.nio.channels.ClosedByInterruptException =>
       case e: Throwable =>
         reporterActor ! ReporterProtocol.ServerReport(ExceptionReport(e))
         logger.trace(s"Creation/Execution of the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
-    }finally {
+    } finally {
       try {
         backend.stop()
-      }catch {
+      } catch {
         case e: Throwable =>
           logger.trace(s"Stopping the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
       }
