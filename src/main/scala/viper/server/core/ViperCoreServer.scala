@@ -37,7 +37,7 @@ class ViperCoreServer(private var _config: ViperConfig) extends VerificationServ
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
-    NewViperCache.initialize(logger.get, config.backendSpecificCache())
+    ViperCache.initialize(logger.get, config.backendSpecificCache())
 
 
     _termActor = system.actorOf(Terminator.props(), "terminator")
@@ -78,7 +78,7 @@ class ViperCoreServer(private var _config: ViperConfig) extends VerificationServ
     if(!isRunning) {
       throw new IllegalStateException("Instance of ViperCoreServer already stopped")
     }
-    NewViperCache.resetCache()
+    ViperCache.resetCache()
     println(s"The cache has been flushed successfully.")
   }
 

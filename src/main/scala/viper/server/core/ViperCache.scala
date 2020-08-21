@@ -2,16 +2,20 @@ package viper.server.core
 
 import ch.qos.logback.classic.Logger
 import viper.server.vsi.{CacheContent, CacheEntry, VerificationServerInterfaceCache}
-import viper.silver.ast.{Cached, ConsInfo, Forall, Hashable, Method, Node, Program}
+import viper.silver.ast.{Add, And, AnonymousDomainAxiom, AnySetCardinality, AnySetContains, AnySetIntersection, AnySetMinus, AnySetSubset, AnySetUnion, Apply, Applying, Assert, Cached, CondExp, ConsInfo, CurrentPerm, Div, Domain, DomainFunc, DomainFuncApp, EmptyMultiset, EmptySeq, EmptySet, EpsilonPerm, EqCmp, Exhale, Exists, ExplicitMultiset, ExplicitSeq, ExplicitSet, FalseLit, Field, FieldAccess, FieldAccessPredicate, FieldAssign, Fold, ForPerm, Forall, FractionalPerm, FullPerm, FuncApp, Function, GeCmp, Goto, GtCmp, Hashable, If, Implies, Inhale, InhaleExhaleExp, IntLit, IntPermMul, Label, LabelledOld, LeCmp, Let, LocalVar, LocalVarAssign, LocalVarDecl, LocalVarDeclStmt, LtCmp, MagicWand, Method, MethodCall, Minus, Mod, Mul, NamedDomainAxiom, NeCmp, NewStmt, NoPerm, Node, Not, NullLit, Old, Or, Package, PermAdd, PermDiv, PermGeCmp, PermGtCmp, PermLeCmp, PermLtCmp, PermMinus, PermMul, PermSub, Position, Predicate, PredicateAccess, PredicateAccessPredicate, Program, RangeSeq, SeqAppend, SeqContains, SeqDrop, SeqIndex, SeqLength, SeqTake, SeqUpdate, Seqn, Sub, Trigger, TrueLit, Unfold, Unfolding, While, WildcardPerm}
 import viper.silver.utility.CacheHelper
-import viper.silver.verifier.{AbstractVerificationError, errors}
+import viper.silver.verifier.errors.{ApplyFailed, AssertFailed, AssignmentFailed, CallFailed, ContractNotWellformed, ExhaleFailed, FoldFailed, FunctionNotWellformed, HeuristicsFailed, IfFailed, InhaleFailed, Internal, LetWandFailed, LoopInvariantNotEstablished, LoopInvariantNotPreserved, MagicWandNotWellformed, PackageFailed, PostconditionViolated, PreconditionInAppFalse, PreconditionInCallFalse, PredicateNotWellformed, TerminationFailed, UnfoldFailed, VerificationErrorWithCounterexample, WhileFailed}
+import viper.silver.verifier.{AbstractVerificationError, Failure, Success, VerificationError, errors}
 
-import scala.collection.mutable
+import scala.collection.mutable.{Map => MutableMap}
+import scala.collection.mutable.ListBuffer
 
-object NewViperCache extends VerificationServerInterfaceCache {
+// ===== CACHE OBJECT ==================================================================
+
+object ViperCache extends VerificationServerInterfaceCache {
 
   private var _backendSpecificCache: Boolean = false
-  private val _node_hash_memo = mutable.Map.empty[String, mutable.Map[Node, String]]
+  private val _node_hash_memo = MutableMap.empty[String, MutableMap[Node, String]]
 
   var _logger: Logger = _
   def logger: Logger = _logger
@@ -21,20 +25,272 @@ object NewViperCache extends VerificationServerInterfaceCache {
     _logger = logger
   }
 
-
   type Content = ViperCacheContent
   type Concerning = ViperAst
   def hashFunction(in: ViperAst): String = {
     in.m.entityHash
   }
 
-  override def forgetFile(backendName: String, file: String): Option[String] = {
-    val key = getKey(backendName, file)
-    _node_hash_memo.remove(key)
-    _cache.remove(key) match {
-      case Some(_) => Some(key)
-      case None => None
+  /** This method transforms a program by applying cache information
+    *
+    * The input and out put program should be equivalent in terms of verification, but they should
+    * differ in their AST. In particular the output program should have been transformed such that
+    * verifying it should be faster that verifying the input program.
+    *
+    * Additionally, the method returns previously cached verification result for members of the
+    * programs.
+    *
+    * */
+  def applyCache(
+        backendName: String,
+        file: String,
+        input_prog: Program): (Program, ListBuffer[(Method, List[VerificationError])]) = {
+
+    val methodsToVerify: ListBuffer[Method] = ListBuffer()
+    val methodsToCache: ListBuffer[Method] = ListBuffer()
+    val method_errors: ListBuffer[(Method, List[VerificationError])] = ListBuffer()
+
+    val file_key = getKey(file, backendName)
+
+    //read errors from cache
+    input_prog.methods.foreach((m: Method) => {
+      val dependencies = input_prog.getDependencies(input_prog, m).map(d => ViperAst(input_prog, d))
+      get(backendName, file, ViperAst(input_prog, m), dependencies) match {
+        case Some(matched_entry) =>
+          val matched_content = matched_entry.cacheContent.asInstanceOf[ViperCacheContent]
+          val cachedErrors: Seq[VerificationError] = updateErrorLocation(file_key, input_prog, m, matched_content)
+          method_errors += (m -> cachedErrors.toList)
+          methodsToCache += removeBody(m)
+        case None =>
+          //Nothing in cache, request verification
+          methodsToVerify += m
+      }
+    })
+
+    val output_prog: Program = Program(input_prog.domains, input_prog.fields, input_prog.functions, input_prog.predicates,
+      methodsToVerify ++ methodsToCache, input_prog.extensions)(input_prog.pos, input_prog.info, input_prog.errT)
+
+    (output_prog, method_errors)
+  }
+
+  private def updateErrorLocation(
+                file_key: String,
+                p: Program,
+                m: Method,
+                cacheContent: ViperCacheContent): List[VerificationError] = {
+
+    cacheContent.errors.map(updateErrorLocation(file_key, p, m, _))
+  }
+
+  private def updateErrorLocation(
+                file_key: String,
+                p: Program,
+                m: Method,
+                error: LocalizedError): VerificationError = {
+
+    assert(error.error != null && error.accessPath != null && error.reasonAccessPath != null)
+
+    //get the corresponding offending node in the new AST
+    //TODO: are these casts ok?
+    val offendingNode = getNode(file_key, p, error.accessPath, error.error.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
+    val reasonOffendingNode = getNode(file_key, p, error.reasonAccessPath, error.error.reason.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
+
+    if (offendingNode.isEmpty || reasonOffendingNode.isEmpty) {
+      throw new Exception(s"Cache error: no corresponding node found for error: $error")
     }
+
+    //create a new VerificationError that only differs in the Position of the offending Node
+    //the cast is fine, because the offending Nodes are supposed to be ErrorNodes
+    val updatedOffendingNode = updatePosition(error.error.offendingNode, offendingNode.get.pos).asInstanceOf[errors.ErrorNode]
+    val updatedReasonOffendingNode = updatePosition(error.error.reason.offendingNode, reasonOffendingNode.get.pos).asInstanceOf[errors.ErrorNode]
+    //TODO: how to also update the position of error.error.reason.offendingNode?
+    val updatedError = error.error.withNode(updatedOffendingNode).asInstanceOf[AbstractVerificationError]
+    setCached(updatedError)
+  }
+
+  def setCached(error: AbstractVerificationError): AbstractVerificationError = {
+    error match {
+      case e: Internal => e.copy(cached = true)
+      case e: AssignmentFailed => e.copy(cached = true)
+      case e: CallFailed => e.copy(cached = true)
+      case e: ContractNotWellformed => e.copy(cached = true)
+      case e: PreconditionInCallFalse => e.copy(cached = true)
+      case e: PreconditionInAppFalse => e.copy(cached = true)
+      case e: ExhaleFailed => e.copy(cached = true)
+      case e: InhaleFailed => e.copy(cached = true)
+      case e: IfFailed => e.copy(cached = true)
+      case e: WhileFailed => e.copy(cached = true)
+      case e: AssertFailed => e.copy(cached = true)
+      case e: TerminationFailed => e.copy(cached = true)
+      case e: PostconditionViolated => e.copy(cached = true)
+      case e: FoldFailed => e.copy(cached = true)
+      case e: UnfoldFailed => e.copy(cached = true)
+      case e: PackageFailed => e.copy(cached = true)
+      case e: ApplyFailed => e.copy(cached = true)
+      case e: LoopInvariantNotPreserved => e.copy(cached = true)
+      case e: LoopInvariantNotEstablished => e.copy(cached = true)
+      case e: FunctionNotWellformed => e.copy(cached = true)
+      case e: PredicateNotWellformed => e.copy(cached = true)
+      case e: MagicWandNotWellformed => e.copy(cached = true)
+      case e: LetWandFailed => e.copy(cached = true)
+      case e: HeuristicsFailed => e.copy(cached = true)
+      case e: VerificationErrorWithCounterexample => e.copy(cached = true)
+      case e: AbstractVerificationError =>
+        logger.warn("Setting a verification error to cached was not possible for " + e + ". Make sure to handle this types of errors")
+        e
+    }
+  }
+
+  def updatePosition(n: Node, pos: Position): Node = {
+    n match {
+      case t: Trigger => t.copy()(pos, t.info, t.errT)
+      case t: Program => t.copy()(pos, t.info, t.errT)
+
+      //Members
+      case t: Field => t.copy()(pos, t.info, t.errT)
+      case t: Function => t.copy()(pos, t.info, t.errT)
+      case t: Method => t.copy()(pos, t.info, t.errT)
+      case t: Predicate => t.copy()(pos, t.info, t.errT)
+      case t: Domain => t.copy()(pos, t.info, t.errT)
+
+      //DomainMembers
+      case t: NamedDomainAxiom => t.copy()(pos, t.info, t.domainName, t.errT)
+      case t: AnonymousDomainAxiom => t.copy()(pos, t.info, t.domainName, t.errT)
+      case t: DomainFunc => t.copy()(pos, t.info, t.domainName, t.errT)
+
+      //Statements
+      case t: NewStmt => t.copy()(pos, t.info, t.errT)
+      case t: LocalVarAssign => t.copy()(pos, t.info, t.errT)
+      case t: FieldAssign => t.copy()(pos, t.info, t.errT)
+      case t: Fold => t.copy()(pos, t.info, t.errT)
+      case t: Unfold => t.copy()(pos, t.info, t.errT)
+      case t: Package => t.copy()(pos, t.info, t.errT)
+      case t: Apply => t.copy()(pos, t.info, t.errT)
+      case t: Inhale => t.copy()(pos, t.info, t.errT)
+      case t: Exhale => t.copy()(pos, t.info, t.errT)
+      case t: Assert => t.copy()(pos, t.info, t.errT)
+      case t: MethodCall => t.copy()(pos, t.info, t.errT)
+      case t: Seqn => t.copy()(pos, t.info, t.errT)
+      case t: While => t.copy()(pos, t.info, t.errT)
+      case t: If => t.copy()(pos, t.info, t.errT)
+      case t: Label => t.copy()(pos, t.info, t.errT)
+      case t: Goto => t.copy()(pos, t.info, t.errT)
+      case t: LocalVarDeclStmt => t.copy()(pos, t.info, t.errT)
+
+      case t: LocalVarDecl => t.copy()(pos, t.info, t.errT)
+
+      //Expressions
+      case t: FalseLit => t.copy()(pos, t.info, t.errT)
+      case t: NullLit => t.copy()(pos, t.info, t.errT)
+      case t: TrueLit => t.copy()(pos, t.info, t.errT)
+      case t: IntLit => t.copy()(pos, t.info, t.errT)
+      case t: LocalVar => t.copy(typ = t.typ)(pos, t.info, t.errT)
+      case t: viper.silver.ast.Result => t.copy(t.typ)(pos, t.info, t.errT)
+      case t: FieldAccess => t.copy()(pos, t.info, t.errT)
+      case t: PredicateAccess => t.copy()(pos, t.info, t.errT)
+      case t: Unfolding => t.copy()(pos, t.info, t.errT)
+      case t: Applying => t.copy()(pos, t.info, t.errT)
+      case t: CondExp => t.copy()(pos, t.info, t.errT)
+      case t: Let => t.copy()(pos, t.info, t.errT)
+      case t: Exists => t.copy()(pos, t.info, t.errT)
+      case t: Forall => t.copy()(pos, t.info, t.errT)
+      case t: ForPerm => t.copy()(pos, t.info, t.errT)
+      case t: InhaleExhaleExp => t.copy()(pos, t.info, t.errT)
+      case t: WildcardPerm => t.copy()(pos, t.info, t.errT)
+      case t: FullPerm => t.copy()(pos, t.info, t.errT)
+      case t: NoPerm => t.copy()(pos, t.info, t.errT)
+      case t: EpsilonPerm => t.copy()(pos, t.info, t.errT)
+      case t: CurrentPerm => t.copy()(pos, t.info, t.errT)
+      case t: FieldAccessPredicate => t.copy()(pos, t.info, t.errT)
+      case t: PredicateAccessPredicate => t.copy()(pos, t.info, t.errT)
+
+      //Binary operators
+      case t: Add => t.copy()(pos, t.info, t.errT)
+      case t: Sub => t.copy()(pos, t.info, t.errT)
+      case t: Mul => t.copy()(pos, t.info, t.errT)
+      case t: Div => t.copy()(pos, t.info, t.errT)
+      case t: Mod => t.copy()(pos, t.info, t.errT)
+      case t: LtCmp => t.copy()(pos, t.info, t.errT)
+      case t: LeCmp => t.copy()(pos, t.info, t.errT)
+      case t: GtCmp => t.copy()(pos, t.info, t.errT)
+      case t: GeCmp => t.copy()(pos, t.info, t.errT)
+      case t: EqCmp => t.copy()(pos, t.info, t.errT)
+      case t: NeCmp => t.copy()(pos, t.info, t.errT)
+      case t: Or => t.copy()(pos, t.info, t.errT)
+      case t: And => t.copy()(pos, t.info, t.errT)
+      case t: Implies => t.copy()(pos, t.info, t.errT)
+      case t: MagicWand => t.copy()(pos, t.info, t.errT)
+      case t: FractionalPerm => t.copy()(pos, t.info, t.errT)
+      case t: PermDiv => t.copy()(pos, t.info, t.errT)
+      case t: PermAdd => t.copy()(pos, t.info, t.errT)
+      case t: PermSub => t.copy()(pos, t.info, t.errT)
+      case t: PermMul => t.copy()(pos, t.info, t.errT)
+      case t: IntPermMul => t.copy()(pos, t.info, t.errT)
+      case t: PermLtCmp => t.copy()(pos, t.info, t.errT)
+      case t: PermLeCmp => t.copy()(pos, t.info, t.errT)
+      case t: PermGtCmp => t.copy()(pos, t.info, t.errT)
+      case t: PermGeCmp => t.copy()(pos, t.info, t.errT)
+      case t: AnySetUnion => t.copy()(pos, t.info, t.errT)
+      case t: AnySetIntersection => t.copy()(pos, t.info, t.errT)
+      case t: AnySetSubset => t.copy()(pos, t.info, t.errT)
+      case t: AnySetMinus => t.copy()(pos, t.info, t.errT)
+      case t: AnySetContains => t.copy()(pos, t.info, t.errT)
+
+      //Unary operators
+      case t: Minus => t.copy()(pos, t.info, t.errT)
+      case t: Not => t.copy()(pos, t.info, t.errT)
+      case t: PermMinus => t.copy()(pos, t.info, t.errT)
+      case t: Old => t.copy()(pos, t.info, t.errT)
+      case t: LabelledOld => t.copy()(pos, t.info, t.errT)
+      case t: AnySetCardinality => t.copy()(pos, t.info, t.errT)
+      case t: FuncApp => t.copy()(pos, t.info, t.typ, t.errT)
+      case t: DomainFuncApp => t.copy()(pos, t.info, t.typ, t.domainName, t.errT)
+      case t: EmptySeq => t.copy()(pos, t.info, t.errT)
+      case t: ExplicitSeq => t.copy()(pos, t.info, t.errT)
+      case t: RangeSeq => t.copy()(pos, t.info, t.errT)
+      case t: SeqAppend => t.copy()(pos, t.info, t.errT)
+      case t: SeqIndex => t.copy()(pos, t.info, t.errT)
+      case t: SeqTake => t.copy()(pos, t.info, t.errT)
+      case t: SeqDrop => t.copy()(pos, t.info, t.errT)
+      case t: SeqContains => t.copy()(pos, t.info, t.errT)
+      case t: SeqUpdate => t.copy()(pos, t.info, t.errT)
+      case t: SeqLength => t.copy()(pos, t.info, t.errT)
+
+      //others
+      case t: EmptySet => t.copy()(pos, t.info, t.errT)
+      case t: ExplicitSet => t.copy()(pos, t.info, t.errT)
+      case t: EmptyMultiset => t.copy()(pos, t.info, t.errT)
+      case t: ExplicitMultiset => t.copy()(pos, t.info, t.errT)
+      case t =>
+        logger.warn("The location was not updated for the node " + t + ". Make sure to handle this type of node")
+        t
+    }
+  }
+
+  def get(
+       backendName: String,
+       file: String,
+       key: Concerning,
+       dependencies: List[Concerning]): Option[CacheEntry] = {
+
+    val file_key = getKey(backendName, file)
+    super.get(file_key, key, dependencies)
+  }
+
+  def update(
+        backendName: String,
+        file: String,
+        key: Concerning,
+        dependencies: List[Concerning],
+        content: Content): List[CacheEntry] = {
+
+    val file_key = getKey(backendName, file)
+    super.update(file_key, key, dependencies, content)
+  }
+
+  def forgetFile(backendName: String, file: String): Option[String] = {
+    val key = getKey(backendName, file)
+    super.forgetFile(key)
   }
 
   override def resetCache(): Unit = {
@@ -42,7 +298,7 @@ object NewViperCache extends VerificationServerInterfaceCache {
     _cache.clear()
   }
 
-  override def getKey(file: String, backendName: String): String = {
+  def getKey(file: String, backendName: String): String = {
     (if (_backendSpecificCache) backendName else "") + file
   }
 
@@ -50,9 +306,11 @@ object NewViperCache extends VerificationServerInterfaceCache {
     ViperCacheEntry(errors, dh)
   }
 
-  def createCacheContent(backendName: String, file: String,
-                         p: Program, m: Method,
-                         errors: List[AbstractVerificationError]): ViperCacheContent = {
+  def createCacheContent(
+        backendName: String, file: String,
+        p: Program, m: Method,
+        errors: List[AbstractVerificationError]): ViperCacheContent = {
+
     implicit val key: String = getKey(backendName, file)
     val loc_errs = errors.map(err =>
       LocalizedError(err,
@@ -100,7 +358,7 @@ object NewViperCache extends VerificationServerInterfaceCache {
             hash
         }
         case None =>
-          _node_hash_memo(key) = mutable.Map.empty[Node, String]
+          _node_hash_memo(key) = MutableMap.empty[Node, String]
           getHashForNode(n)
       }
   }
@@ -170,8 +428,12 @@ object NewViperCache extends VerificationServerInterfaceCache {
   /** Finds a node in a program by traversing the provided accessPath
     *
     * */
-  def getNode(backendName: String, file: String, p: Program, accessPath: List[String], oldNode: Node): Option[Node] = {
-    implicit val key: String = getKey(backendName, file)
+  def getNode(
+        implicit file_key: String,
+        p: Program,
+        accessPath: List[String],
+        oldNode: Node): Option[Node] = {
+
     logger.trace(s"looking for last node on access path ${accessPath.map(hex)}...")
 
     // start at root and traverse path node (hash) by node (hash)
@@ -209,8 +471,9 @@ object NewViperCache extends VerificationServerInterfaceCache {
 
 /** A cache entry holds an errors of type [[LocalizedError]] and hashes of type [[String]]
   * */
-case class ViperCacheEntry(content:ViperCacheContent,
-                           dependencyHash: String) extends CacheEntry(content, dependencyHash) {
+case class ViperCacheEntry(
+              content:ViperCacheContent,
+              dependencyHash: String) extends CacheEntry(content, dependencyHash) {
 
   override def toString = s"CacheEntry(errors=$errors, dependencyHash=${dependencyHash.hashCode.toHexString})"
 }
@@ -220,13 +483,14 @@ case class ViperCacheContent(errors: List[LocalizedError]) extends CacheContent
 /** A localized error contains the Abstract Verification Error, paths
   *
   * */
-case class LocalizedError(error: AbstractVerificationError,
-                          accessPath: List[String],
-                          reasonAccessPath: List[String],
-                          backendName: String) {
+case class LocalizedError(
+              error: AbstractVerificationError,
+              accessPath: List[String],
+              reasonAccessPath: List[String],
+              backendName: String) {
 
-  override def toString = s"LocalizedError(error=${error.loggableMessage}, accessPath=${accessPath.map(_.hashCode.toHexString)}, reasonAccessPath=${reasonAccessPath.map(_.hashCode.toHexString)}, backendName=$backendName)"
-}
+              override def toString = s"LocalizedError(error=${error.loggableMessage}, accessPath=${accessPath.map(_.hashCode.toHexString)}, reasonAccessPath=${reasonAccessPath.map(_.hashCode.toHexString)}, backendName=$backendName)"
+              }
 
 /** An access path holds a List of Numbers
   *

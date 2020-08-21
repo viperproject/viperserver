@@ -314,20 +314,33 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     /** Top level branch is here for the same reason as in
       * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
 
-    val (methodsToVerify, methodsToCache, cachedErrors) = consultCache(real_program)
+    val file: String = _frontend.config.file()
+    val (transformed_prog, method_errors) = ViperCache.applyCache(backendName, file, real_program)
+
+    //create Error List
+    val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
+    method_errors.foreach {
+      case (m, es) =>
+        errors ++= es
+        if (es.isEmpty) {
+          _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, m, Success))
+        } else {
+          _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, m, Failure(errors)))
+        }
+    }
+
     _frontend.logger.debug(
       s"Retrieved data from cache..." +
-        s" methodsToCache: ${methodsToCache.map(_.name)};" +
-        s" cachedErrors: ${cachedErrors.map(_.loggableMessage)};" +
-        s" methodsToVerify: ${methodsToVerify.map(_.name)}.")
+//        s" methodsToCache: ${methodsToCache.map(_.name)};" +
+        s" cachedErrors: ${errors.map(_.loggableMessage)};" +
+        s" methodsToVerify: ${method_errors.map(_._1.name)}.")
 
-    val prog: Program = Program(real_program.domains, real_program.fields, real_program.functions, real_program.predicates,
-      methodsToVerify ++ methodsToCache, real_program.extensions)(real_program.pos, real_program.info, real_program.errT)
-
-    _frontend.logger.trace(s"The cached program is equivalent to: \n${prog.toString()}")
-    _frontend.setVerificationResult(_frontend.verifier.verify(prog))
+    _frontend.logger.trace(s"The cached program is equivalent to: \n${transformed_prog.toString()}")
+    _frontend.setVerificationResult(_frontend.verifier.verify(transformed_prog))
 
     _frontend.setState(DefaultStates.Verification)
+
+     val methodsToVerify = transformed_prog.methods.filter(_.body.isEmpty)
 
     //update cache
     methodsToVerify.foreach(m => {
@@ -336,9 +349,9 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
           val errorsToCacheMaybe = getMethodSpecificErrors(m, errors)
           errorsToCacheMaybe match {
             case Some(errorsToCache) => {
-              val dependencies = prog.getDependencies(prog, m).map(d => ViperAst(prog, d))
-              val content = NewViperCache.createCacheContent(backendName, file, prog, m, errorsToCache)
-              NewViperCache.update(backendName, file, ViperAst(prog, m), dependencies, content) match {
+              val dependencies = transformed_prog.getDependencies(transformed_prog, m).map(d => ViperAst(transformed_prog, d))
+              val content = ViperCache.createCacheContent(backendName, file, transformed_prog, m, errorsToCache)
+              ViperCache.update(backendName, file, ViperAst(transformed_prog, m), dependencies, content) match {
                 case e :: es =>
                   _frontend.logger.debug(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
                 case Nil =>
@@ -348,9 +361,9 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
             case None =>
           }
         case Success =>
-          val dependencies = prog.getDependencies(prog, m).map(d => ViperAst(prog, d))
-          val content = NewViperCache.createCacheContent(backendName, file, prog, m, Nil)
-          NewViperCache.update(backendName, file, ViperAst(prog, m), dependencies, content) match {
+          val dependencies = transformed_prog.getDependencies(transformed_prog, m).map(d => ViperAst(transformed_prog, d))
+          val content = ViperCache.createCacheContent(backendName, file, transformed_prog, m, Nil)
+          ViperCache.update(backendName, file, ViperAst(transformed_prog, m), dependencies, content) match {
             case e :: es =>
               _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
             case Nil =>
@@ -360,227 +373,13 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     })
 
     //combine errors:
-    if (cachedErrors.nonEmpty) {
+    if (errors.nonEmpty) {
       _frontend.getVerificationResult.get match {
         case Failure(errorList) =>
-          _frontend.setVerificationResult(Failure(errorList ++ cachedErrors))
+          _frontend.setVerificationResult(Failure(errorList ++ errors))
         case Success =>
-          _frontend.setVerificationResult(Failure(cachedErrors))
+          _frontend.setVerificationResult(Failure(errors))
       }
-    }
-  }
-
-  def consultCache(prog: Program): (List[Method], List[Method], List[VerificationError]) = {
-    val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
-    val methodsToVerify: collection.mutable.ListBuffer[Method] = ListBuffer()
-    val methodsToCache: collection.mutable.ListBuffer[Method] = ListBuffer()
-
-    val file: String = _frontend.config.file()
-
-    //read errors from cache
-    prog.methods.foreach((m: Method) => {
-      val dependencies = prog.getDependencies(prog, m).map(d => ViperAst(prog, d))
-      NewViperCache.get(backendName, file, ViperAst(prog, m), dependencies) match {
-        case Some(matched_entry) =>
-          val matched_content = matched_entry.cacheContent.asInstanceOf[ViperCacheContent]
-          val cachedErrors: Seq[VerificationError] = updateErrorLocation(prog, m, matched_content)
-          errors ++= cachedErrors
-          methodsToCache += NewViperCache.removeBody(m)
-          //Send the intermediate results to the user as soon as they are available. Approximate the time with zero.
-          if ( cachedErrors.isEmpty ) {
-            _frontend.reporter.report(EntitySuccessMessage(_frontend.getVerifierName, m, 0))
-          } else {
-            _frontend.reporter.report(EntityFailureMessage(_frontend.getVerifierName, m, 0, Failure(cachedErrors)))
-          }
-        case None =>
-          //Nothing in cache, request verification
-          methodsToVerify += m
-      }
-    })
-    (methodsToVerify.toList, methodsToCache.toList, errors.toList)
-  }
-
-  private def updateErrorLocation(p: Program, m: Method, cacheContent: ViperCacheContent): List[VerificationError] = {
-    cacheContent.errors.map(updateErrorLocation(p, m, _))
-  }
-
-  private def updateErrorLocation(p: Program, m: Method, error: LocalizedError): VerificationError = {
-    assert(error.error != null && error.accessPath != null && error.reasonAccessPath != null)
-
-    //get the corresponding offending node in the new AST
-    //TODO: are these casts ok?
-    val offendingNode = NewViperCache.getNode(backendName, file, p, error.accessPath, error.error.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
-    val reasonOffendingNode = NewViperCache.getNode(backendName, file, p, error.reasonAccessPath, error.error.reason.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
-
-    if (offendingNode.isEmpty || reasonOffendingNode.isEmpty) {
-      throw new Exception(s"Cache error: no corresponding node found for error: $error")
-    }
-
-    //create a new VerificationError that only differs in the Position of the offending Node
-    //the cast is fine, because the offending Nodes are supposed to be ErrorNodes
-    val updatedOffendingNode = updatePosition(error.error.offendingNode, offendingNode.get.pos).asInstanceOf[errors.ErrorNode]
-    val updatedReasonOffendingNode = updatePosition(error.error.reason.offendingNode, reasonOffendingNode.get.pos).asInstanceOf[errors.ErrorNode]
-    //TODO: how to also update the position of error.error.reason.offendingNode?
-    val updatedError = error.error.withNode(updatedOffendingNode).asInstanceOf[AbstractVerificationError]
-    setCached(updatedError)
-  }
-
-  def setCached(error: AbstractVerificationError): AbstractVerificationError = {
-    error match {
-      case e: Internal => e.copy(cached = true)
-      case e: AssignmentFailed => e.copy(cached = true)
-      case e: CallFailed => e.copy(cached = true)
-      case e: ContractNotWellformed => e.copy(cached = true)
-      case e: PreconditionInCallFalse => e.copy(cached = true)
-      case e: PreconditionInAppFalse => e.copy(cached = true)
-      case e: ExhaleFailed => e.copy(cached = true)
-      case e: InhaleFailed => e.copy(cached = true)
-      case e: IfFailed => e.copy(cached = true)
-      case e: WhileFailed => e.copy(cached = true)
-      case e: AssertFailed => e.copy(cached = true)
-      case e: TerminationFailed => e.copy(cached = true)
-      case e: PostconditionViolated => e.copy(cached = true)
-      case e: FoldFailed => e.copy(cached = true)
-      case e: UnfoldFailed => e.copy(cached = true)
-      case e: PackageFailed => e.copy(cached = true)
-      case e: ApplyFailed => e.copy(cached = true)
-      case e: LoopInvariantNotPreserved => e.copy(cached = true)
-      case e: LoopInvariantNotEstablished => e.copy(cached = true)
-      case e: FunctionNotWellformed => e.copy(cached = true)
-      case e: PredicateNotWellformed => e.copy(cached = true)
-      case e: MagicWandNotWellformed => e.copy(cached = true)
-      case e: LetWandFailed => e.copy(cached = true)
-      case e: HeuristicsFailed => e.copy(cached = true)
-      case e: VerificationErrorWithCounterexample => e.copy(cached = true)
-      case e: AbstractVerificationError =>
-        _frontend.logger.warn("Setting a verification error to cached was not possible for " + e + ". Make sure to handle this types of errors")
-        e
-    }
-  }
-
-  def updatePosition(n: Node, pos: Position): Node = {
-    n match {
-      case t: Trigger => t.copy()(pos, t.info, t.errT)
-      case t: Program => t.copy()(pos, t.info, t.errT)
-
-      //Members
-      case t: Field => t.copy()(pos, t.info, t.errT)
-      case t: Function => t.copy()(pos, t.info, t.errT)
-      case t: Method => t.copy()(pos, t.info, t.errT)
-      case t: Predicate => t.copy()(pos, t.info, t.errT)
-      case t: Domain => t.copy()(pos, t.info, t.errT)
-
-      //DomainMembers
-      case t: NamedDomainAxiom => t.copy()(pos, t.info, t.domainName, t.errT)
-      case t: AnonymousDomainAxiom => t.copy()(pos, t.info, t.domainName, t.errT)
-      case t: DomainFunc => t.copy()(pos, t.info, t.domainName, t.errT)
-
-      //Statements
-      case t: NewStmt => t.copy()(pos, t.info, t.errT)
-      case t: LocalVarAssign => t.copy()(pos, t.info, t.errT)
-      case t: FieldAssign => t.copy()(pos, t.info, t.errT)
-      case t: Fold => t.copy()(pos, t.info, t.errT)
-      case t: Unfold => t.copy()(pos, t.info, t.errT)
-      case t: Package => t.copy()(pos, t.info, t.errT)
-      case t: Apply => t.copy()(pos, t.info, t.errT)
-      case t: Inhale => t.copy()(pos, t.info, t.errT)
-      case t: Exhale => t.copy()(pos, t.info, t.errT)
-      case t: Assert => t.copy()(pos, t.info, t.errT)
-      case t: MethodCall => t.copy()(pos, t.info, t.errT)
-      case t: Seqn => t.copy()(pos, t.info, t.errT)
-      case t: While => t.copy()(pos, t.info, t.errT)
-      case t: If => t.copy()(pos, t.info, t.errT)
-      case t: Label => t.copy()(pos, t.info, t.errT)
-      case t: Goto => t.copy()(pos, t.info, t.errT)
-      case t: LocalVarDeclStmt => t.copy()(pos, t.info, t.errT)
-
-      case t: LocalVarDecl => t.copy()(pos, t.info, t.errT)
-
-      //Expressions
-      case t: FalseLit => t.copy()(pos, t.info, t.errT)
-      case t: NullLit => t.copy()(pos, t.info, t.errT)
-      case t: TrueLit => t.copy()(pos, t.info, t.errT)
-      case t: IntLit => t.copy()(pos, t.info, t.errT)
-      case t: LocalVar => t.copy(typ = t.typ)(pos, t.info, t.errT)
-      case t: viper.silver.ast.Result => t.copy(t.typ)(pos, t.info, t.errT)
-      case t: FieldAccess => t.copy()(pos, t.info, t.errT)
-      case t: PredicateAccess => t.copy()(pos, t.info, t.errT)
-      case t: Unfolding => t.copy()(pos, t.info, t.errT)
-      case t: Applying => t.copy()(pos, t.info, t.errT)
-      case t: CondExp => t.copy()(pos, t.info, t.errT)
-      case t: Let => t.copy()(pos, t.info, t.errT)
-      case t: Exists => t.copy()(pos, t.info, t.errT)
-      case t: Forall => t.copy()(pos, t.info, t.errT)
-      case t: ForPerm => t.copy()(pos, t.info, t.errT)
-      case t: InhaleExhaleExp => t.copy()(pos, t.info, t.errT)
-      case t: WildcardPerm => t.copy()(pos, t.info, t.errT)
-      case t: FullPerm => t.copy()(pos, t.info, t.errT)
-      case t: NoPerm => t.copy()(pos, t.info, t.errT)
-      case t: EpsilonPerm => t.copy()(pos, t.info, t.errT)
-      case t: CurrentPerm => t.copy()(pos, t.info, t.errT)
-      case t: FieldAccessPredicate => t.copy()(pos, t.info, t.errT)
-      case t: PredicateAccessPredicate => t.copy()(pos, t.info, t.errT)
-
-      //Binary operators
-      case t: Add => t.copy()(pos, t.info, t.errT)
-      case t: Sub => t.copy()(pos, t.info, t.errT)
-      case t: Mul => t.copy()(pos, t.info, t.errT)
-      case t: Div => t.copy()(pos, t.info, t.errT)
-      case t: Mod => t.copy()(pos, t.info, t.errT)
-      case t: LtCmp => t.copy()(pos, t.info, t.errT)
-      case t: LeCmp => t.copy()(pos, t.info, t.errT)
-      case t: GtCmp => t.copy()(pos, t.info, t.errT)
-      case t: GeCmp => t.copy()(pos, t.info, t.errT)
-      case t: EqCmp => t.copy()(pos, t.info, t.errT)
-      case t: NeCmp => t.copy()(pos, t.info, t.errT)
-      case t: Or => t.copy()(pos, t.info, t.errT)
-      case t: And => t.copy()(pos, t.info, t.errT)
-      case t: Implies => t.copy()(pos, t.info, t.errT)
-      case t: MagicWand => t.copy()(pos, t.info, t.errT)
-      case t: FractionalPerm => t.copy()(pos, t.info, t.errT)
-      case t: PermDiv => t.copy()(pos, t.info, t.errT)
-      case t: PermAdd => t.copy()(pos, t.info, t.errT)
-      case t: PermSub => t.copy()(pos, t.info, t.errT)
-      case t: PermMul => t.copy()(pos, t.info, t.errT)
-      case t: IntPermMul => t.copy()(pos, t.info, t.errT)
-      case t: PermLtCmp => t.copy()(pos, t.info, t.errT)
-      case t: PermLeCmp => t.copy()(pos, t.info, t.errT)
-      case t: PermGtCmp => t.copy()(pos, t.info, t.errT)
-      case t: PermGeCmp => t.copy()(pos, t.info, t.errT)
-      case t: AnySetUnion => t.copy()(pos, t.info, t.errT)
-      case t: AnySetIntersection => t.copy()(pos, t.info, t.errT)
-      case t: AnySetSubset => t.copy()(pos, t.info, t.errT)
-      case t: AnySetMinus => t.copy()(pos, t.info, t.errT)
-      case t: AnySetContains => t.copy()(pos, t.info, t.errT)
-
-      //Unary operators
-      case t: Minus => t.copy()(pos, t.info, t.errT)
-      case t: Not => t.copy()(pos, t.info, t.errT)
-      case t: PermMinus => t.copy()(pos, t.info, t.errT)
-      case t: Old => t.copy()(pos, t.info, t.errT)
-      case t: LabelledOld => t.copy()(pos, t.info, t.errT)
-      case t: AnySetCardinality => t.copy()(pos, t.info, t.errT)
-      case t: FuncApp => t.copy()(pos, t.info, t.typ, t.errT)
-      case t: DomainFuncApp => t.copy()(pos, t.info, t.typ, t.domainName, t.errT)
-      case t: EmptySeq => t.copy()(pos, t.info, t.errT)
-      case t: ExplicitSeq => t.copy()(pos, t.info, t.errT)
-      case t: RangeSeq => t.copy()(pos, t.info, t.errT)
-      case t: SeqAppend => t.copy()(pos, t.info, t.errT)
-      case t: SeqIndex => t.copy()(pos, t.info, t.errT)
-      case t: SeqTake => t.copy()(pos, t.info, t.errT)
-      case t: SeqDrop => t.copy()(pos, t.info, t.errT)
-      case t: SeqContains => t.copy()(pos, t.info, t.errT)
-      case t: SeqUpdate => t.copy()(pos, t.info, t.errT)
-      case t: SeqLength => t.copy()(pos, t.info, t.errT)
-
-      //others
-      case t: EmptySet => t.copy()(pos, t.info, t.errT)
-      case t: ExplicitSet => t.copy()(pos, t.info, t.errT)
-      case t: EmptyMultiset => t.copy()(pos, t.info, t.errT)
-      case t: ExplicitMultiset => t.copy()(pos, t.info, t.errT)
-      case t =>
-        _frontend.logger.warn("The location was not updated for the node " + t + ". Make sure to handle this type of node")
-        t
     }
   }
 

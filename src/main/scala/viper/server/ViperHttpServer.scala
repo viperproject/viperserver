@@ -12,7 +12,7 @@ import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
 import spray.json.DefaultJsonProtocol
 import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, SiliconConfig}
-import viper.server.core.{NewViperCache, SilverEnvelope, ViperBackendConfig, ViperCoreServer}
+import viper.server.core.{ViperCache, SilverEnvelope, ViperBackendConfig, ViperCoreServer}
 import viper.silver.logger.{ViperLogger, ViperStdOutLogger}
 import viper.server.protocol.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
 import viper.silver.reporter.Message
@@ -30,7 +30,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
     config.verify()
 
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
-    NewViperCache.initialize(logger.get, config.backendSpecificCache())
+    ViperCache.initialize(logger.get, config.backendSpecificCache())
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
     val port = config.port()
@@ -140,7 +140,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
       post {
         entity(as[CacheResetRequest]) {
           r =>
-            NewViperCache.forgetFile(r.backend, r.file) match {
+            ViperCache.forgetFile(r.backend, r.file) match {
               case Some(_) =>
                 complete( CacheFlushAccept(s"The cache for tool (${r.backend}) for file (${r.file}) has been flushed successfully.") )
               case None =>
