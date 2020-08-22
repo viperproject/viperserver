@@ -3,6 +3,8 @@ package viper.server.vsi
 import viper.silver.utility.CacheHelper
 
 import scala.collection.mutable.{Map => MutableMap}
+
+
 /** The goal of this generic caching trait is to provide
   *
   * 1) an elaborate storing system that can decide whether or not stored resources are valid.
@@ -30,8 +32,6 @@ import scala.collection.mutable.{Map => MutableMap}
   * This program should thereby have been transformed in such a way that a verifier may not perform
   * unnecessary verifications on its members.
   * */
-
-
 trait VerificationServerInterfaceCache {
 
   override def toString: String = _cache.toString
@@ -56,14 +56,7 @@ trait VerificationServerInterfaceCache {
   type FileCash = MutableMap[Hash, List[CacheEntry]]
 
 
-  /** This method creates a (client-specific) cache entry.
-    *
-    * [[Content]] is yet again a client-specific Type. Therefore, both need a specific implementation
-    *
-    * E.g., the cache entries for ViperServer hold LocalizedErrors.
-    */
-  type Content
-  protected def createCacheEntry(content: Content, dependencyHash: Hash): CacheEntry
+  protected def createCacheEntry(content: CacheContent, dependencyHash: Hash): CacheEntry
 
   def get(
         file_key: String,
@@ -86,7 +79,7 @@ trait VerificationServerInterfaceCache {
         file_key: String,
         key: Concerning,
         dependencies: List[Concerning],
-        content: Content): List[CacheEntry] = {
+        content: CacheContent): List[CacheEntry] = {
 
     val concerning_hash = hashFunction(key)
     val dependencies_hash = dependencies.map(hashFunction).mkString(" ")
@@ -122,8 +115,6 @@ trait VerificationServerInterfaceCache {
   def resetCache(): Unit = {
     _cache.clear()
   }
-
-  protected def hex(h: Hash) = h.hashCode.toHexString
 }
 
 // ===== AUXILIARY TRAITS ==================================================================

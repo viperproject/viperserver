@@ -349,9 +349,9 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
           val errorsToCacheMaybe = getMethodSpecificErrors(m, errors)
           errorsToCacheMaybe match {
             case Some(errorsToCache) => {
-              val dependencies = transformed_prog.getDependencies(transformed_prog, m).map(d => ViperAst(transformed_prog, d))
+              val dependencies = transformed_prog.getDependencies(transformed_prog, m)
               val content = ViperCache.createCacheContent(backendName, file, transformed_prog, m, errorsToCache)
-              ViperCache.update(backendName, file, ViperAst(transformed_prog, m), dependencies, content) match {
+              ViperCache.update(backendName, file, m, dependencies, content) match {
                 case e :: es =>
                   _frontend.logger.debug(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
                 case Nil =>
@@ -361,9 +361,9 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
             case None =>
           }
         case Success =>
-          val dependencies = transformed_prog.getDependencies(transformed_prog, m).map(d => ViperAst(transformed_prog, d))
+          val dependencies = transformed_prog.getDependencies(transformed_prog, m)
           val content = ViperCache.createCacheContent(backendName, file, transformed_prog, m, Nil)
-          ViperCache.update(backendName, file, ViperAst(transformed_prog, m), dependencies, content) match {
+          ViperCache.update(backendName, file, m, dependencies, content) match {
             case e :: es =>
               _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
             case Nil =>

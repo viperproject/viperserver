@@ -1,8 +1,9 @@
 package viper.server.core
 
 import ch.qos.logback.classic.Logger
+import viper.server.core.ViperCache.{logger}
 import viper.server.vsi.{CacheContent, CacheEntry, VerificationServerInterfaceCache}
-import viper.silver.ast.{Add, And, AnonymousDomainAxiom, AnySetCardinality, AnySetContains, AnySetIntersection, AnySetMinus, AnySetSubset, AnySetUnion, Apply, Applying, Assert, Cached, CondExp, ConsInfo, CurrentPerm, Div, Domain, DomainFunc, DomainFuncApp, EmptyMultiset, EmptySeq, EmptySet, EpsilonPerm, EqCmp, Exhale, Exists, ExplicitMultiset, ExplicitSeq, ExplicitSet, FalseLit, Field, FieldAccess, FieldAccessPredicate, FieldAssign, Fold, ForPerm, Forall, FractionalPerm, FullPerm, FuncApp, Function, GeCmp, Goto, GtCmp, Hashable, If, Implies, Inhale, InhaleExhaleExp, IntLit, IntPermMul, Label, LabelledOld, LeCmp, Let, LocalVar, LocalVarAssign, LocalVarDecl, LocalVarDeclStmt, LtCmp, MagicWand, Method, MethodCall, Minus, Mod, Mul, NamedDomainAxiom, NeCmp, NewStmt, NoPerm, Node, Not, NullLit, Old, Or, Package, PermAdd, PermDiv, PermGeCmp, PermGtCmp, PermLeCmp, PermLtCmp, PermMinus, PermMul, PermSub, Position, Predicate, PredicateAccess, PredicateAccessPredicate, Program, RangeSeq, SeqAppend, SeqContains, SeqDrop, SeqIndex, SeqLength, SeqTake, SeqUpdate, Seqn, Sub, Trigger, TrueLit, Unfold, Unfolding, While, WildcardPerm}
+import viper.silver.ast.{Add, And, AnonymousDomainAxiom, AnySetCardinality, AnySetContains, AnySetIntersection, AnySetMinus, AnySetSubset, AnySetUnion, Apply, Applying, Assert, Cached, CondExp, ConsInfo, CurrentPerm, Div, Domain, DomainFunc, DomainFuncApp, EmptyMultiset, EmptySeq, EmptySet, EpsilonPerm, EqCmp, Exhale, Exists, ExplicitMultiset, ExplicitSeq, ExplicitSet, FalseLit, Field, FieldAccess, FieldAccessPredicate, FieldAssign, Fold, ForPerm, Forall, FractionalPerm, FullPerm, FuncApp, Function, GeCmp, Goto, GtCmp, Hashable, If, Implies, Inhale, InhaleExhaleExp, IntLit, IntPermMul, Label, LabelledOld, LeCmp, Let, LocalVar, LocalVarAssign, LocalVarDecl, LocalVarDeclStmt, LtCmp, MagicWand, Member, Method, MethodCall, Minus, Mod, Mul, NamedDomainAxiom, NeCmp, NewStmt, NoPerm, Node, Not, NullLit, Old, Or, Package, PermAdd, PermDiv, PermGeCmp, PermGtCmp, PermLeCmp, PermLtCmp, PermMinus, PermMul, PermSub, Position, Predicate, PredicateAccess, PredicateAccessPredicate, Program, RangeSeq, SeqAppend, SeqContains, SeqDrop, SeqIndex, SeqLength, SeqTake, SeqUpdate, Seqn, Sub, Trigger, TrueLit, Unfold, Unfolding, While, WildcardPerm}
 import viper.silver.utility.CacheHelper
 import viper.silver.verifier.errors.{ApplyFailed, AssertFailed, AssignmentFailed, CallFailed, ContractNotWellformed, ExhaleFailed, FoldFailed, FunctionNotWellformed, HeuristicsFailed, IfFailed, InhaleFailed, Internal, LetWandFailed, LoopInvariantNotEstablished, LoopInvariantNotPreserved, MagicWandNotWellformed, PackageFailed, PostconditionViolated, PreconditionInAppFalse, PreconditionInCallFalse, PredicateNotWellformed, TerminationFailed, UnfoldFailed, VerificationErrorWithCounterexample, WhileFailed}
 import viper.silver.verifier.{AbstractVerificationError, Failure, Success, VerificationError, errors}
@@ -10,12 +11,13 @@ import viper.silver.verifier.{AbstractVerificationError, Failure, Success, Verif
 import scala.collection.mutable.{Map => MutableMap}
 import scala.collection.mutable.ListBuffer
 
+
+
 // ===== CACHE OBJECT ==================================================================
 
 object ViperCache extends VerificationServerInterfaceCache {
 
   private var _backendSpecificCache: Boolean = false
-  private val _node_hash_memo = MutableMap.empty[String, MutableMap[Node, String]]
 
   var _logger: Logger = _
   def logger: Logger = _logger
@@ -25,10 +27,12 @@ object ViperCache extends VerificationServerInterfaceCache {
     _logger = logger
   }
 
-  type Content = ViperCacheContent
-  type Concerning = ViperAst
-  def hashFunction(in: ViperAst): String = {
-    in.m.entityHash
+  type Concerning = Hashable
+  def hashFunction(in: Concerning): String = {
+    in match {
+      case m: Method => m.entityHash
+      case f: Function => f.entityHash
+    }
   }
 
   /** This method transforms a program by applying cache information
@@ -54,13 +58,13 @@ object ViperCache extends VerificationServerInterfaceCache {
 
     //read errors from cache
     input_prog.methods.foreach((m: Method) => {
-      val dependencies = input_prog.getDependencies(input_prog, m).map(d => ViperAst(input_prog, d))
-      get(backendName, file, ViperAst(input_prog, m), dependencies) match {
+      val dependencies = input_prog.getDependencies(input_prog, m)
+      get(backendName, file, m, dependencies) match {
         case Some(matched_entry) =>
           val matched_content = matched_entry.cacheContent.asInstanceOf[ViperCacheContent]
           val cachedErrors: Seq[VerificationError] = updateErrorLocation(file_key, input_prog, m, matched_content)
           method_errors += (m -> cachedErrors.toList)
-          methodsToCache += removeBody(m)
+          methodsToCache += ViperCacheHelper.removeBody(m)
         case None =>
           //Nothing in cache, request verification
           methodsToVerify += m
@@ -92,8 +96,8 @@ object ViperCache extends VerificationServerInterfaceCache {
 
     //get the corresponding offending node in the new AST
     //TODO: are these casts ok?
-    val offendingNode = getNode(file_key, p, error.accessPath, error.error.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
-    val reasonOffendingNode = getNode(file_key, p, error.reasonAccessPath, error.error.reason.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
+    val offendingNode = ViperCacheHelper.getNode(file_key, p, error.accessPath, error.error.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
+    val reasonOffendingNode = ViperCacheHelper.getNode(file_key, p, error.reasonAccessPath, error.error.reason.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
 
     if (offendingNode.isEmpty || reasonOffendingNode.isEmpty) {
       throw new Exception(s"Cache error: no corresponding node found for error: $error")
@@ -282,7 +286,7 @@ object ViperCache extends VerificationServerInterfaceCache {
         file: String,
         key: Concerning,
         dependencies: List[Concerning],
-        content: Content): List[CacheEntry] = {
+        content: ViperCacheContent): List[CacheEntry] = {
 
     val file_key = getKey(backendName, file)
     super.update(file_key, key, dependencies, content)
@@ -294,7 +298,7 @@ object ViperCache extends VerificationServerInterfaceCache {
   }
 
   override def resetCache(): Unit = {
-    _node_hash_memo.clear()
+    ViperCacheHelper.node_hash_memo.clear()
     _cache.clear()
   }
 
@@ -302,7 +306,7 @@ object ViperCache extends VerificationServerInterfaceCache {
     (if (_backendSpecificCache) backendName else "") + file
   }
 
-  def createCacheEntry(errors: Content, dh: Hash): ViperCacheEntry = {
+  def createCacheEntry(errors: CacheContent, dh: Hash): ViperCacheEntry = {
     ViperCacheEntry(errors, dh)
   }
 
@@ -314,11 +318,19 @@ object ViperCache extends VerificationServerInterfaceCache {
     implicit val key: String = getKey(backendName, file)
     val loc_errs = errors.map(err =>
       LocalizedError(err,
-        getAccessPath(err.offendingNode, p),
-        getAccessPath(err.reason.offendingNode, p),
+        ViperCacheHelper.getAccessPath(err.offendingNode, p),
+        ViperCacheHelper.getAccessPath(err.reason.offendingNode, p),
         backendName))
     ViperCacheContent(loc_errs)
   }
+}
+
+
+object ViperCacheHelper{
+  private val _node_hash_memo = MutableMap.empty[String, MutableMap[Node, String]]
+  def node_hash_memo = _node_hash_memo
+
+  protected def hex(h: String) = h.hashCode.toHexString
 
   /**
     * This method is used for computing unique-ish hashes of AST nodes.
@@ -429,12 +441,12 @@ object ViperCache extends VerificationServerInterfaceCache {
     *
     * */
   def getNode(
-        implicit file_key: String,
-        p: Program,
-        accessPath: List[String],
-        oldNode: Node): Option[Node] = {
+               implicit file_key: String,
+               p: Program,
+               accessPath: List[String],
+               oldNode: Node): Option[Node] = {
 
-    logger.trace(s"looking for last node on access path ${accessPath.map(hex)}...")
+    logger.trace(s"looking for last node on access path ${accessPath.map(ViperCacheHelper.hex)}...")
 
     // start at root and traverse path node (hash) by node (hash)
     var curr: Node = p
@@ -472,7 +484,7 @@ object ViperCache extends VerificationServerInterfaceCache {
 /** A cache entry holds an errors of type [[LocalizedError]] and hashes of type [[String]]
   * */
 case class ViperCacheEntry(
-              content:ViperCacheContent,
+              content:CacheContent,
               dependencyHash: String) extends CacheEntry(content, dependencyHash) {
 
   override def toString = s"CacheEntry(errors=$errors, dependencyHash=${dependencyHash.hashCode.toHexString})"
@@ -499,5 +511,3 @@ class AccessPath(val accessPath: List[Number]) {
 
   override def toString = s"AccessPath(accessPath=${accessPath.map(_.hashCode.toHexString)})"
 }
-
-case class ViperAst(p: Program, m: Hashable)
