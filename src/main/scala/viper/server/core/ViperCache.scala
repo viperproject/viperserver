@@ -1,17 +1,14 @@
 package viper.server.core
 
 import ch.qos.logback.classic.Logger
-import viper.server.core.ViperCache.{logger}
-import viper.server.vsi.{CacheContent, CacheEntry, VerificationServerInterfaceCache}
-import viper.silver.ast.{Add, And, AnonymousDomainAxiom, AnySetCardinality, AnySetContains, AnySetIntersection, AnySetMinus, AnySetSubset, AnySetUnion, Apply, Applying, Assert, Cached, CondExp, ConsInfo, CurrentPerm, Div, Domain, DomainFunc, DomainFuncApp, EmptyMultiset, EmptySeq, EmptySet, EpsilonPerm, EqCmp, Exhale, Exists, ExplicitMultiset, ExplicitSeq, ExplicitSet, FalseLit, Field, FieldAccess, FieldAccessPredicate, FieldAssign, Fold, ForPerm, Forall, FractionalPerm, FullPerm, FuncApp, Function, GeCmp, Goto, GtCmp, Hashable, If, Implies, Inhale, InhaleExhaleExp, IntLit, IntPermMul, Label, LabelledOld, LeCmp, Let, LocalVar, LocalVarAssign, LocalVarDecl, LocalVarDeclStmt, LtCmp, MagicWand, Member, Method, MethodCall, Minus, Mod, Mul, NamedDomainAxiom, NeCmp, NewStmt, NoPerm, Node, Not, NullLit, Old, Or, Package, PermAdd, PermDiv, PermGeCmp, PermGtCmp, PermLeCmp, PermLtCmp, PermMinus, PermMul, PermSub, Position, Predicate, PredicateAccess, PredicateAccessPredicate, Program, RangeSeq, SeqAppend, SeqContains, SeqDrop, SeqIndex, SeqLength, SeqTake, SeqUpdate, Seqn, Sub, Trigger, TrueLit, Unfold, Unfolding, While, WildcardPerm}
+import viper.server.core.ViperCache.logger
+import viper.server.vsi._
+import viper.silver.ast.{Add, And, AnonymousDomainAxiom, AnySetCardinality, AnySetContains, AnySetIntersection, AnySetMinus, AnySetSubset, AnySetUnion, Apply, Applying, Assert, Cached, CondExp, ConsInfo, CurrentPerm, Div, Domain, DomainFunc, DomainFuncApp, EmptyMultiset, EmptySeq, EmptySet, EpsilonPerm, EqCmp, ErrorTrafo, Exhale, Exists, ExplicitMultiset, ExplicitSeq, ExplicitSet, ExtensionMember, FalseLit, Field, FieldAccess, FieldAccessPredicate, FieldAssign, Fold, ForPerm, Forall, FractionalPerm, FullPerm, FuncApp, Function, GeCmp, Goto, GtCmp, Hashable, If, Implies, Info, Inhale, InhaleExhaleExp, IntLit, IntPermMul, Label, LabelledOld, LeCmp, Let, LocalVar, LocalVarAssign, LocalVarDecl, LocalVarDeclStmt, LtCmp, MagicWand, Method, MethodCall, Minus, Mod, Mul, NamedDomainAxiom, NeCmp, NewStmt, NoInfo, NoPerm, NoPosition, NoTrafos, Node, Not, NullLit, Old, Or, Package, PermAdd, PermDiv, PermGeCmp, PermGtCmp, PermLeCmp, PermLtCmp, PermMinus, PermMul, PermSub, Position, Predicate, PredicateAccess, PredicateAccessPredicate, Program, RangeSeq, SeqAppend, SeqContains, SeqDrop, SeqIndex, SeqLength, SeqTake, SeqUpdate, Seqn, Sub, Trigger, TrueLit, Unfold, Unfolding, While, WildcardPerm}
 import viper.silver.utility.CacheHelper
-import viper.silver.verifier.errors.{ApplyFailed, AssertFailed, AssignmentFailed, CallFailed, ContractNotWellformed, ExhaleFailed, FoldFailed, FunctionNotWellformed, HeuristicsFailed, IfFailed, InhaleFailed, Internal, LetWandFailed, LoopInvariantNotEstablished, LoopInvariantNotPreserved, MagicWandNotWellformed, PackageFailed, PostconditionViolated, PreconditionInAppFalse, PreconditionInCallFalse, PredicateNotWellformed, TerminationFailed, UnfoldFailed, VerificationErrorWithCounterexample, WhileFailed}
-import viper.silver.verifier.{AbstractVerificationError, Failure, Success, VerificationError, errors}
+import viper.silver.verifier.errors._
+import viper.silver.verifier.{AbstractVerificationError, VerificationError, errors}
 
 import scala.collection.mutable.{Map => MutableMap}
-import scala.collection.mutable.ListBuffer
-
-
 
 // ===== CACHE OBJECT ==================================================================
 
@@ -27,54 +24,23 @@ object ViperCache extends VerificationServerInterfaceCache {
     _logger = logger
   }
 
-  type Concerning = Hashable
-  def hashFunction(in: Concerning): String = {
-    in match {
-      case m: Method => m.entityHash
-      case f: Function => f.entityHash
-    }
-  }
-
-  /** This method transforms a program by applying cache information
-    *
-    * The input and out put program should be equivalent in terms of verification, but they should
-    * differ in their AST. In particular the output program should have been transformed such that
-    * verifying it should be faster that verifying the input program.
-    *
-    * Additionally, the method returns previously cached verification result for members of the
-    * programs.
-    *
-    * */
-  def applyCache(
+  def apply(
         backendName: String,
         file: String,
-        input_prog: Program): (Program, ListBuffer[(Method, List[VerificationError])]) = {
+        p: Program): (Program, List[CacheResult]) = {
 
-    val methodsToVerify: ListBuffer[Method] = ListBuffer()
-    val methodsToCache: ListBuffer[Method] = ListBuffer()
-    val method_errors: ListBuffer[(Method, List[VerificationError])] = ListBuffer()
-
-    val file_key = getKey(file, backendName)
-
-    //read errors from cache
-    input_prog.methods.foreach((m: Method) => {
-      val dependencies = input_prog.getDependencies(input_prog, m)
-      get(backendName, file, m, dependencies) match {
-        case Some(matched_entry) =>
-          val matched_content = matched_entry.cacheContent.asInstanceOf[ViperCacheContent]
-          val cachedErrors: Seq[VerificationError] = updateErrorLocation(file_key, input_prog, m, matched_content)
-          method_errors += (m -> cachedErrors.toList)
-          methodsToCache += ViperCacheHelper.removeBody(m)
-        case None =>
-          //Nothing in cache, request verification
-          methodsToVerify += m
-      }
+    val file_key = getKey(backendName, file)
+    val cacheable_ast = new ViperAst(p.domains, p.fields, p.functions, p.predicates, p.methods, p.extensions)(p.pos, p.info, p.errT)
+    val (output_ast, cache_entries) = super.apply(file_key, cacheable_ast)
+    val output_prog = output_ast.asInstanceOf[Program]
+    val ver_results = cache_entries.map(ce => {
+      val concerning_method = ce.concerning.asInstanceOf[Method]
+      val content = ce.cacheContent.asInstanceOf[ViperCacheContent]
+      val ver_errors = updateErrorLocation(file_key, output_prog, concerning_method, content)
+      CacheResult(concerning_method, ver_errors)
     })
 
-    val output_prog: Program = Program(input_prog.domains, input_prog.fields, input_prog.functions, input_prog.predicates,
-      methodsToVerify ++ methodsToCache, input_prog.extensions)(input_prog.pos, input_prog.info, input_prog.errT)
-
-    (output_prog, method_errors)
+    (output_prog, ver_results)
   }
 
   private def updateErrorLocation(
@@ -271,25 +237,17 @@ object ViperCache extends VerificationServerInterfaceCache {
     }
   }
 
-  def get(
-       backendName: String,
-       file: String,
-       key: Concerning,
-       dependencies: List[Concerning]): Option[CacheEntry] = {
-
-    val file_key = getKey(backendName, file)
-    super.get(file_key, key, dependencies)
-  }
-
   def update(
         backendName: String,
         file: String,
-        key: Concerning,
-        dependencies: List[Concerning],
-        content: ViperCacheContent): List[CacheEntry] = {
+        method: Method,
+        program: Program,
+        errors: List[AbstractVerificationError]): List[CacheEntry] = {
 
+    val deps = program.getDependencies(program, method).map(h => ViperHashable(h))
+    val content = createCacheContent(backendName, file, program, method, errors)
     val file_key = getKey(backendName, file)
-    super.update(file_key, key, dependencies, content)
+    super.update(file_key, ViperHashable(method), deps, content)
   }
 
   def forgetFile(backendName: String, file: String): Option[String] = {
@@ -304,10 +262,6 @@ object ViperCache extends VerificationServerInterfaceCache {
 
   def getKey(file: String, backendName: String): String = {
     (if (_backendSpecificCache) backendName else "") + file
-  }
-
-  def createCacheEntry(errors: CacheContent, dh: Hash): ViperCacheEntry = {
-    ViperCacheEntry(errors, dh)
   }
 
   def createCacheContent(
@@ -438,7 +392,6 @@ object ViperCacheHelper{
   private def str(n: Node)(implicit key: String) = s"(${n.toOneLinerStr()} -> ${getHashForNode(n).hashCode.toHexString})"
 
   /** Finds a node in a program by traversing the provided accessPath
-    *
     * */
   def getNode(
                implicit file_key: String,
@@ -481,15 +434,6 @@ object ViperCacheHelper{
 
 // ===== AUXILIARY CLASSES ==================================================================
 
-/** A cache entry holds an errors of type [[LocalizedError]] and hashes of type [[String]]
-  * */
-case class ViperCacheEntry(
-              content:CacheContent,
-              dependencyHash: String) extends CacheEntry(content, dependencyHash) {
-
-  override def toString = s"CacheEntry(errors=$errors, dependencyHash=${dependencyHash.hashCode.toHexString})"
-}
-
 case class ViperCacheContent(errors: List[LocalizedError]) extends CacheContent
 
 /** A localized error contains the Abstract Verification Error, paths
@@ -501,8 +445,8 @@ case class LocalizedError(
               reasonAccessPath: List[String],
               backendName: String) {
 
-              override def toString = s"LocalizedError(error=${error.loggableMessage}, accessPath=${accessPath.map(_.hashCode.toHexString)}, reasonAccessPath=${reasonAccessPath.map(_.hashCode.toHexString)}, backendName=$backendName)"
-              }
+  override def toString = s"LocalizedError(error=${error.loggableMessage}, accessPath=${accessPath.map(_.hashCode.toHexString)}, reasonAccessPath=${reasonAccessPath.map(_.hashCode.toHexString)}, backendName=$backendName)"
+}
 
 /** An access path holds a List of Numbers
   *
@@ -510,4 +454,50 @@ case class LocalizedError(
 class AccessPath(val accessPath: List[Number]) {
 
   override def toString = s"AccessPath(accessPath=${accessPath.map(_.hashCode.toHexString)})"
+}
+
+class ViperAst(
+        override val domains: Seq[Domain], override val fields: Seq[Field],
+        override val functions: Seq[Function], override val predicates: Seq[Predicate],
+        override val methods: Seq[Method], override val extensions: Seq[ExtensionMember])
+        (override val pos: Position = NoPosition, override val info: Info = NoInfo, override val errT: ErrorTrafo = NoTrafos)
+        extends Program(
+                domains = domains, fields = fields, functions = functions, predicates = predicates,
+                methods = methods, extensions = extensions)(pos = pos, info = info, errT = errT) with AST {
+
+  override def compose(cs: List[Concerning]): AST = {
+    val methods_new = cs.map(_.asInstanceOf[ViperHashable].member)
+    new ViperAst(domains, fields, functions, predicates, methods_new.asInstanceOf[List[Method]], extensions)(pos, info, errT)
+  }
+
+  override def decompose(): List[Concerning] = {
+    methods.map(m => ViperHashable(m)).toList
+  }
+}
+
+case class CacheResult(method: Method, verification_errors: List[VerificationError])
+
+case class ViperHashable(h: Hashable) extends Concerning {
+  type Member = Hashable
+  override val member: Hashable = h
+
+  def hashFunction(): String = {
+    member.entityHash
+  }
+
+  def transform: Concerning = {
+    member match {
+      case m: Method => ViperHashable(m.copy(body = None)(m.pos, ConsInfo(m.info, Cached), m.errT))
+      case _ => ViperHashable(member)
+    }
+  }
+
+  def getDependencies(program: AST): List[Concerning] = {
+    member match {
+      case m: Method =>
+        val p = program.asInstanceOf[ViperAst]
+        p.getDependencies(p, m).map(h => ViperHashable(h))
+      case _ => Nil
+    }
+  }
 }

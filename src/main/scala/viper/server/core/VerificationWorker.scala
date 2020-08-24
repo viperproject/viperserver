@@ -14,15 +14,13 @@ import viper.server.ViperConfig
 import viper.server.protocol.ReporterProtocol
 import viper.server.vsi.{Envelope, Letter, TaskProtocol, VerificationTask}
 import viper.silicon.SiliconFrontend
-import viper.silver.ast.{Position, _}
+import viper.silver.ast._
 import viper.silver.frontend.{DefaultStates, SilFrontend}
 import viper.silver.reporter.{Reporter, _}
-import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, VerificationResult, _}
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext
 import scala.language.postfixOps
 
 class ViperServerException extends Exception
@@ -31,15 +29,6 @@ case class ViperServerWrongTypeException(name: String) extends ViperServerExcept
 }
 case class ViperServerBackendNotFoundException(name: String) extends ViperServerException {
   override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be found."
-}
-
-//TODO move this to CoreServer
-case class SilverEnvelope(msg: Message) extends Envelope
-
-class SilverLetter(val m: Message) extends Letter {
-  override type M = Message
-
-  def unpack(): M = m
 }
 
 class VerificationWorker(private val viper_config: ViperConfig,
@@ -73,7 +62,7 @@ class VerificationWorker(private val viper_config: ViperConfig,
     val name = s"ViperServer_$tag"
 
     def report(msg: Message): Unit = {
-      enqueueMessages(new SilverEnvelope(msg))
+      enqueueMessages(SilverEnvelope(msg))
     }
   }
 
@@ -266,6 +255,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
         _frontend.reporter report OverallFailureMessage(_frontend.getVerifierName,
                                                         System.currentTimeMillis() - _frontend.startTime,
                                                         Failure(f.errors.filter { e => !e.cached }))
+      case None =>
     }
     _frontend.verifier.stop()
   }
@@ -315,60 +305,49 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
       * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
 
     val file: String = _frontend.config.file()
-    val (transformed_prog, method_errors) = ViperCache.applyCache(backendName, file, real_program)
+    val (transformed_prog, cache_results) = ViperCache.apply(backendName, file, real_program)
 
-    //create Error List
+    //collect and report errors
     val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
-    method_errors.foreach {
-      case (m, es) =>
-        errors ++= es
-        if (es.isEmpty) {
-          _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, m, Success))
-        } else {
-          _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, m, Failure(errors)))
-        }
-    }
+    cache_results.foreach (result => {
+      val cached_errors = result.verification_errors
+      if(cached_errors.isEmpty){
+        _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName,result.method, Success))
+      } else {
+        errors ++= cached_errors
+        _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(errors)))
+      }
+    })
 
     _frontend.logger.debug(
       s"Retrieved data from cache..." +
-//        s" methodsToCache: ${methodsToCache.map(_.name)};" +
         s" cachedErrors: ${errors.map(_.loggableMessage)};" +
-        s" methodsToVerify: ${method_errors.map(_._1.name)}.")
-
+        s" methodsToVerify: ${cache_results.map(_.method.name)}.")
     _frontend.logger.trace(s"The cached program is equivalent to: \n${transformed_prog.toString()}")
-    _frontend.setVerificationResult(_frontend.verifier.verify(transformed_prog))
 
+    _frontend.setVerificationResult(_frontend.verifier.verify(transformed_prog))
     _frontend.setState(DefaultStates.Verification)
 
-     val methodsToVerify = transformed_prog.methods.filter(_.body.isEmpty)
-
     //update cache
+    val methodsToVerify = transformed_prog.methods.filter(_.body.isEmpty)
     methodsToVerify.foreach(m => {
-      _frontend.getVerificationResult.get match {
-        case Failure(errors) =>
-          val errorsToCacheMaybe = getMethodSpecificErrors(m, errors)
-          errorsToCacheMaybe match {
-            case Some(errorsToCache) => {
-              val dependencies = transformed_prog.getDependencies(transformed_prog, m)
-              val content = ViperCache.createCacheContent(backendName, file, transformed_prog, m, errorsToCache)
-              ViperCache.update(backendName, file, m, dependencies, content) match {
-                case e :: es =>
-                  _frontend.logger.debug(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
-                case Nil =>
-                  _frontend.logger.warn(s"Storing new entry in cache for method (${m.name}) FAILED. List of errors for this method: $errorsToCache")
-              }
-            }
-            case None =>
+      // Results come back  irrespective of program Member.
+      val cachable_errors =
+        for {
+          verRes <- _frontend.getVerificationResult
+          cache_errs <- verRes match {
+            case Failure(errs) => getMethodSpecificErrors(m, errs)
+            case Success => Some(Nil)
           }
-        case Success =>
-          val dependencies = transformed_prog.getDependencies(transformed_prog, m)
-          val content = ViperCache.createCacheContent(backendName, file, transformed_prog, m, Nil)
-          ViperCache.update(backendName, file, m, dependencies, content) match {
-            case e :: es =>
-              _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
-            case Nil =>
-              _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}) FAILED.")
-          }
+        } yield cache_errs
+
+      if(cachable_errors.isDefined){
+        ViperCache.update(backendName, file, m, transformed_prog, cachable_errors.get) match {
+          case e :: es =>
+            _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
+          case Nil =>
+            _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}) FAILED.")
+        }
       }
     })
 

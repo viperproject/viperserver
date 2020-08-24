@@ -16,6 +16,7 @@ import scala.concurrent.Future
 import scala.language.postfixOps
 import scala.util.{Failure, Success}
 
+case class SilverEnvelope(msg: Message) extends Envelope
 
 class ViperCoreServer(private var _config: ViperConfig) extends VerificationServerInterface {
 
@@ -38,7 +39,6 @@ class ViperCoreServer(private var _config: ViperConfig) extends VerificationServ
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
     ViperCache.initialize(logger.get, config.backendSpecificCache())
-
 
     _termActor = system.actorOf(Terminator.props(), "terminator")
     println(s"ViperServer online in CoreServer mode")

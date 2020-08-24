@@ -1,9 +1,9 @@
 package viper.server.vsi
 
 import viper.silver.utility.CacheHelper
+import scala.collection.mutable.{ListBuffer, Map => MutableMap}
 
-import scala.collection.mutable.{Map => MutableMap}
-
+//TODO make file_keys implicit args throughout?
 
 /** The goal of this generic caching trait is to provide
   *
@@ -32,19 +32,9 @@ import scala.collection.mutable.{Map => MutableMap}
   * This program should thereby have been transformed in such a way that a verifier may not perform
   * unnecessary verifications on its members.
   * */
-trait VerificationServerInterfaceCache {
+abstract class VerificationServerInterfaceCache {
 
   override def toString: String = _cache.toString
-
-  /** [[Concerning]] is the Input type to the hash function, [[Hash]] the output. Both the input
-    * and the function are client-specific and therefore need to implemented.
-    *
-    * E.g., in the case of ViperServer, [[Concerning]] is implemented as a Silver [[viper.silver.ast.Method]]. Silver
-    * provides an entityHash for methods, that is used to implement the hashFunction
-    * */
-  type Concerning
-  type Hash = String
-  protected def hashFunction(in: Concerning): Hash
 
   /** The cache infrastructure is a nested, mutable Map. The maps can be described in terms of their
     * key and values as follows:  (FileName -> (hashString -> cacheEntries)).
@@ -53,18 +43,53 @@ trait VerificationServerInterfaceCache {
     * for each file, a number of hashes and corresponding cache entries.
     */
   protected val _cache = MutableMap[String, FileCash]()
-  type FileCash = MutableMap[Hash, List[CacheEntry]]
+  type FileCash = MutableMap[String, List[CacheEntry]]
 
+  /** This method transforms a program by applying cache's current state.
+    *
+    * The input and out put program should be equivalent with respect to verification, but they might
+    * differ in their AST. In particular the, output program should might be transformed such that
+    * verifying it is faster than verifying the input program.
+    *
+    * Additionally, the method returns previously cached verification result for members of the
+    * ast that hit the cache.
+    * */
+  def apply(
+        file_key: String,
+        input_prog: AST): (AST, List[CacheEntry]) = {
 
-  protected def createCacheEntry(content: CacheContent, dependencyHash: Hash): CacheEntry
+    val cachable_members = input_prog.decompose()
+    val cache_entries: ListBuffer[CacheEntry] = ListBuffer()
+    val concerningsToCache: ListBuffer[Concerning] = ListBuffer()
+    val concerningsToVerify: ListBuffer[Concerning] = ListBuffer()
 
-  def get(
+    //read errors from cache
+    cachable_members.foreach((c: Concerning) => {
+      val dependencies = c.getDependencies(input_prog)
+
+      get(file_key, c, dependencies) match {
+        case Some(matched_entry) =>
+          concerningsToCache += c.transform
+          cache_entries += matched_entry
+        case None =>
+          //Nothing in cache, request verification
+          concerningsToVerify += c
+      }
+    })
+    val all_concernings: List[Concerning] = concerningsToCache.toList ++ concerningsToVerify.toList
+    val output_prog: AST = input_prog.compose(all_concernings)
+    (output_prog, cache_entries.toList)
+  }
+
+  /** Utility function to retrieve entries for single members.
+    * */
+  final def get(
         file_key: String,
         key: Concerning,
         dependencies: List[Concerning]): Option[CacheEntry] = {
 
-    val concerning_hash = hashFunction(key)
-    val dependencies_hash = dependencies.map(hashFunction).mkString(" ")
+    val concerning_hash = key.hashFunction
+    val dependencies_hash = dependencies.map(_.hashFunction).mkString(" ")
     val dependency_hash = CacheHelper.buildHash(concerning_hash + dependencies_hash)
     assert(concerning_hash != null)
 
@@ -75,32 +100,31 @@ trait VerificationServerInterfaceCache {
     } yield validEntry
   }
 
+  /** This function updates the cache's state by adding/updating entries.
+    * */
   def update(
         file_key: String,
         key: Concerning,
         dependencies: List[Concerning],
         content: CacheContent): List[CacheEntry] = {
 
-    val concerning_hash = hashFunction(key)
-    val dependencies_hash = dependencies.map(hashFunction).mkString(" ")
+    val concerning_hash = key.hashFunction
+    val dependencies_hash = dependencies.map(_.hashFunction).mkString(" ")
     val dependency_hash = CacheHelper.buildHash(concerning_hash + dependencies_hash)
-    val cacheEntry: CacheEntry = createCacheEntry(content, dependency_hash)
+    val cacheEntry: CacheEntry = new CacheEntry(key, content, dependency_hash)
 
     assert(concerning_hash != null)
 
     _cache.get(file_key) match {
       case Some(fileCache) =>
-        // If a fileCache exists for given file get existing list of entries
-        // (or an empty list, if none exist yet) and prepend new entry
         val existing_entries = fileCache.getOrElse(concerning_hash, Nil)
         val updated_cacheEntries = cacheEntry :: existing_entries
 
-        //set new hash/cacheEntries pair in map
         fileCache(concerning_hash) = updated_cacheEntries
         updated_cacheEntries
       case None =>
-        //if file not in cache yet, create new map entry for it, restart the function
-        _cache += (file_key -> collection.mutable.Map[Hash, List[CacheEntry]]())
+        //if file not in cache yet, create new map entry for it. Recall the function.
+        _cache += (file_key -> collection.mutable.Map[String, List[CacheEntry]]())
         update(file_key, key, dependencies, content)
     }
   }
@@ -121,11 +145,61 @@ trait VerificationServerInterfaceCache {
 
 /** This trait is a generic wrapper for cache entries.
   *
-  * Extending this specifies what the cache will be holding.
+  * Extending this specifies
+  *
+  *  - What the cache will be holding.
+  *  - Which of the AST member it will be holding it for
+  *  - The dependency hash of when the entry is stored.
+  *
+  *  The dependency hash reflects the state of the dependencies at the time when the entry was created.
+  *  If at some point a members dependency hash is no longer equal to the one stored here, the
+  *  entry is no longer valid.
   * */
-abstract class CacheEntry (val cacheContent: CacheContent, val depencyHash: String)
+class CacheEntry(val concerning: Concerning, val cacheContent: CacheContent, val depencyHash: String) {
+}
 
 
 trait CacheContent {
+}
 
+/** This trait is a generic wrapper for an AST.
+  *
+  * An AST might a number of members for which it might be sensible to store results, errors, etc.
+  * In order for the cache to know which these are, an AST must implement the de-/compose methods.
+  *
+  * These should decompose and AST into a list of all the members for which the cache is to store
+  * results and compose an AST given such list of members.
+  * */
+trait AST {
+  def compose(cs: List[Concerning]): AST
+
+  def decompose(): List[Concerning]
+}
+
+/** This trait is a generic wrapper for AST Members for which things are stored in the cache.
+  *
+  * An AST might a number of members for which it might be sensible to store results, errors, etc.
+  * However, there is a set of requirements of any member for which cache is used. This comes in
+  * the form of the following three methods
+  *
+  * hashFunction: A member must be hashable to determined its mapping in the cache.
+  *
+  * transform: A member that has been retrieved from the cache should not be reverified. Therefore,
+  * a member must have an alternative represantation that allows the verifier to distinguish if from
+  * members that missed the cache and need reverification
+  *
+  * getDependencies: A member may hit the cache, but the attached verification results might be invalid.
+  * Reason for this is that other members in the program have changed in such a way that influences the
+  * current member. These influencing members are called dependencies and need to be checked when
+  * retrieving a member's attached result from cache.
+  * */
+trait Concerning {
+  type Member
+  val member: Member
+
+  def hashFunction(): String
+
+  def transform: Concerning
+
+  def getDependencies(program: AST): List[Concerning]
 }
