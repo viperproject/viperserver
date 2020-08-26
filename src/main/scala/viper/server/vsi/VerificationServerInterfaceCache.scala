@@ -1,9 +1,8 @@
 package viper.server.vsi
 
 import viper.silver.utility.CacheHelper
-import scala.collection.mutable.{ListBuffer, Map => MutableMap}
 
-//TODO make file_keys implicit args throughout?
+import scala.collection.mutable.{ListBuffer, Map => MutableMap}
 
 /** The goal of this generic caching trait is to provide
   *
@@ -69,13 +68,22 @@ abstract class VerificationServerInterfaceCache {
 
       get(file_key, c, dependencies) match {
         case Some(matched_entry) =>
+//          println("/---")
+//          println(s"Got Some matched entry")
+//          println("\\---")
           concerningsToCache += c.transform
+//          println("/---")
+//          println(s"Got No matched entry")
+//          println("\\---")
           cache_entries += matched_entry
         case None =>
           //Nothing in cache, request verification
           concerningsToVerify += c
       }
     })
+//    println("/---")
+//    println(s"There no cache entries: ${cache_entries.isEmpty}")
+//    println("\\---")
     val all_concernings: List[Concerning] = concerningsToCache.toList ++ concerningsToVerify.toList
     val output_prog: AST = input_prog.compose(all_concernings)
     (output_prog, cache_entries.toList)
@@ -86,7 +94,7 @@ abstract class VerificationServerInterfaceCache {
   final def get(
         file_key: String,
         key: Concerning,
-        dependencies: List[Concerning]): Option[CacheEntry] = {
+        dependencies: List[Member]): Option[CacheEntry] = {
 
     val concerning_hash = key.hashFunction
     val dependencies_hash = dependencies.map(_.hashFunction).mkString(" ")
@@ -95,9 +103,14 @@ abstract class VerificationServerInterfaceCache {
 
     for {
       fileCache <- _cache.get(file_key)
+//      _ = println(s"File cache is defined")
       cacheEntries <- fileCache.get(concerning_hash)
+//      _ = println(s"cache entry is defined")
       validEntry <- cacheEntries.find(_.depencyHash == dependency_hash)
+//      _ = println(s"Matching entry found in list")
     } yield validEntry
+
+
   }
 
   /** This function updates the cache's state by adding/updating entries.
@@ -105,7 +118,7 @@ abstract class VerificationServerInterfaceCache {
   def update(
         file_key: String,
         key: Concerning,
-        dependencies: List[Concerning],
+        dependencies: List[Member],
         content: CacheContent): List[CacheEntry] = {
 
     val concerning_hash = key.hashFunction
@@ -176,6 +189,10 @@ trait AST {
   def decompose(): List[Concerning]
 }
 
+trait Member {
+  def hashFunction(): String
+}
+
 /** This trait is a generic wrapper for AST Members for which things are stored in the cache.
   *
   * An AST might a number of members for which it might be sensible to store results, errors, etc.
@@ -185,7 +202,7 @@ trait AST {
   * hashFunction: A member must be hashable to determined its mapping in the cache.
   *
   * transform: A member that has been retrieved from the cache should not be reverified. Therefore,
-  * a member must have an alternative represantation that allows the verifier to distinguish if from
+  * a member must have an alternative representation that allows the verifier to distinguish if from
   * members that missed the cache and need reverification
   *
   * getDependencies: A member may hit the cache, but the attached verification results might be invalid.
@@ -193,13 +210,8 @@ trait AST {
   * current member. These influencing members are called dependencies and need to be checked when
   * retrieving a member's attached result from cache.
   * */
-trait Concerning {
-  type Member
-  val member: Member
-
-  def hashFunction(): String
-
+trait Concerning extends Member {
   def transform: Concerning
 
-  def getDependencies(program: AST): List[Concerning]
+  def getDependencies(ast: AST): List[Member]
 }

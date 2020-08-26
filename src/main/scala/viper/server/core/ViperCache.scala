@@ -30,11 +30,13 @@ object ViperCache extends VerificationServerInterfaceCache {
         p: Program): (Program, List[CacheResult]) = {
 
     val file_key = getKey(backendName, file)
-    val cacheable_ast = new ViperAst(p.domains, p.fields, p.functions, p.predicates, p.methods, p.extensions)(p.pos, p.info, p.errT)
+    val cacheable_ast = ViperAst(p)
     val (output_ast, cache_entries) = super.apply(file_key, cacheable_ast)
-    val output_prog = output_ast.asInstanceOf[Program]
+    val output_prog = output_ast.asInstanceOf[ViperAst].p
+
     val ver_results = cache_entries.map(ce => {
-      val concerning_method = ce.concerning.asInstanceOf[Method]
+
+      val concerning_method: Method = ce.concerning.asInstanceOf[ViperMethod].m
       val content = ce.cacheContent.asInstanceOf[ViperCacheContent]
       val ver_errors = updateErrorLocation(file_key, output_prog, concerning_method, content)
       CacheResult(concerning_method, ver_errors)
@@ -49,7 +51,7 @@ object ViperCache extends VerificationServerInterfaceCache {
                 m: Method,
                 cacheContent: ViperCacheContent): List[VerificationError] = {
 
-    cacheContent.errors.map(updateErrorLocation(file_key, p, m, _))
+    cacheContent.errors.map(e => updateErrorLocation(file_key, p, m, e))
   }
 
   private def updateErrorLocation(
@@ -66,6 +68,14 @@ object ViperCache extends VerificationServerInterfaceCache {
     val reasonOffendingNode = ViperCacheHelper.getNode(file_key, p, error.reasonAccessPath, error.error.reason.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
 
     if (offendingNode.isEmpty || reasonOffendingNode.isEmpty) {
+      println("/---")
+      println("Offending node empty?")
+      println(offendingNode.isEmpty)
+      println("\\---")
+      println("/---")
+      println("Offending node empty?")
+      println(reasonOffendingNode.isEmpty)
+      println("\\---")
       throw new Exception(s"Cache error: no corresponding node found for error: $error")
     }
 
@@ -244,10 +254,12 @@ object ViperCache extends VerificationServerInterfaceCache {
         program: Program,
         errors: List[AbstractVerificationError]): List[CacheEntry] = {
 
-    val deps = program.getDependencies(program, method).map(h => ViperHashable(h))
+    val viperMethod = ViperMethod(method)
+//    val deps: List[Concerning] = program.getDependencies(program, method).map(h => ViperMember(h))
+    val deps: List[Member] = viperMethod.getDependencies(ViperAst(program))
     val content = createCacheContent(backendName, file, program, method, errors)
     val file_key = getKey(backendName, file)
-    super.update(file_key, ViperHashable(method), deps, content)
+    super.update(file_key, ViperMethod(method), deps, content)
   }
 
   def forgetFile(backendName: String, file: String): Option[String] = {
@@ -394,10 +406,10 @@ object ViperCacheHelper{
   /** Finds a node in a program by traversing the provided accessPath
     * */
   def getNode(
-               implicit file_key: String,
-               p: Program,
-               accessPath: List[String],
-               oldNode: Node): Option[Node] = {
+        implicit file_key: String,
+        p: Program,
+        accessPath: List[String],
+        oldNode: Node): Option[Node] = {
 
     logger.trace(s"looking for last node on access path ${accessPath.map(ViperCacheHelper.hex)}...")
 
@@ -456,48 +468,41 @@ class AccessPath(val accessPath: List[Number]) {
   override def toString = s"AccessPath(accessPath=${accessPath.map(_.hashCode.toHexString)})"
 }
 
-class ViperAst(
-        override val domains: Seq[Domain], override val fields: Seq[Field],
-        override val functions: Seq[Function], override val predicates: Seq[Predicate],
-        override val methods: Seq[Method], override val extensions: Seq[ExtensionMember])
-        (override val pos: Position = NoPosition, override val info: Info = NoInfo, override val errT: ErrorTrafo = NoTrafos)
-        extends Program(
-                domains = domains, fields = fields, functions = functions, predicates = predicates,
-                methods = methods, extensions = extensions)(pos = pos, info = info, errT = errT) with AST {
+case class ViperAst(p: Program) extends AST {
 
-  override def compose(cs: List[Concerning]): AST = {
-    val methods_new = cs.map(_.asInstanceOf[ViperHashable].member)
-    new ViperAst(domains, fields, functions, predicates, methods_new.asInstanceOf[List[Method]], extensions)(pos, info, errT)
+  def compose(cs: List[Concerning]): AST = {
+    val new_methods: List[Method] = cs.map(_.asInstanceOf[ViperMethod].m)
+    val new_program = Program(p.domains, p.fields, p.functions, p.predicates, p.methods, p.extensions)(p.pos, p.info, p.errT)
+    new ViperAst(new_program)
   }
 
-  override def decompose(): List[Concerning] = {
-    methods.map(m => ViperHashable(m)).toList
+  def decompose(): List[Concerning] = {
+    p.methods.map(m => ViperMethod(m)).toList
   }
 }
 
 case class CacheResult(method: Method, verification_errors: List[VerificationError])
 
-case class ViperHashable(h: Hashable) extends Concerning {
-  type Member = Hashable
-  override val member: Hashable = h
+case class ViperMember(h: Hashable) extends Member {
 
   def hashFunction(): String = {
-    member.entityHash
+    h.entityHash
+  }
+}
+
+case class ViperMethod(m: Method) extends Concerning {
+
+  def hashFunction(): String = {
+    m.entityHash
   }
 
   def transform: Concerning = {
-    member match {
-      case m: Method => ViperHashable(m.copy(body = None)(m.pos, ConsInfo(m.info, Cached), m.errT))
-      case _ => ViperHashable(member)
-    }
+    ViperMethod(m.copy(body = None)(m.pos, ConsInfo(m.info, Cached), m.errT))
   }
 
-  def getDependencies(program: AST): List[Concerning] = {
-    member match {
-      case m: Method =>
-        val p = program.asInstanceOf[ViperAst]
-        p.getDependencies(p, m).map(h => ViperHashable(h))
-      case _ => Nil
-    }
+  def getDependencies(ast: AST): List[Member] = {
+    val p = ast.asInstanceOf[ViperAst].p
+//    p.getDependencies(p, m).map(h => ViperMember(h))
+    p.getDependencies(p, m).map(h => ViperMember(h))
   }
 }

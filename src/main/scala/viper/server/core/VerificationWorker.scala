@@ -12,7 +12,7 @@ import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperConfig
 import viper.server.protocol.ReporterProtocol
-import viper.server.vsi.{Envelope, Letter, TaskProtocol, VerificationTask}
+import viper.server.vsi.{TaskProtocol, VerificationTask}
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
 import viper.silver.frontend.{DefaultStates, SilFrontend}
@@ -260,6 +260,104 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     _frontend.verifier.stop()
   }
 
+  private def doCachedVerification(real_program: Program) = {
+    /** Top level branch is here for the same reason as in
+      * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
+
+    val file: String = _frontend.config.file()
+    val (transformed_prog, cache_results) = ViperCache.apply(backendName, file, real_program)
+
+    //collect and report errors
+    val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
+    cache_results.foreach (result => {
+      val cached_errors = result.verification_errors
+      if(cached_errors.isEmpty){
+        println("/---")
+        println("No errors Retrieved from cache")
+        println("\\---")
+        _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName,result.method, Success))
+      } else {
+        println("/---")
+        println("Errors Retrieved from cache:")
+        println(errors)
+        println("\\---")
+        errors ++= cached_errors
+        _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(errors)))
+      }
+    })
+    if (cache_results.isEmpty){
+      println("/---")
+      println("Nothing retrieved from cache")
+      println("\\---")
+    }
+
+    _frontend.logger.debug(
+      s"Retrieved data from cache..." +
+        s" cachedErrors: ${errors.map(_.loggableMessage)};" +
+        s" methodsToVerify: ${cache_results.map(_.method.name)}.")
+    _frontend.logger.trace(s"The cached program is equivalent to: \n${transformed_prog.toString()}")
+
+    _frontend.setVerificationResult(_frontend.verifier.verify(transformed_prog))
+    _frontend.setState(DefaultStates.Verification)
+
+    //update cache
+    println("/---")
+    println("Transformed program:")
+    println(transformed_prog)
+    println("\\---")
+    val methodsToVerify = transformed_prog.methods.filter(_.body.isDefined)
+    println("/---")
+    println(s"Methods to verify:")
+    println(methodsToVerify)
+    println("\\---")
+    methodsToVerify.foreach(m => {
+      // Results come back  irrespective of program Member.
+      val cachable_errors =
+        for {
+          verRes <- _frontend.getVerificationResult
+          cache_errs <- verRes match {
+            case Failure(errs) => getMethodSpecificErrors(m, errs)
+            case Success => Some(Nil)
+          }
+        } yield cache_errs
+
+      println("/---")
+      println(s"Cachable errors: $cachable_errors")
+      println("\\---")
+
+      if(cachable_errors.isDefined){
+        ViperCache.update(backendName, file, m, transformed_prog, cachable_errors.get) match {
+          case e :: es =>
+            _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
+          case Nil =>
+            _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}) FAILED.")
+        }
+      }
+    })
+
+    //combine errors:
+    if (errors.nonEmpty) {
+      _frontend.getVerificationResult.get match {
+        case Failure(errorList) =>
+//          println("/---")
+//          println("Errors Reported by the verifier:")
+//          println(errorList)
+//          println("\\---")
+//          println("/---")
+//          println("Errors Reported by the cache:")
+//          println(errors)
+//          println("\\---")
+          _frontend.setVerificationResult(Failure(errorList ++ errors))
+        case Success =>
+          _frontend.setVerificationResult(Failure(errors))
+      }
+    }else{
+//      println("/---")
+//      println("No errors reported by cache")
+//      println("\\---")
+    }
+  }
+
   /**
     * Tries to determine which of the given errors are caused by the given method.
     * If an error's scope field is set, this information is used.
@@ -267,7 +365,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     * position is inside the method.
     * If at least one error has no scope set and no position, or the method's position is not set, we cannot determine
     * if the error belongs to the method and return None.
-   */
+    */
   private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): Option[List[AbstractVerificationError]] = {
     val methodPos = m.pos match {
       case sp: SourcePosition => Some(sp.start.line, sp.end.get.line)
@@ -298,68 +396,6 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
         throw new Exception("Error with unexpected type found: " + e)
     }
     Some(result.toList)
-  }
-
-  private def doCachedVerification(real_program: Program) = {
-    /** Top level branch is here for the same reason as in
-      * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
-
-    val file: String = _frontend.config.file()
-    val (transformed_prog, cache_results) = ViperCache.apply(backendName, file, real_program)
-
-    //collect and report errors
-    val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
-    cache_results.foreach (result => {
-      val cached_errors = result.verification_errors
-      if(cached_errors.isEmpty){
-        _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName,result.method, Success))
-      } else {
-        errors ++= cached_errors
-        _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(errors)))
-      }
-    })
-
-    _frontend.logger.debug(
-      s"Retrieved data from cache..." +
-        s" cachedErrors: ${errors.map(_.loggableMessage)};" +
-        s" methodsToVerify: ${cache_results.map(_.method.name)}.")
-    _frontend.logger.trace(s"The cached program is equivalent to: \n${transformed_prog.toString()}")
-
-    _frontend.setVerificationResult(_frontend.verifier.verify(transformed_prog))
-    _frontend.setState(DefaultStates.Verification)
-
-    //update cache
-    val methodsToVerify = transformed_prog.methods.filter(_.body.isEmpty)
-    methodsToVerify.foreach(m => {
-      // Results come back  irrespective of program Member.
-      val cachable_errors =
-        for {
-          verRes <- _frontend.getVerificationResult
-          cache_errs <- verRes match {
-            case Failure(errs) => getMethodSpecificErrors(m, errs)
-            case Success => Some(Nil)
-          }
-        } yield cache_errs
-
-      if(cachable_errors.isDefined){
-        ViperCache.update(backendName, file, m, transformed_prog, cachable_errors.get) match {
-          case e :: es =>
-            _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
-          case Nil =>
-            _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}) FAILED.")
-        }
-      }
-    })
-
-    //combine errors:
-    if (errors.nonEmpty) {
-      _frontend.getVerificationResult.get match {
-        case Failure(errorList) =>
-          _frontend.setVerificationResult(Failure(errorList ++ errors))
-        case Success =>
-          _frontend.setVerificationResult(Failure(errors))
-      }
-    }
   }
 
   def stop(): Unit = _frontend.verifier.stop()
