@@ -66,7 +66,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
 
       var handler: VerificationJobHandler = null
       "be able to execute 'verify()' without exceptions" in {
-        handler = core.verify(verificationError_file, noCache_backend, verificationError_ast)
+        handler = core.verify("verification error", noCache_backend, verificationError_ast)
         assert(handler != null)
       }
 

@@ -251,10 +251,12 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
   /** Run the backend verification functionality
     * */
   def execute(args: Seq[String]){
+    val (head, tail) = args.splitAt(args.length-1)
+    val fileless_args = head ++ Seq("--ignoreFile") ++ tail
     _frontend.setStartTime()
-    _frontend.setVerifier( _frontend.createVerifier(args.mkString(" ")) )
+    _frontend.setVerifier( _frontend.createVerifier(fileless_args.mkString(" ")) )
 
-    if (!_frontend.prepare(args)) return
+    if (!_frontend.prepare(fileless_args)) return
     _frontend.init( _frontend.verifier )
 
     reportProgramStats(_ast)
