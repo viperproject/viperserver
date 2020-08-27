@@ -66,10 +66,12 @@ class ViperCoreServer(private val _args: Array[String]) {
     _jobHandles -= jid
   }
 
-  /** If the Option is resolved to None, the job does not exist.
-    * If the Option is resolved to Some(_),
-    *   a) The Future is not yet completed ==> verification in progress.
-    *   b) The Future is already completed ==> job done.
+  /** Returns the JobHandle corresponding to the given JID
+    *
+    * If the Option is resolved to None, the job does not (or no longer) exist.
+    * If the Option is resolved to Some(_) and the contained Future is
+    *   not completed, the Job is in the process of being setup
+    *   completed, the Job has been successfully set up and started.
     */
   protected def lookupJob(jid: Int): Option[ Future[JobHandle] ] = {
     _jobHandles.get(jid)
@@ -103,6 +105,9 @@ class ViperCoreServer(private val _args: Array[String]) {
             system.terminate() // shutdown
         }
       case Terminator.WatchJobQueue(jid, handle) =>
+        // Terminating a job means removing its handle from the map _jobHandles. However, before the
+        // terminator can delete the jobHandle, it has to wait for all the messages to be consumed.
+        // This is indicated by the completion of the queue_completion_future.
         val queue_completion_future: Future[Done] = handle.queue.watchCompletion()
         queue_completion_future.onComplete( {
           case Failure(e) =>
@@ -344,6 +349,8 @@ class ViperCoreServer(private val _args: Array[String]) {
         handle_future.onComplete({
           case Success(handle) =>
             Source.fromPublisher(handle.publisher).runWith(Sink.actorRef(clientActor, Success))
+            // As soon as messages start being consumed, the terminator actor is triggered.
+            // See Terminator.receive for more information
             _termActor ! Terminator.WatchJobQueue(jid, handle)
           case Failure(e) => clientActor ! e
         })

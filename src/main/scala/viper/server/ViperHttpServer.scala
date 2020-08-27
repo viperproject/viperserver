@@ -93,17 +93,12 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
           val file: String = arg_list.last
           val astGen = new AstGenerator(logger)
 
-          val id = astGen.generateViperAst(file) match {
+          astGen.generateViperAst(file) match {
             case Some(prog) =>
               val jobHandler: VerificationJobHandler = createJobHandle(arg_list, prog)
-              jobHandler.id
+              complete( VerificationRequestAccept(jobHandler.id) )
             case None =>
-              -1
-          }
-          if (id >= 0) {
-            complete( VerificationRequestAccept(id) )
-          } else {
-            complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS)."))
+              complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS)."))
           }
       }
     }
@@ -131,10 +126,9 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
           // Found a job with this jid.
           onComplete(handle_future) {
             case Success(handle) =>
+              // As soon as messages start being consumed, the terminator actor is triggered.
+              // See Terminator.receive for more information
               val src: Source[Message, NotUsed] = Source.fromPublisher(handle.publisher)
-              // We do not remove the current entry from [[_job_handles]] because the handle is
-              //  needed in order to terminate the job before streaming is completed.
-              //  The Terminator actor will delete the entry upon completion of the stream.
               _termActor ! Terminator.WatchJobQueue(jid, handle)
               complete(src)
             case Failure(error) =>
