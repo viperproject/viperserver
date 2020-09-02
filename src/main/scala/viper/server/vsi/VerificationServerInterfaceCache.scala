@@ -57,33 +57,23 @@ abstract class VerificationServerInterfaceCache {
         file_key: String,
         input_prog: AST): (AST, List[CacheEntry]) = {
 
-    val cachable_members = input_prog.decompose()
     val cache_entries: ListBuffer[CacheEntry] = ListBuffer()
     val concerningsToCache: ListBuffer[Concerning] = ListBuffer()
     val concerningsToVerify: ListBuffer[Concerning] = ListBuffer()
 
     //read errors from cache
+    val cachable_members = input_prog.decompose()
     cachable_members.foreach((c: Concerning) => {
       val dependencies = c.getDependencies(input_prog)
-
       get(file_key, c, dependencies) match {
         case Some(matched_entry) =>
-//          println("/---")
-//          println(s"Got Some matched entry")
-//          println("\\---")
           concerningsToCache += c.transform
-//          println("/---")
-//          println(s"Got No matched entry")
-//          println("\\---")
           cache_entries += matched_entry
         case None =>
           //Nothing in cache, request verification
           concerningsToVerify += c
       }
     })
-//    println("/---")
-//    println(s"There no cache entries: ${cache_entries.isEmpty}")
-//    println("\\---")
     val all_concernings: List[Concerning] = concerningsToCache.toList ++ concerningsToVerify.toList
     val output_prog: AST = input_prog.compose(all_concernings)
     (output_prog, cache_entries.toList)
@@ -103,11 +93,8 @@ abstract class VerificationServerInterfaceCache {
 
     for {
       fileCache <- _cache.get(file_key)
-//      _ = println(s"File cache is defined")
       cacheEntries <- fileCache.get(concerning_hash)
-//      _ = println(s"cache entry is defined")
       validEntry <- cacheEntries.find(_.depencyHash == dependency_hash)
-//      _ = println(s"Matching entry found in list")
     } yield validEntry
 
 

@@ -1,3 +1,11 @@
+/**
+  * This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+  *
+  * Copyright (c) 2011-2019 ETH Zurich.
+  */
+
 package viper.server.protocol
 
 import akka.NotUsed
@@ -6,12 +14,12 @@ import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import edu.mit.csail.sdg.translator.A4Solution
 import spray.json.DefaultJsonProtocol
-import viper.server.core.ViperBackend
 import viper.server.writer.{AlloySolutionWriter, SymbExLogReportWriter, TermWriter}
 import viper.silicon.SymbLog
 import viper.silicon.state.terms.Term
-import viper.silver.reporter._
+import viper.silver.reporter.{InvalidArgumentsReport, _}
 import viper.silver.verifier._
+
 
 object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
 
@@ -50,19 +58,19 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
 
   implicit val position_writer: RootJsonFormat[Position] = lift(new RootJsonWriter[Position] {
     override def write(obj: Position): JsValue = JsObject(
-        "file" -> (if (obj.file != null) {
-          //FIXME this hack is needed due to the following bug in Silver: https://bitbucket.org/viperproject/silver/issues/232
-          obj.file.toJson
-        } else {
-          JsString("<undefined>")
-        }),
-        "start" -> JsString(s"${obj.line}:${obj.column}"),
-        "end" -> (obj.end match {
-          case Some(end_pos) =>
-            JsString(s"${end_pos.line}:${end_pos.column}")
-          case _ =>
-            JsString(s"<undefined>")
-        }))
+      "file" -> (if (obj.file != null) {
+        //FIXME this hack is needed due to the following bug in Silver: https://bitbucket.org/viperproject/silver/issues/232
+        obj.file.toJson
+      } else {
+        JsString("<undefined>")
+      }),
+      "start" -> JsString(s"${obj.line}:${obj.column}"),
+      "end" -> (obj.end match {
+        case Some(end_pos) =>
+          JsString(s"${end_pos.line}:${end_pos.column}")
+        case _ =>
+          JsString(s"<undefined>")
+      }))
   })
 
   implicit val optionAny_writer: RootJsonFormat[Option[Any]] = lift(new RootJsonWriter[Option[Any]] {
@@ -94,7 +102,6 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
 
   implicit val abstractError_writer: RootJsonFormat[AbstractError] = lift(new RootJsonWriter[AbstractError] {
     override def write(obj: AbstractError) = JsObject(
-      "cached" -> JsBoolean(obj.cached),
       "tag" -> JsString(obj.fullId),
       "text" -> JsString(obj.readableMessage),
       "position" -> (obj.pos match {
@@ -114,7 +121,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: EntitySuccessMessage): JsObject = {
       JsObject(
         "entity" -> obj.concerning.toJson,
-        "time" -> obj.verificationTime.toJson)
+        "time" -> obj.verificationTime.toJson,
+        "cached" -> obj.cached.toJson)
     }
   })
 
@@ -122,7 +130,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: EntityFailureMessage): JsValue = JsObject(
       "entity" -> obj.concerning.toJson,
       "time" -> obj.verificationTime.toJson,
-      "result" -> obj.result.toJson)
+      "result" -> obj.result.toJson,
+      "cached" -> obj.cached.toJson)
   })
 
   implicit val overallSuccessMessage_writer: RootJsonFormat[OverallSuccessMessage] = lift(new RootJsonWriter[OverallSuccessMessage] {
@@ -242,8 +251,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
 
   implicit val exceptionReport_writer: RootJsonFormat[ExceptionReport] = lift(new RootJsonWriter[ExceptionReport] {
     override def write(obj: ExceptionReport) = JsObject(
-        "message" -> JsString(obj.e.toString),
-        "stacktrace" -> JsArray(obj.e.getStackTrace.map(_.toJson).toVector))
+      "message" -> JsString(obj.e.toString),
+      "stacktrace" -> JsArray(obj.e.getStackTrace.map(_.toJson).toVector))
   })
 
   implicit val invalidArgumentsReport_writer: RootJsonFormat[InvalidArgumentsReport] = lift(new RootJsonWriter[InvalidArgumentsReport] {

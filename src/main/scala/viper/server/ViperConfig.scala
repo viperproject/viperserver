@@ -70,27 +70,6 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     hidden = false
   )
 
-  @deprecated
-  val ideMode: ScallopOption[Boolean] = opt[Boolean]("ideMode",
-    descr = ("Used for VS Code IDE. Report errors in json format, and write"
-      + "errors in the format '<file>,<line>:<col>,<line>:<col>,<message>' to"
-      + "a file (see option ideModeErrorFile)."),
-    default = Some(false),
-    noshort = true,
-    hidden = false
-  )
-  @deprecated
-  val ideModeAdvanced: ScallopOption[Boolean] = opt[Boolean]("ideModeAdvanced",
-    descr = ("Used for VS Code IDE. Write symbolic execution log into .vscode/executionTreeData.js file, "
-      + "write execution tree graph into .vscode/dot_input.dot, "
-      + "and output z3's counter example models."),
-    default = Some(false),
-    noshort = true,
-    hidden = true
-  )
-
-  dependsOnAll(ideModeAdvanced, ideMode :: Nil)
-
   val port: ScallopOption[Int] = opt[Int]("port", 'p',
     descr = ("Specifies the port on which ViperServer will be started."
       + s"The port must be an integer in range [${Socket.MIN_PORT_NUMBER}-${ibm.Socket.MAX_PORT_NUMBER}]"

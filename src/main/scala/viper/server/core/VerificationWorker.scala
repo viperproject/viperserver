@@ -272,24 +272,12 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     cache_results.foreach (result => {
       val cached_errors = result.verification_errors
       if(cached_errors.isEmpty){
-        println("/---")
-        println("No errors Retrieved from cache")
-        println("\\---")
         _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName,result.method, Success))
       } else {
-        println("/---")
-        println("Errors Retrieved from cache:")
-        println(errors)
-        println("\\---")
         errors ++= cached_errors
         _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(errors)))
       }
     })
-    if (cache_results.isEmpty){
-      println("/---")
-      println("Nothing retrieved from cache")
-      println("\\---")
-    }
 
     _frontend.logger.debug(
       s"Retrieved data from cache..." +
@@ -301,17 +289,9 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     _frontend.setState(DefaultStates.Verification)
 
     //update cache
-    println("/---")
-    println("Transformed program:")
-    println(transformed_prog)
-    println("\\---")
     val methodsToVerify = transformed_prog.methods.filter(_.body.isDefined)
-    println("/---")
-    println(s"Methods to verify:")
-    println(methodsToVerify)
-    println("\\---")
     methodsToVerify.foreach(m => {
-      // Results come back  irrespective of program Member.
+      // Results come back irrespective of program Member.
       val cachable_errors =
         for {
           verRes <- _frontend.getVerificationResult
@@ -320,10 +300,6 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
             case Success => Some(Nil)
           }
         } yield cache_errs
-
-      println("/---")
-      println(s"Cachable errors: $cachable_errors")
-      println("\\---")
 
       if(cachable_errors.isDefined){
         ViperCache.update(backendName, file, m, transformed_prog, cachable_errors.get) match {
@@ -339,22 +315,10 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     if (errors.nonEmpty) {
       _frontend.getVerificationResult.get match {
         case Failure(errorList) =>
-//          println("/---")
-//          println("Errors Reported by the verifier:")
-//          println(errorList)
-//          println("\\---")
-//          println("/---")
-//          println("Errors Reported by the cache:")
-//          println(errors)
-//          println("\\---")
           _frontend.setVerificationResult(Failure(errorList ++ errors))
         case Success =>
           _frontend.setVerificationResult(Failure(errors))
       }
-    }else{
-//      println("/---")
-//      println("No errors reported by cache")
-//      println("\\---")
     }
   }
 

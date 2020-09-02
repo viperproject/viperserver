@@ -35,10 +35,9 @@ object ViperCache extends VerificationServerInterfaceCache {
     val output_prog = output_ast.asInstanceOf[ViperAst].p
 
     val ver_results = cache_entries.map(ce => {
-
       val concerning_method: Method = ce.concerning.asInstanceOf[ViperMethod].m
       val content = ce.cacheContent.asInstanceOf[ViperCacheContent]
-      val ver_errors = updateErrorLocation(file_key, output_prog, concerning_method, content)
+      val ver_errors = updateErrorLocation(file_key, p, concerning_method, content)
       CacheResult(concerning_method, ver_errors)
     })
 
@@ -68,14 +67,6 @@ object ViperCache extends VerificationServerInterfaceCache {
     val reasonOffendingNode = ViperCacheHelper.getNode(file_key, p, error.reasonAccessPath, error.error.reason.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
 
     if (offendingNode.isEmpty || reasonOffendingNode.isEmpty) {
-      println("/---")
-      println("Offending node empty?")
-      println(offendingNode.isEmpty)
-      println("\\---")
-      println("/---")
-      println("Offending node empty?")
-      println(reasonOffendingNode.isEmpty)
-      println("\\---")
       throw new Exception(s"Cache error: no corresponding node found for error: $error")
     }
 
@@ -472,8 +463,8 @@ case class ViperAst(p: Program) extends AST {
 
   def compose(cs: List[Concerning]): AST = {
     val new_methods: List[Method] = cs.map(_.asInstanceOf[ViperMethod].m)
-    val new_program = Program(p.domains, p.fields, p.functions, p.predicates, p.methods, p.extensions)(p.pos, p.info, p.errT)
-    new ViperAst(new_program)
+    val new_program = Program(p.domains, p.fields, p.functions, p.predicates, new_methods, p.extensions)(p.pos, p.info, p.errT)
+    ViperAst(new_program)
   }
 
   def decompose(): List[Concerning] = {
