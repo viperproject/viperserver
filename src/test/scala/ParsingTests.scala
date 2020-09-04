@@ -1,9 +1,9 @@
 
-import java.nio.file.{NoSuchFileException}
+import java.nio.file.NoSuchFileException
 
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.{Matchers, WordSpec}
-import viper.server.AstGenerator
+import viper.server.utility.AstGenerator
 import viper.silver.ast.Program
 import viper.silver.logger.ViperStdOutLogger
 

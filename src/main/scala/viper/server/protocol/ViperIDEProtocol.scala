@@ -1,12 +1,4 @@
-/**
-  * This Source Code Form is subject to the terms of the Mozilla Public
-  * License, v. 2.0. If a copy of the MPL was not distributed with this
-  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
-  *
-  * Copyright (c) 2011-2019 ETH Zurich.
-  */
-
-package viper.server
+package viper.server.protocol
 
 import akka.NotUsed
 import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSupport}
@@ -14,11 +6,12 @@ import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import edu.mit.csail.sdg.translator.A4Solution
 import spray.json.DefaultJsonProtocol
+import viper.server.core.ViperBackend
+import viper.server.writer.{AlloySolutionWriter, SymbExLogReportWriter, TermWriter}
 import viper.silicon.SymbLog
 import viper.silicon.state.terms.Term
-import viper.silver.reporter.{InvalidArgumentsReport, _}
+import viper.silver.reporter._
 import viper.silver.verifier._
-
 
 object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
 

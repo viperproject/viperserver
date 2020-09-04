@@ -6,7 +6,7 @@
   * Copyright (c) 2011-2019 ETH Zurich.
   */
 
-package viper.server
+package viper.server.core
 
 import akka.actor.ActorRef
 import akka.pattern.ask
@@ -14,6 +14,8 @@ import akka.stream.QueueOfferResult
 import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
+import viper.server.ViperConfig
+import viper.server.protocol.ReporterProtocol
 import viper.silicon.SiliconFrontend
 import viper.silver.ast.{Position, _}
 import viper.silver.frontend.{DefaultStates, SilFrontend}

@@ -8,24 +8,27 @@
 
 package viper.server
 
-import scala.concurrent.{Future}
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 import akka.NotUsed
 import akka.pattern.ask
 import akka.util.Timeout
-import akka.actor.{PoisonPill}
+import akka.actor.PoisonPill
 import akka.stream.scaladsl.Source
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import edu.mit.csail.sdg.alloy4.A4Reporter
 import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
-import viper.server.ViperServerProtocol._
-import viper.server.ViperIDEProtocol._
+import viper.server.protocol.ViperServerProtocol._
+import viper.server.protocol.ViperIDEProtocol._
 import viper.silver.reporter._
-import viper.silver.logger.{ViperLogger}
+import viper.silver.logger.ViperLogger
 import ViperRequests.{AlloyGenerationRequest, CacheResetRequest, VerificationRequest}
+import viper.server.core.{VerificationJobHandler, ViperCache, ViperCoreServer}
+import viper.server.protocol.ViperServerProtocol
+import viper.server.utility.AstGenerator
 
 import scala.util.Try
 

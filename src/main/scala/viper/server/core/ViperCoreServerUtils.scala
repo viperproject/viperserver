@@ -1,4 +1,4 @@
-package viper.server
+package viper.server.core
 
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern.ask

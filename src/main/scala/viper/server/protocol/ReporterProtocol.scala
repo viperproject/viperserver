@@ -1,4 +1,4 @@
-package viper.server
+package viper.server.protocol
 
 object ReporterProtocol {
     case object ClientRequest

@@ -1,4 +1,4 @@
-package viper.server
+package viper.server.core
 
 import java.util.NoSuchElementException
 
@@ -11,8 +11,10 @@ import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.Timeout
 import org.reactivestreams.Publisher
-import viper.server.ViperBackendConfigs._
-import viper.server.ViperServerProtocol._
+import viper.server.protocol.ViperServerProtocol._
+import viper.server.core.ViperBackendConfigs._
+import viper.server.protocol.{ReporterProtocol, ViperServerProtocol}
+import viper.server.ViperConfig
 import viper.silver.ast
 import viper.silver.logger.ViperLogger
 import viper.silver.reporter.Message
