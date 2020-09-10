@@ -46,7 +46,7 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
       *
       * This will do the following:
       * 1. Map all existing jobs from [[_jobHandles]] to a list of futures based on the responses of instances of
-      *    [[MainActor]] from [[ViperServerProtocol.Stop]] messages (with a 5 second timeout)
+      *    [[JobActor]] from [[ViperServerProtocol.Stop]] messages (with a 5 second timeout)
       * 2. Merge the list into an overall future
       * 3. Wait for the overall future to complete or timeout
       * 4. Send [[Terminator.Exit]] message to the [[Terminator]] actor
@@ -78,7 +78,7 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
       * This will do the following:
       * 1. If the limit for allowed active verification jobs has been reached, complete with an appropriate reject message
       * 2. Otherwise, create an actor with a fresh ID and pass the arguments provided by the client
-      * 3. Send [[ViperServerProtocol.Verify]] message to the newly created instance of [[MainActor]]
+      * 3. Send [[ViperServerProtocol.Verify]] message to the newly created instance of [[JobActor]]
       *   ([[bookNewJob]] will add the actor as an entry to the [[_jobHandles]] collection under a fresh ID;
       *
       *    @see [[bookNewJob]])
@@ -153,9 +153,9 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
       * 2. Otherwise, once the job handle future is complete:
       *   - If the future completed with a failure, complete with an appropriate reject message
       *   - If the future completed successfully:
-      *     - Create a new future based on response from a the current instance of [[MainActor]] to a
+      *     - Create a new future based on response from a the current instance of [[JobActor]] to a
       *       [[ViperServerProtocol.Stop]] message (with a 5 second timeout)
-      *     - Send a [[PoisonPill]] message to the current instance of [[MainActor]]
+      *     - Send a [[PoisonPill]] message to the current instance of [[JobActor]]
       *     - Complete request with accepting message
       *
       *  Use case:
