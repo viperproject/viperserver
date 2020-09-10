@@ -47,7 +47,7 @@ object ViperCoreServerUtils {
     * This is a utility function and not part of ViperCoreServer. Therefore, an instance of ViperCoreServer as well as
     * an instance of an actor system must be provided.
     *
-    * Deletes the jobhandle on completion.
+    * Deletes the jobHandle on completion.
     */
   def getMessagesFuture(core: ViperCoreServer, jid: Int)(implicit actor_system: ActorSystem): Future[List[Message]] = {
     import scala.language.postfixOps
@@ -67,7 +67,7 @@ object ViperCoreServerUtils {
     * This is a utility function and not part of ViperCoreServer. Therefore, an instance of ViperCoreServer as well as
     * an instance of an actor system must be provided.
     *
-    * Deletes the jobhandle on completion.
+    * Deletes the jobHandle on completion.
     */
   def getResultsFuture(core: ViperCoreServer, jid: Int)(implicit actor_system: ActorSystem): Future[VerificationResult] = {
     val messages_future = getMessagesFuture(core, jid)

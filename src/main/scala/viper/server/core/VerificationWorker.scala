@@ -79,11 +79,8 @@ class VerificationWorker(private val reporterActor: ActorRef,
       * */
     def report(msg: Message): Unit = {
       implicit val askTimeout: Timeout = Timeout(viper_config.actorCommunicationTimeout() milliseconds)
-      val answer = actor_ref ? ReporterProtocol.ServerReport(msg)
-      current_offer = answer.flatMap({
-        case res: Future[QueueOfferResult] => res
-      })
-      while(current_offer == null || !current_offer.isCompleted){
+      val q_offer = (actor_ref ? ReporterProtocol.ServerReport(msg)).mapTo[QueueOfferResult]
+      while(q_offer == null || !q_offer.isCompleted){
         Thread.sleep(10)
       }
     }

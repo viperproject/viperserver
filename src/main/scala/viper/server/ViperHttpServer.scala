@@ -8,29 +8,28 @@
 
 package viper.server
 
-import scala.concurrent.Future
-import scala.concurrent.duration._
-import scala.util.{Failure, Success}
 import akka.NotUsed
-import akka.pattern.ask
-import akka.util.Timeout
 import akka.actor.PoisonPill
-import akka.stream.scaladsl.Source
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
+import akka.pattern.ask
+import akka.stream.scaladsl.Source
+import akka.util.Timeout
 import edu.mit.csail.sdg.alloy4.A4Reporter
 import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
-import viper.server.protocol.ViperServerProtocol._
-import viper.server.protocol.ViperIDEProtocol._
-import viper.silver.reporter._
-import viper.silver.logger.ViperLogger
-import ViperRequests.{AlloyGenerationRequest, CacheResetRequest, VerificationRequest}
+import viper.server.ViperRequests.{AlloyGenerationRequest, CacheResetRequest, VerificationRequest}
 import viper.server.core.{VerificationJobHandler, ViperCache, ViperCoreServer}
+import viper.server.protocol.ViperIDEProtocol._
 import viper.server.protocol.ViperServerProtocol
+import viper.server.protocol.ViperServerProtocol._
 import viper.server.utility.AstGenerator
+import viper.silver.logger.ViperLogger
+import viper.silver.reporter._
 
-import scala.util.Try
+import scala.concurrent.Future
+import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 
 
 class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(_args) {
@@ -46,7 +45,7 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
       *
       * This will do the following:
       * 1. Map all existing jobs from [[_jobHandles]] to a list of futures based on the responses of instances of
-      *    [[JobActor]] from [[ViperServerProtocol.Stop]] messages (with a 5 second timeout)
+      *    [[JobActor]] from [[Stop]] messages (with a 5 second timeout)
       * 2. Merge the list into an overall future
       * 3. Wait for the overall future to complete or timeout
       * 4. Send [[Terminator.Exit]] message to the [[Terminator]] actor
@@ -78,7 +77,7 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
       * This will do the following:
       * 1. If the limit for allowed active verification jobs has been reached, complete with an appropriate reject message
       * 2. Otherwise, create an actor with a fresh ID and pass the arguments provided by the client
-      * 3. Send [[ViperServerProtocol.Verify]] message to the newly created instance of [[JobActor]]
+      * 3. Send [[Verify]] message to the newly created instance of [[JobActor]]
       *   ([[bookNewJob]] will add the actor as an entry to the [[_jobHandles]] collection under a fresh ID;
       *
       *    @see [[bookNewJob]])
@@ -101,7 +100,7 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
               val jobHandler: VerificationJobHandler = createJobHandle(arg_list, prog)
               complete( VerificationRequestAccept(jobHandler.id) )
             case None =>
-              complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS)."))
+              complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS})."))
           }
       }
     }
@@ -124,7 +123,7 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
       * - Ask ViperServer to begin streaming the results corresponding to the verification job with provided <jid>
       */
     get {
-      lookupJob(jid) match {
+      jobs.lookupJob(jid) match {
         case Some(handle_future) =>
           // Found a job with this jid.
           onComplete(handle_future) {
@@ -162,21 +161,21 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
       *  - Client decided to kill a verification job they no longer care about
       */
     get {
-      lookupJob(jid) match {
+      jobs.lookupJob(jid) match {
         case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>
               implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-              val interrupt_done: Future[String] = (handle.controller_actor ? Stop()).mapTo[String]
+              val interrupt_done: Future[String] = (handle.jobActor ? Stop()).mapTo[String]
               onSuccess(interrupt_done) { msg =>
-                handle.controller_actor ! PoisonPill // the actor played its part.
+                handle.jobActor ! PoisonPill // the actor played its part.
                 complete( JobDiscardAccept(msg) )
               }
             case Failure(error) =>
               complete( JobDiscardReject(s"The verification job #$jid does not exist.") )
           }
 
-        case _ =>
+        case None =>
           // Did not find a job with this jid.
           complete( JobDiscardReject(s"The verification job #$jid does not exist.") )
       }
