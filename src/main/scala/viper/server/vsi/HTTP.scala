@@ -6,17 +6,33 @@ import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.NotUsed
+import akka.http.scaladsl.Http
 import akka.pattern.ask
 import akka.stream.scaladsl.Source
 import akka.util.Timeout
-
-import spray.json.{DefaultJsonProtocol, RootJsonFormat}
-
 import viper.server.vsi.VerificationProtocol.Stop
 
 import scala.concurrent.duration._
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
+
+/** At it's core every HTTP server should implement the routes function that describes the HTTP paths.
+  * */
+trait BasicHttp {
+
+  def setPort(): Int
+
+  def routes(): Route
+}
+
+/** A customizable HTTPServer additionally provides the means to add Routes.
+  * */
+trait CustomizableHttp extends BasicHttp {
+
+  def addRoute(existingRoute: Route, newRoute: Route): Route = {
+    existingRoute ~ newRoute
+  }
+}
 
 
 /** This expands a VerifiationServer (VerSer) by providing common HTTP functionality.
@@ -26,8 +42,18 @@ import scala.util.{Failure, Success, Try}
   * In particular, this means providing a protocol that returns the VerSer's responses as type
   * [[ToResponseMarshallable]].
   * */
-trait HttpVerificationServerInterface extends VerificationServerInterface
-                                          with CustomizableHttpServer {
+trait VerificationServerHTTP extends ProcessManagement with CustomizableHttp {
+
+  def setRoutes(): Route
+
+  val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(setRoutes, "localhost", setPort())
+
+  override def start(active_jobs: Int): Unit = {
+    println("hi from HTTP start")
+    jobs = new JobPool()
+    _termActor = system.actorOf(Terminator.props(bindingFuture), "terminator")
+    isRunning = true
+  }
 
   /** Implement VerificationServer- specific handling of server shutdown
     * (Response should depend on interruption state.)
@@ -40,7 +66,7 @@ trait HttpVerificationServerInterface extends VerificationServerInterface
 
   /** Implement VerificationServer- specific handling of a request for streaming results
     * */
-  def unpackMessages(s: Source[Envelope, NotUsed]): ToResponseMarshallable
+  def unpackMessages(s: Source[Letter, NotUsed]): ToResponseMarshallable
 
   /** Implement VerificationServer- specific handling of a failed request for streaming results
     * */
@@ -54,7 +80,7 @@ trait HttpVerificationServerInterface extends VerificationServerInterface
     * */
   def discardJobRejection(jid: Int): ToResponseMarshallable
 
-  override def routes(): Route = {
+  override final def routes(): Route = {
     /** Send GET request to "/exit".
       */
     path("exit") {
@@ -90,7 +116,7 @@ trait HttpVerificationServerInterface extends VerificationServerInterface
           // Found a job with this jid.
           onComplete(handle_future) {
             case Success(handle) =>
-              val s: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
+              val s: Source[Letter, NotUsed] = Source.fromPublisher((handle.publisher))
               _termActor ! Terminator.WatchJobQueue(jid, handle)
               complete(unpackMessages(s))
             case Failure(error) =>
@@ -123,13 +149,4 @@ trait HttpVerificationServerInterface extends VerificationServerInterface
       }
     }
   }
-}
-
-object Requests extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
-
-  case class VerificationRequest(arg: String)
-  implicit val VerificationRequest_format: RootJsonFormat[VerificationRequest] = jsonFormat1(VerificationRequest.apply)
-
-  case class CacheResetRequest(backend: String, file: String)
-  implicit val CacheResetRequest_format: RootJsonFormat[CacheResetRequest] = jsonFormat2(CacheResetRequest.apply)
 }

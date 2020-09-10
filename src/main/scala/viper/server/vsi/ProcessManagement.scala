@@ -1,6 +1,6 @@
 package viper.server.vsi
 
-import akka.{Done}
+import akka.{Done, NotUsed}
 import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.http.scaladsl.Http
 import akka.pattern.ask
@@ -20,8 +20,8 @@ case class JobNotFoundException() extends VerificationServerException
 
 case class VerificationJobHandler(id: Int)
 case class JobHandle(controller_actor: ActorRef,
-                     queue: SourceQueueWithComplete[Envelope],
-                     publisher: Publisher[Envelope])
+                     queue: SourceQueueWithComplete[Letter],
+                     publisher: Publisher[Letter])
 
 /** This class manages the verification jobs the server receives.
   */
@@ -52,11 +52,7 @@ class JobPool(val MAX_ACTIVE_JOBS: Int = 3){
   }
 }
 
-/** This trait provides common functionality for verification servers such as
-  *
-  * Server state management
-  * Server processes management
-  * (caching)
+/** This trait provides state and process management functionality for verification servers.
   *
   * The server runs on Akka's actor system. This means that the entire server's state
   * and process management are run by actors. The 3 actors in charge are:
@@ -68,15 +64,29 @@ class JobPool(val MAX_ACTIVE_JOBS: Int = 3){
   *  The first two manage individual verification processes. I.e., on initializeVerificationProcess()
   *  and instance of each actor is created. The JobActor launches the actual VerificationTask, while
   *  the QueueActor acts as a middleman for communication between a VerificationTask's backend and the
-  *  server. The Terminator Actor is in charge of terminating both processes and the server.
+  *  server. The Terminator Actor is in charge of terminating both individual processes and the server.
   */
-trait VerificationServerInterface {
+trait ProcessManagement {
 
   implicit val system: ActorSystem = ActorSystem("Main")
   implicit val executionContext = ExecutionContext.global
   implicit val materializer: ActorMaterializer = ActorMaterializer()
 
-  protected val jobs = new JobPool()
+  protected var jobs: JobPool = _
+  var isRunning: Boolean = false
+
+  /** Sets up the server.
+    *
+    * This method must be called by before any other method in this interface.
+    *
+    *
+    *
+    * */
+  def start(active_jobs: Int): Unit = {
+    jobs = new JobPool(active_jobs)
+    _termActor = system.actorOf(Terminator.props(), "terminator")
+    isRunning = true
+  }
 
   // --- Actor: Terminator ---
 
@@ -165,7 +175,7 @@ trait VerificationServerInterface {
         throw new Exception("Main Actor: unexpected message received: " + msg)
     }
 
-    private def startJob(task: Thread, queue: SourceQueueWithComplete[Envelope], publisher: Publisher[Envelope]): JobHandle = {
+    private def startJob(task: Thread, queue: SourceQueueWithComplete[Letter], publisher: Publisher[Letter]): JobHandle = {
       _verificationTask = task
       _verificationTask.start()
       println(s"Starting job #$id...")
@@ -176,11 +186,11 @@ trait VerificationServerInterface {
 
   // --- Actor: MessageActor ---
 
-  object MessageActor {
-    def props(jid: Int, queue: SourceQueueWithComplete[Envelope]): Props = Props(new MessageActor(jid, queue))
+  object QueueActor {
+    def props(jid: Int, queue: SourceQueueWithComplete[Letter]): Props = Props(new QueueActor(jid, queue))
   }
 
-  class MessageActor(jid: Int, queue: SourceQueueWithComplete[Envelope]) extends Actor {
+  class QueueActor(jid: Int, queue: SourceQueueWithComplete[Letter]) extends Actor {
 
     override def receive: PartialFunction[Any, Unit] = {
       case TaskProtocol.ClientRequest =>
@@ -198,21 +208,23 @@ trait VerificationServerInterface {
     }
   }
 
-  protected def start()
-
   /** This method starts an individual verification process.
     *
     * As such, it accepts an instance of a VerificationTask.
     */
   protected def initializeVerificationProcess(task:VerificationTask): VerificationJobHandler = {
+    if(!isRunning) {
+      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
+    }
+
     if (jobs.newJobsAllowed) {
       def createJob(new_jid: Int): Future[JobHandle] = {
         implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
         val job_actor = system.actorOf(JobActor.props(new_jid), s"job_actor_$new_jid")
-        val (queue, publisher) = Source.queue[Envelope](10000, OverflowStrategy.backpressure)
+        val (queue, publisher) = Source.queue[Letter](10000, OverflowStrategy.backpressure)
                                        .toMat(Sink.asPublisher(false))(Keep.both)
                                        .run()
-        val message_actor = system.actorOf(MessageActor.props(new_jid, queue), s"queue_actor_$new_jid")
+        val message_actor = system.actorOf(QueueActor.props(new_jid, queue), s"queue_actor_$new_jid")
         task.setQueueActor(message_actor)
         val task_with_actor = new Thread(task)
         val answer = job_actor ? VerificationProtocol.Verify(task_with_actor, queue, publisher)
@@ -227,7 +239,17 @@ trait VerificationServerInterface {
     }
   }
 
-  protected def stop(): Unit = {
+  /** This method shuts the server down.
+    *
+    * After calling stop, no other method may be called.
+    *
+    * */
+  def stop(): Unit = {
+    if(!isRunning) {
+      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
+    }
+    isRunning = false
+
     getInterruptFutureList() onComplete {
       case Success(_) =>
         _termActor ! Terminator.Exit
@@ -253,18 +275,25 @@ trait VerificationServerInterface {
     overall_interrupt_future
   }
 
-  protected def successHandleCallback(handle: JobHandle, clientActor: ActorRef)
+//  protected def successHandleCallback(handle: JobHandle, clientActor: ActorRef)
 
   /** A verification process ends after the results are retrieved.
     *
     * This should be done providing an actor that can receive the envelopes stored in the Queue actor's source queue
     */
-  protected def terminateVerificationProcess(jid: Int, clientActor: ActorRef): Unit ={
+  protected def terminateVerificationProcess(jid: Int, clientActor: ActorRef): Unit = {
+    if(!isRunning) {
+      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
+    }
+
     jobs.lookupJob(jid) match {
       case Some(handle_future) =>
         handle_future.onComplete({
           case Success(handle) =>
-            successHandleCallback(handle, clientActor)
+//            successHandleCallback(handle, clientActor)
+            val src_envelope: Source[Letter, NotUsed] = Source.fromPublisher((handle.publisher))
+            val src_msg: Source[Letter#A , NotUsed] = src_envelope.map(_.unpack())
+            src_msg.runWith(Sink.actorRef(clientActor, Success))
             _termActor ! Terminator.WatchJobQueue(jid, handle)
           case Failure(e) =>  clientActor ! e
         })
@@ -288,7 +317,9 @@ abstract class VerificationTask()(implicit val executionContext: ExecutionContex
 
   protected var q_actor: ActorRef = _
 
-  def setQueueActor(actor: ActorRef): Unit = q_actor = actor
+  def setQueueActor(actor: ActorRef): Unit = {
+    q_actor = actor
+  }
 
   /** Sends massage to the attached actor.
     *
@@ -296,9 +327,10 @@ abstract class VerificationTask()(implicit val executionContext: ExecutionContex
     * indicate whether or not the offer was successful. This method is blocking, as it waits for the successful
     * completion of such an offer.
     * */
-  protected def enqueueMessages(letter: Envelope): Unit = {
-    var current_offer: Future[QueueOfferResult] = null
+  protected def enqueueMessages(letter: Letter): Unit = {
     implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
+
+    var current_offer: Future[QueueOfferResult] = null
     val answer = q_actor ? TaskProtocol.ServerReport(letter)
     current_offer = answer.flatMap({
       case res: Future[QueueOfferResult] => res

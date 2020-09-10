@@ -1,7 +1,6 @@
 package viper.server
 
 import akka.NotUsed
-import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshalling.ToResponseMarshallable
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.server.Directives._
@@ -12,33 +11,37 @@ import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
 import spray.json.DefaultJsonProtocol
 import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, SiliconConfig}
-import viper.server.core.{ViperCache, SilverEnvelope, ViperBackendConfig, ViperCoreServer}
+import viper.server.core.{ViperBackendConfig, ViperCache, ViperCoreServer}
 import viper.silver.logger.{ViperLogger, ViperStdOutLogger}
 import viper.server.protocol.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
 import viper.silver.reporter.Message
 import viper.server.utility.AstGenerator
 import viper.server.vsi.Requests.CacheResetRequest
-import viper.server.vsi.{Envelope, HttpVerificationServerInterface, JobNotFoundException, Requests, VerificationJobHandler}
+import viper.server.vsi.{VerificationServerHTTP, JobNotFoundException, Letter, Requests, SLetter, VerificationJobHandler}
 
-import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
 class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(_config)
-                                                              with HttpVerificationServerInterface {
+                                                              with VerificationServerHTTP {
 
-  override def start(){
-    config.verify()
+ override def start(): Unit = {
+   config.verify()
 
-    _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
-    ViperCache.initialize(logger.get, config.backendSpecificCache())
-    println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
+   _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
+   println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
-    val port = config.port()
-    val all_routes: Route = addRoute(routes(), flushCacheRoute())
-    val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(all_routes, "localhost", port)
+   ViperCache.initialize(logger.get, config.backendSpecificCache())
 
-    _termActor = system.actorOf(Terminator.props(bindingFuture), "terminator")
-    println(s"ViperServer online at http://localhost:$port")
+    super.start(config.maximumActiveJobs())
+    println(s"ViperServer online at http://localhost:${config.port()}")
+ }
+
+  def setPort() = {
+    config.port()
+  }
+
+  def setRoutes(): Route = {
+    addRoute(routes(), flushCacheRoute())
   }
 
   override def serverStopConfirmation(interrupt: Try[List[String]]): ToResponseMarshallable = {
@@ -83,19 +86,10 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
     }
   }
 
-  private def getArgListFromArgString(arg_str: String): List[String] = {
-    val possibly_quoted_string = raw"""[^\s"']+|"[^"]*"|'[^']*'""".r
-    val quoted_string = """^["'](.*)["']$""".r
-    possibly_quoted_string.findAllIn(arg_str).toList.map {
-      case quoted_string(noqt_a) => noqt_a
-      case a => a
-    }
-  }
-
-  override def unpackMessages(s: Source[Envelope, NotUsed]): ToResponseMarshallable = {
+  override def unpackMessages(s: Source[Letter, NotUsed]): ToResponseMarshallable = {
     import viper.server.protocol.ViperIDEProtocol._
     val src_message: Source[Message, NotUsed] = s.map({
-      case SilverEnvelope(msg) => msg
+      case sl: SLetter => sl.unpack()
       case _ => throw new Throwable("Wrong message type")
     })
     src_message
@@ -188,6 +182,15 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
           }
         }
       }
+    }
+  }
+
+  private def getArgListFromArgString(arg_str: String): List[String] = {
+    val possibly_quoted_string = raw"""[^\s"']+|"[^"]*"|'[^']*'""".r
+    val quoted_string = """^["'](.*)["']$""".r
+    possibly_quoted_string.findAllIn(arg_str).toList.map {
+      case quoted_string(noqt_a) => noqt_a
+      case a => a
     }
   }
 }

@@ -12,7 +12,7 @@ import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperConfig
 import viper.server.protocol.ReporterProtocol
-import viper.server.vsi.{TaskProtocol, VerificationTask}
+import viper.server.vsi.{Letter, SLetter, TaskProtocol, VerificationTask}
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
 import viper.silver.frontend.{DefaultStates, SilFrontend}
@@ -62,7 +62,9 @@ class VerificationWorker(private val viper_config: ViperConfig,
     val name = s"ViperServer_$tag"
 
     def report(msg: Message): Unit = {
-      enqueueMessages(SilverEnvelope(msg))
+      val myLetter: SLetter = new SLetter()
+      myLetter.pack(msg)
+      enqueueMessages(myLetter)
     }
   }
 
@@ -204,6 +206,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
 
     } flatten) toList
   }
+
   private def countInstances(p: Program): Map[String, Int] = p.members.groupBy({
     case m: Method => "method"
     case fu: Function => "function"
@@ -212,6 +215,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     case fi: Field => "field"
     case _ => "other"
   }).mapValues(_.size)
+
   private def reportProgramStats(prog: Program): Unit = {
     val stats = countInstances(prog)
 
