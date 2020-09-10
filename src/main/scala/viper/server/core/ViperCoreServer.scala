@@ -39,7 +39,7 @@ class ViperCoreServer(private val _args: Array[String]) {
   // --- VCS : Configuration ---
   var isRunning: Boolean = true
   implicit val system: ActorSystem = ActorSystem("Main")
-  implicit val executionContext = ExecutionContext.global
+  implicit val executionContext  = ExecutionContext.global
 
   private var _config: ViperConfig = _
   final def config: ViperConfig = _config
@@ -155,15 +155,12 @@ class ViperCoreServer(private val _args: Array[String]) {
 
     override def receive: PartialFunction[Any, Unit] = {
 
-      case Stop(call_back_needed) =>
+      case Stop() =>
         val did_I_interrupt = interrupt
-        if (call_back_needed) {
-          // If a callback is expected, then the caller must decide when to kill the actor.
-          if (did_I_interrupt) {
-            sender ! s"Job #$id has been successfully interrupted."
-          } else {
-            sender ! s"Job #$id has already been finalized."
-          }
+        if (did_I_interrupt) {
+          sender ! s"Job #$id has been successfully interrupted."
+        } else {
+          sender ! s"Job #$id has already been finalized."
         }
 
       case Verify(args, program) =>
@@ -199,7 +196,6 @@ class ViperCoreServer(private val _args: Array[String]) {
   class QueueActor(jid: Int, queue: SourceQueueWithComplete[Message]) extends Actor {
 
     override def receive: PartialFunction[Any, Unit] = {
-      case ReporterProtocol.ClientRequest =>
       case ReporterProtocol.ServerReport(msg) =>
         val offer_status = queue.offer(msg)
         sender() ! offer_status
@@ -241,17 +237,15 @@ class ViperCoreServer(private val _args: Array[String]) {
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 
     routes match {
-      case Some(routes) => {
+      case Some(routes) =>
         val port = config.port()
         val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(routes(logger), "localhost", port)
 
         _termActor = system.actorOf(Terminator.props(bindingFuture), "terminator")
         println(s"ViperServer online at http://localhost:$port")
-      }
-      case None => {
+      case None =>
         _termActor = system.actorOf(Terminator.props(), "terminator")
         println(s"ViperServer online in CoreServer mode")
-      }
     }
   }
 
@@ -281,7 +275,7 @@ class ViperCoreServer(private val _args: Array[String]) {
     }
 
     if (newJobsAllowed) {
-      val (id, jobHandle) = bookNewJob((new_jid: Int) => {
+      val (id, _) = bookNewJob((new_jid: Int) => {
         implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
         val jobActor = system.actorOf(JobActor.props(new_jid, logger), s"main_actor_$new_jid")
         val answer = jobActor ? ViperServerProtocol.Verify(args, program)
@@ -361,11 +355,11 @@ class ViperCoreServer(private val _args: Array[String]) {
   // --- VCS : Auxiliary Functions ---
 
   protected def getInterruptFutureList(): Future[List[String]] = {
-    val interrupt_future_list: List[Future[String]] = _jobHandles map { case (jid, handle_future) =>
+    val interrupt_future_list: List[Future[String]] = _jobHandles map { case (_, handle_future) =>
       handle_future.flatMap {
         case JobHandle(actor, _, _) =>
           implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-          (actor ? Stop(true)).mapTo[String]
+          (actor ? Stop()).mapTo[String]
       }
     } toList
     val overall_interrupt_future: Future[List[String]] = Future.sequence(interrupt_future_list)

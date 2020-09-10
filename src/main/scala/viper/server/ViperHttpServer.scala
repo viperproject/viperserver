@@ -116,8 +116,8 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
       *   - If the future completed with a failure, complete with an appropriate reject message
       *   - If the future completed successfully:
       *     - Create a [[Source]] <src> full of [[viper.silver.reporter.Message]]s
-      *     - Send [[Terminator.WatchJob]] message to the [[Terminator]] actor, awaiting
-      *       [[SourceQueueWithComplete.watchCompletion]] future before removing current job handle from [[_jobHandles]]
+      *     - Send [[Terminator.WatchJobQueue]] message to the [[Terminator]] actor, awaiting
+      *       [[akka.stream.scaladsl.SourceQueueWithComplete.watchCompletion()]] future before removing current job handle from [[_jobHandles]]
       *     - Complete request with <src>
       *
       * Use case:
@@ -167,7 +167,7 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
           onComplete(handle_future) {
             case Success(handle) =>
               implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-              val interrupt_done: Future[String] = (handle.controller_actor ? Stop(true)).mapTo[String]
+              val interrupt_done: Future[String] = (handle.controller_actor ? Stop()).mapTo[String]
               onSuccess(interrupt_done) { msg =>
                 handle.controller_actor ! PoisonPill // the actor played its part.
                 complete( JobDiscardAccept(msg) )
