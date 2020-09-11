@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2011-2020 ETH Zurich.
 
-package viper.server
+package viper.server.core
 
 import java.util.NoSuchElementException
 
@@ -17,8 +17,10 @@ import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.Timeout
 import org.reactivestreams.Publisher
-import viper.server.ViperBackendConfigs._
-import viper.server.ViperServerProtocol._
+import viper.server.protocol.ViperServerProtocol._
+import viper.server.core.ViperBackendConfigs._
+import viper.server.protocol.{ReporterProtocol, ViperServerProtocol}
+import viper.server.ViperConfig
 import viper.silver.ast
 import viper.silver.logger.ViperLogger
 import viper.silver.reporter.Message
@@ -29,47 +31,37 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.language.postfixOps
 import scala.util.{Failure, Success}
 
+case class VerificationJobHandler(id: Int)
+
 // We can potentially have more than one verification task at the same time.
 // A verification task is distinguished via the corresponding ActorRef,
 //  as well as its unique job_id.
-case class JobHandle(controller_actor: ActorRef,
+case class JobHandle(jobActor: ActorRef,
                      queue: SourceQueueWithComplete[Message],
                      publisher: Publisher[Message])
 
-case class VerificationJobHandler(id: Int)
-
-class ViperCoreServer(private val _args: Array[String]) {
-
-  // --- VCS : Configuration ---
-  var isRunning: Boolean = true
-  implicit val system: ActorSystem = ActorSystem("Main")
-  implicit val executionContext = ExecutionContext.global
-
-  private var _config: ViperConfig = _
-  final def config: ViperConfig = _config
-
-  private var _logger: ViperLogger = _
-  final def logger: ViperLogger = _logger
-
-  implicit val materializer: ActorMaterializer = ActorMaterializer()
-
-
-  // --- VCS : Jobs ---
-  var _jobHandles: mutable.Map[Int, Future[JobHandle]] = mutable.Map[Int, Future[JobHandle]]()
+/** This class manages the verification jobs the server receives.
+  */
+class JobPool(val MAX_ACTIVE_JOBS: Int = 3){
+  var jobHandles: mutable.Map[Int, Future[JobHandle]] = mutable.Map[Int, Future[JobHandle]]()
   private var _nextJobId: Int = 0
-  var MAX_ACTIVE_JOBS: Int = _
 
-  private def newJobsAllowed = _jobHandles.size < MAX_ACTIVE_JOBS
+  def newJobsAllowed = jobHandles.size < MAX_ACTIVE_JOBS
 
-  private def bookNewJob(job_executor: Int => Future[JobHandle]): (Int, Future[JobHandle]) = {
+  /** Creates a Future of a JobHandle, representing the new job
+    *
+    * For the next available job ID the function job_executor will set up a JobActor that will start
+    * a verification process and thereby eventually produce the JobHandle that's returned as a Future.
+    * */
+  def bookNewJob(job_executor: Int => Future[JobHandle]): (Int, Future[JobHandle]) = {
     val new_jid = _nextJobId
-    _jobHandles(new_jid) = job_executor(new_jid)
+    jobHandles(new_jid) = job_executor(new_jid)
     _nextJobId = _nextJobId + 1
-    (new_jid, _jobHandles(new_jid))
+    (new_jid, jobHandles(new_jid))
   }
 
-  private def discardJob(jid: Int): mutable.Map[Int, Future[JobHandle]] = {
-    _jobHandles -= jid
+  def discardJob(jid: Int): mutable.Map[Int, Future[JobHandle]] = {
+    jobHandles -= jid
   }
 
   /** Returns the JobHandle corresponding to the given JID
@@ -79,10 +71,28 @@ class ViperCoreServer(private val _args: Array[String]) {
     *   not completed, the Job is in the process of being setup
     *   completed, the Job has been successfully set up and started.
     */
-  protected def lookupJob(jid: Int): Option[ Future[JobHandle] ] = {
-    _jobHandles.get(jid)
+  def lookupJob(jid: Int): Option[ Future[JobHandle] ] = {
+    jobHandles.get(jid)
   }
+}
 
+
+class ViperCoreServer(private val _args: Array[String]) {
+
+  // --- VCS : Configuration ---
+  var isRunning: Boolean = true
+
+  implicit val system: ActorSystem = ActorSystem("Main")
+  implicit val executionContext  = ExecutionContext.global
+  implicit val materializer: ActorMaterializer = ActorMaterializer()
+
+  private var _config: ViperConfig = _
+  final def config: ViperConfig = _config
+
+  private var _logger: ViperLogger = _
+  final def logger: ViperLogger = _logger
+
+  protected var jobs: JobPool = _
 
   // --- Actor: Terminator ---
 
@@ -115,13 +125,13 @@ class ViperCoreServer(private val _args: Array[String]) {
         // terminator can delete the jobHandle, it has to wait for all the messages to be consumed.
         // This is indicated by the completion of the queue_completion_future.
         val queue_completion_future: Future[Done] = handle.queue.watchCompletion()
-        queue_completion_future.onComplete( {
+        queue_completion_future.onComplete({
+          case Success(_) =>
+            println(s"Terminator deleted job #$jid")
+            jobs.discardJob(jid)
           case Failure(e) =>
             println(s"Terminator detected failure in job #$jid: $e")
             throw e
-          case Success(_) =>
-            discardJob(jid)
-            println(s"Terminator deleted job #$jid")
         })
     }
   }
@@ -129,12 +139,12 @@ class ViperCoreServer(private val _args: Array[String]) {
 
   // --- Actor: MainActor ---
 
-  object MainActor {
-    def props(id: Int, logger: ViperLogger): Props = Props(new MainActor(id, logger))
+  object JobActor {
+    def props(id: Int, logger: ViperLogger): Props = Props(new JobActor(id, logger))
   }
 
   // (See model description in ViperServerProtocol.scala)
-  class MainActor(private val id: Int, private val logger: ViperLogger) extends Actor {
+  class JobActor(private val id: Int, private val logger: ViperLogger) extends Actor {
 
     private var _verificationTask: Thread = _
 
@@ -159,15 +169,12 @@ class ViperCoreServer(private val _args: Array[String]) {
 
     override def receive: PartialFunction[Any, Unit] = {
 
-      case Stop(call_back_needed) =>
+      case Stop() =>
         val did_I_interrupt = interrupt
-        if (call_back_needed) {
-          // If a callback is expected, then the caller must decide when to kill the actor.
-          if (did_I_interrupt) {
-            sender ! s"Job #$id has been successfully interrupted."
-          } else {
-            sender ! s"Job #$id has already been finalized."
-          }
+        if (did_I_interrupt) {
+          sender ! s"Job #$id has been successfully interrupted."
+        } else {
+          sender ! s"Job #$id has already been finalized."
         }
 
       case Verify(args, program) =>
@@ -175,16 +182,16 @@ class ViperCoreServer(private val _args: Array[String]) {
         sender ! verify(args, program)
 
       case msg =>
-        throw new Exception("Main Actor: unexpected message received: " + msg)
+        throw new Exception("Job Actor: unexpected message received: " + msg)
     }
 
     private def verify(args: List[String], program: ast.Program): JobHandle = {
       val (queue, publisher) = Source.queue[Message](10000, OverflowStrategy.backpressure)
                                      .toMat(Sink.asPublisher(false))(Keep.both)
                                      .run()
-      val reportingActor = system.actorOf(QueueActor.props(id, queue), s"reporter_$id")
+      val queueActor = system.actorOf(QueueActor.props(id, queue), s"reporter_$id")
 
-      _verificationTask = new Thread(new VerificationWorker(reportingActor, config, logger.get, args, program))
+      _verificationTask = new Thread(new VerificationWorker(queueActor, config, logger.get, args, program))
       _verificationTask.start()
 
       println(s"Starting job #$id...")
@@ -203,7 +210,6 @@ class ViperCoreServer(private val _args: Array[String]) {
   class QueueActor(jid: Int, queue: SourceQueueWithComplete[Message]) extends Actor {
 
     override def receive: PartialFunction[Any, Unit] = {
-      case ReporterProtocol.ClientRequest =>
       case ReporterProtocol.ServerReport(msg) =>
         val offer_status = queue.offer(msg)
         sender() ! offer_status
@@ -240,26 +246,28 @@ class ViperCoreServer(private val _args: Array[String]) {
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
-    MAX_ACTIVE_JOBS = config.maximumActiveJobs()
+    jobs = new JobPool(config.maximumActiveJobs())
 
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 
     routes match {
-      case Some(routes) => {
+      case Some(routes) =>
         val port = config.port()
         val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(routes(logger), "localhost", port)
 
         _termActor = system.actorOf(Terminator.props(bindingFuture), "terminator")
         println(s"ViperServer online at http://localhost:$port")
-      }
-      case None => {
+      case None =>
         _termActor = system.actorOf(Terminator.props(), "terminator")
         println(s"ViperServer online in CoreServer mode")
-      }
     }
   }
 
   /** Verifies a Viper AST using the specified backend.
+    *
+    * Returns an VerificationJobHandler whose ID uniquely identifies the verification job.
+    * Returns a VerificationJobHandler whose ID is -1 if the job failed to start (e.g., because
+    * there are too many active jobs).
     * */
   def verify(programID: String, config: ViperBackendConfig, program: ast.Program): VerificationJobHandler = {
     val args: List[String] = config match {
@@ -280,24 +288,63 @@ class ViperCoreServer(private val _args: Array[String]) {
       throw new IllegalStateException("Instance of ViperCoreServer already stopped")
     }
 
-    if (newJobsAllowed) {
-      val (id, jobHandle) = bookNewJob((new_jid: Int) => {
+    if (jobs.newJobsAllowed) {
+      val (id, _) = jobs.bookNewJob((new_jid: Int) => {
         implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-        val main_actor = system.actorOf(MainActor.props(new_jid, logger), s"main_actor_$new_jid")
-        val answer = main_actor ? ViperServerProtocol.Verify(args, program)
+        val jobActor = system.actorOf(JobActor.props(new_jid, logger), s"main_actor_$new_jid")
+        val answer = jobActor ? ViperServerProtocol.Verify(args, program)
         val new_job_handle: Future[JobHandle] = answer.mapTo[JobHandle]
         new_job_handle
       })
       VerificationJobHandler(id)
     } else {
-      println(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS).")
+      println(s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
       VerificationJobHandler(-1) // Not able to create a new JobHandle
     }
   }
 
+  /** Stream all messages generated by the backend to some actor.
+    *
+    * This method deletes the jobhandle on completion.
+    *
+    * If the method returns
+    *
+    *  - None, the verification job does not exist
+    *  - Some(completionFuture), where completionFuture indicates that the verification is in progress
+    *    as long as the future is not resolved.
+    */
+  def streamMessages(jid: Int, clientActor: ActorRef): Option[Future[Unit]] = {
+    if(!isRunning) {
+      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
+    }
+    jobs.lookupJob(jid) match {
+      case Some(handle_future) =>
+        def mapHandle(handle: JobHandle): Future[Unit] = {
+          Source.fromPublisher(handle.publisher).runWith(Sink.actorRef(clientActor, Success))
+          // As soon as messages start being consumed, the terminator actor is triggered.
+          // See Terminator.receive for more information
+          _termActor ! Terminator.WatchJobQueue(jid, handle)
+          handle.jobActor ! PoisonPill
+          handle.queue.watchCompletion().map(_ => ())
+        }
+        Some(handle_future.flatMap(mapHandle))
+      case None =>
+        clientActor ! new NoSuchElementException(s"The verification job #$jid does not exist.")
+        None
+    }
+  }
+
+  def flushCache(): Unit = {
+    if(!isRunning) {
+      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
+    }
+    ViperCache.resetCache()
+    println(s"The cache has been flushed successfully.")
+  }
+
   /** Stops an instance of ViperCoreServer from running.
     *
-    * As such it should be the ultimate method called. Calling any other function after 'stop()' will result in an
+    * As such it should be the lasts method called. Calling any other function after 'stop()' will result in an
     * IllegalStateException.
     * */
   def stop(): Unit = {
@@ -323,52 +370,14 @@ class ViperCoreServer(private val _args: Array[String]) {
   // --- VCS : Auxiliary Functions ---
 
   protected def getInterruptFutureList(): Future[List[String]] = {
-    val interrupt_future_list: List[Future[String]] = _jobHandles map { case (jid, handle_future) =>
+    val interrupt_future_list: List[Future[String]] = jobs.jobHandles map { case (_, handle_future) =>
       handle_future.flatMap {
         case JobHandle(actor, _, _) =>
           implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-          (actor ? Stop(true)).mapTo[String]
+          (actor ? Stop()).mapTo[String]
       }
     } toList
     val overall_interrupt_future: Future[List[String]] = Future.sequence(interrupt_future_list)
     overall_interrupt_future
-  }
-
-  def flushCache(): Unit = {
-    if(!isRunning) {
-      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
-    }
-    ViperCache.resetCache()
-    println(s"The cache has been flushed successfully.")
-  }
-
-  /** Stream all messages generated by the backend to some actor.
-    *
-    * This method deletes the jobhandle on completion.
-    *
-    * If the method returns
-    *
-    *  - None, the verification job does not exist
-    *  - Some(completionFuture), where completionFuture indicates that the verification is in progress
-    *    as long as the future is not resolved.
-    */
-  def streamMessages(jid: Int, clientActor: ActorRef): Option[Future[Unit]] = {
-    if(!isRunning) {
-      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
-    }
-    lookupJob(jid) match {
-      case Some(handle_future) =>
-        def mapHandle(handle: JobHandle): Future[Unit] = {
-          Source.fromPublisher(handle.publisher).runWith(Sink.actorRef(clientActor, Success))
-          // As soon as messages start being consumed, the terminator actor is triggered.
-          // See Terminator.receive for more information
-          _termActor ! Terminator.WatchJobQueue(jid, handle)
-          handle.queue.watchCompletion().map(_ => ())
-        }
-        Some(handle_future.flatMap(mapHandle))
-      case None =>
-        clientActor ! new NoSuchElementException(s"The verification job #$jid does not exist.")
-        None
-    }
   }
 }

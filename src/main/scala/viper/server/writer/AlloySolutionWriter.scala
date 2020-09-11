@@ -4,20 +4,16 @@
 //
 // Copyright (c) 2011-2020 ETH Zurich.
 
-package viper.server
+package viper.server.writer
 
-import edu.mit.csail.sdg.ast.{ExprVar, Sig}
 import edu.mit.csail.sdg.ast.Sig.Field
-
-import collection.JavaConversions._
+import edu.mit.csail.sdg.ast.{ExprVar, Sig}
 import edu.mit.csail.sdg.translator.{A4Solution, A4Tuple}
 import spray.json.{JsArray, JsObject, JsString, JsValue}
 
 import scala.collection.mutable.ListBuffer
+import collection.JavaConversions._
 
-/**
-  *
-  */
 object AlloySolutionWriter {
 
   private def toJSON(t: A4Tuple): JsArray = {

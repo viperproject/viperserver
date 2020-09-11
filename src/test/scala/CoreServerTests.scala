@@ -4,17 +4,19 @@
 //
 // Copyright (c) 2011-2020 ETH Zurich.
 
+package viper.server.core
+
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.{Matchers, WordSpec}
-import viper.server.ViperBackendConfigs.SiliconConfig
-import viper.server.{AstGenerator, VerificationJobHandler, ViperCoreServer, ViperCoreServerUtils}
+import viper.server.core.ViperBackendConfigs.SiliconConfig
+import viper.server.core.{VerificationJobHandler, ViperCoreServer, ViperCoreServerUtils}
+import viper.server.utility.AstGenerator
 import viper.silver.ast.Program
 import viper.silver.logger.SilentLogger
 import viper.silver.reporter._
 
 import scala.concurrent.Future
-
 import scala.util.{Failure, Success}
 
 class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {

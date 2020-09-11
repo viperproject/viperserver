@@ -4,9 +4,9 @@
 //
 // Copyright (c) 2011-2020 ETH Zurich.
 
-package viper.server
+package viper.server.writer
 
-import spray.json._
+import spray.json.{JsArray, JsNull, JsObject, JsString, JsValue}
 import viper.silicon.state.Identifier
 import viper.silicon.state.terms._
 

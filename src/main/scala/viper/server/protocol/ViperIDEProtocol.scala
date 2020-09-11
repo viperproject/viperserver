@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2011-2020 ETH Zurich.
 
-package viper.server
+package viper.server.protocol
 
 import akka.NotUsed
 import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSupport}
@@ -12,11 +12,12 @@ import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import edu.mit.csail.sdg.translator.A4Solution
 import spray.json.DefaultJsonProtocol
+import viper.server.core.ViperBackend
+import viper.server.writer.{AlloySolutionWriter, SymbExLogReportWriter, TermWriter}
 import viper.silicon.SymbLog
 import viper.silicon.state.terms.Term
-import viper.silver.reporter.{InvalidArgumentsReport, _}
+import viper.silver.reporter._
 import viper.silver.verifier._
-
 
 object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
 

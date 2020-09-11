@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2011-2020 ETH Zurich.
 
-package viper.server
+package viper.server.core
 
 trait ViperBackendConfig {
   val partialCommandLine: List[String]

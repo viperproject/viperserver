@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2011-2020 ETH Zurich.
 
-package viper.server
+package viper.server.core
 
 import akka.actor.ActorRef
 import akka.pattern.ask
@@ -12,6 +12,8 @@ import akka.stream.QueueOfferResult
 import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
+import viper.server.ViperConfig
+import viper.server.protocol.ReporterProtocol
 import viper.silicon.SiliconFrontend
 import viper.silver.ast.{Position, _}
 import viper.silver.frontend.{DefaultStates, SilFrontend}
@@ -75,11 +77,8 @@ class VerificationWorker(private val reporterActor: ActorRef,
       * */
     def report(msg: Message): Unit = {
       implicit val askTimeout: Timeout = Timeout(viper_config.actorCommunicationTimeout() milliseconds)
-      val answer = actor_ref ? ReporterProtocol.ServerReport(msg)
-      current_offer = answer.flatMap({
-        case res: Future[QueueOfferResult] => res
-      })
-      while(current_offer == null || !current_offer.isCompleted){
+      val q_offer = (actor_ref ? ReporterProtocol.ServerReport(msg)).mapTo[QueueOfferResult]
+      while(q_offer == null || !q_offer.isCompleted){
         Thread.sleep(10)
       }
     }

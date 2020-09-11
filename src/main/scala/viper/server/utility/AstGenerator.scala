@@ -4,16 +4,16 @@
 //
 // Copyright (c) 2011-2020 ETH Zurich.
 
-package viper.server
+package viper.server.utility
 
 import java.nio.file.Paths
 
 import viper.silicon.SiliconFrontend
 import viper.silver.ast.Program
 import viper.silver.frontend.SilFrontend
-import viper.silver.parser.PProgram
-import viper.silver.reporter.{StdIOReporter}
 import viper.silver.logger.ViperLogger
+import viper.silver.parser.PProgram
+import viper.silver.reporter.StdIOReporter
 
 class AstGenerator (private val _logger: ViperLogger){
   private var ver_backend: SilFrontend = create_backend()
