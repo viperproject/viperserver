@@ -318,7 +318,6 @@ class ViperCoreServer(private val _args: Array[String]) {
           // As soon as messages start being consumed, the terminator actor is triggered.
           // See Terminator.receive for more information
           _termActor ! Terminator.WatchJobQueue(jid, handle)
-          handle.jobActor ! PoisonPill
           handle.queue.watchCompletion().map(_ => ())
         }
         Some(handle_future.flatMap(mapHandle))
