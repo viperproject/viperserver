@@ -1,3 +1,9 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) 2011-2020 ETH Zurich.
+
 package viper.server.core
 
 import java.util.NoSuchElementException
@@ -25,7 +31,7 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.language.postfixOps
 import scala.util.{Failure, Success}
 
-case class VerificationJobHandler(id: Int)
+case class JobID(id: Int)
 
 // We can potentially have more than one verification task at the same time.
 // A verification task is distinguished via the corresponding ActorRef,
@@ -121,10 +127,10 @@ class ViperCoreServer(private val _args: Array[String]) {
         val queue_completion_future: Future[Done] = handle.queue.watchCompletion()
         queue_completion_future.onComplete({
           case Success(_) =>
-            println(s"Terminator deleted job #$jid")
+            logger.get.info(s"Terminator deleted job #$jid")
             jobs.discardJob(jid)
           case Failure(e) =>
-            println(s"Terminator detected failure in job #$jid: $e")
+            logger.get.error(s"Terminator detected failure in job #$jid: $e")
             throw e
         })
     }
@@ -147,7 +153,7 @@ class ViperCoreServer(private val _args: Array[String]) {
       if (_verificationTask != null && _verificationTask.isAlive) {
         _verificationTask.interrupt()
         _verificationTask.join()
-        println(s"Job #$id has been successfully interrupted.")
+        logger.get.info(s"Job #$id has been successfully interrupted.")
         return true
       }
       false
@@ -188,7 +194,7 @@ class ViperCoreServer(private val _args: Array[String]) {
       _verificationTask = new Thread(new VerificationWorker(queueActor, config, logger.get, args, program))
       _verificationTask.start()
 
-      println(s"Starting job #$id...")
+      logger.get.info(s"Starting job #$id...")
 
       JobHandle(self, queue, publisher)
     }
@@ -210,9 +216,9 @@ class ViperCoreServer(private val _args: Array[String]) {
       case ReporterProtocol.FinalServerReport(success) =>
         queue.complete()
         if ( success )
-          println(s"Job #$jid has been completed successfully.")
+          logger.get.info(s"Job #$jid has been completed successfully.")
         else
-          println(s"Job #$jid has been completed ERRONEOUSLY.")
+          logger.get.error(s"Job #$jid has been completed ERRONEOUSLY.")
         self ! PoisonPill
       case _ =>
     }
@@ -253,7 +259,7 @@ class ViperCoreServer(private val _args: Array[String]) {
         println(s"ViperServer online at http://localhost:$port")
       case None =>
         _termActor = system.actorOf(Terminator.props(), "terminator")
-        println(s"ViperServer online in CoreServer mode")
+        println(s"ViperCoreServer online")
     }
   }
 
@@ -263,7 +269,7 @@ class ViperCoreServer(private val _args: Array[String]) {
     * Returns a VerificationJobHandler whose ID is -1 if the job failed to start (e.g., because
     * there are too many active jobs).
     * */
-  def verify(programID: String, config: ViperBackendConfig, program: ast.Program): VerificationJobHandler = {
+  def verify(programID: String, config: ViperBackendConfig, program: ast.Program): JobID = {
     val args: List[String] = config match {
       case _ : SiliconConfig => "silicon" :: config.partialCommandLine
       case _ : CarbonConfig => "carbon" :: config.partialCommandLine
@@ -277,7 +283,7 @@ class ViperCoreServer(private val _args: Array[String]) {
     * This method replaces 'verify()' when running ViperCoreServer in HTTP mode. As such it provides the possibility
     * to directly pass arguments specified by the client.
     * */
-  protected def createJobHandle(args: List[String], program: ast.Program): VerificationJobHandler = {
+  protected def createJobHandle(args: List[String], program: ast.Program): JobID = {
     if(!isRunning) {
       throw new IllegalStateException("Instance of ViperCoreServer already stopped")
     }
@@ -290,10 +296,10 @@ class ViperCoreServer(private val _args: Array[String]) {
         val new_job_handle: Future[JobHandle] = answer.mapTo[JobHandle]
         new_job_handle
       })
-      VerificationJobHandler(id)
+      JobID(id)
     } else {
-      println(s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
-      VerificationJobHandler(-1) // Not able to create a new JobHandle
+      logger.get.error(s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
+      JobID(-1) // Not able to create a new JobHandle
     }
   }
 
@@ -307,17 +313,17 @@ class ViperCoreServer(private val _args: Array[String]) {
     *  - Some(completionFuture), where completionFuture indicates that the verification is in progress
     *    as long as the future is not resolved.
     */
-  def streamMessages(jid: Int, clientActor: ActorRef): Option[Future[Unit]] = {
+  def streamMessages(jid: JobID, clientActor: ActorRef): Option[Future[Unit]] = {
     if(!isRunning) {
       throw new IllegalStateException("Instance of ViperCoreServer already stopped")
     }
-    jobs.lookupJob(jid) match {
+    jobs.lookupJob(jid.id) match {
       case Some(handle_future) =>
         def mapHandle(handle: JobHandle): Future[Unit] = {
           Source.fromPublisher(handle.publisher).runWith(Sink.actorRef(clientActor, Success))
           // As soon as messages start being consumed, the terminator actor is triggered.
           // See Terminator.receive for more information
-          _termActor ! Terminator.WatchJobQueue(jid, handle)
+          _termActor ! Terminator.WatchJobQueue(jid.id, handle)
           handle.queue.watchCompletion().map(_ => ())
         }
         Some(handle_future.flatMap(mapHandle))
@@ -332,7 +338,7 @@ class ViperCoreServer(private val _args: Array[String]) {
       throw new IllegalStateException("Instance of ViperCoreServer already stopped")
     }
     ViperCache.resetCache()
-    println(s"The cache has been flushed successfully.")
+    logger.get.info(s"The cache has been flushed successfully.")
   }
 
   /** Stops an instance of ViperCoreServer from running.
@@ -353,7 +359,7 @@ class ViperCoreServer(private val _args: Array[String]) {
         _termActor ! Terminator.Exit
         println(s"shutting down...")
       case Failure(err_msg) =>
-        println(s"Interrupting one of the verification threads timed out: $err_msg")
+        logger.get.error(s"Interrupting one of the verification threads timed out: $err_msg")
         _termActor ! Terminator.Exit
         println(s"forcibly shutting down...")
     }

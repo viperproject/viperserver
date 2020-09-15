@@ -1,10 +1,8 @@
-/**
-  * This Source Code Form is subject to the terms of the Mozilla Public
-  * License, v. 2.0. If a copy of the MPL was not distributed with this
-  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
-  *
-  * Copyright (c) 2011-2019 ETH Zurich.
-  */
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) 2011-2020 ETH Zurich.
 
 package viper.server
 
@@ -19,7 +17,7 @@ import edu.mit.csail.sdg.alloy4.A4Reporter
 import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
 import viper.server.ViperRequests.{AlloyGenerationRequest, CacheResetRequest, VerificationRequest}
-import viper.server.core.{VerificationJobHandler, ViperCache, ViperCoreServer}
+import viper.server.core.{JobID, ViperCache, ViperCoreServer}
 import viper.server.protocol.ViperIDEProtocol._
 import viper.server.protocol.ViperServerProtocol
 import viper.server.protocol.ViperServerProtocol._
@@ -63,7 +61,7 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
               _termActor ! Terminator.Exit
               complete( ServerStopConfirmed("shutting down...") )
             case Failure(err_msg) =>
-              println(s"Interrupting one of the verification threads timed out: $err_msg")
+              logger.get.error(s"Interrupting one of the verification threads timed out: $err_msg")
               _termActor ! Terminator.Exit
               complete( ServerStopConfirmed("forcibly shutting down...") )
           }
@@ -97,7 +95,7 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
 
           astGen.generateViperAst(file) match {
             case Some(prog) =>
-              val jobHandler: VerificationJobHandler = createJobHandle(arg_list, prog)
+              val jobHandler: JobID = createJobHandle(arg_list, prog)
               complete( VerificationRequestAccept(jobHandler.id) )
             case None =>
               complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS})."))

@@ -1,10 +1,8 @@
-/**
-  * This Source Code Form is subject to the terms of the Mozilla Public
-  * License, v. 2.0. If a copy of the MPL was not distributed with this
-  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
-  *
-  * Copyright (c) 2011-2019 ETH Zurich.
-  */
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) 2011-2020 ETH Zurich.
 
 import java.io.File
 import java.nio.file.Paths
@@ -69,7 +67,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
 
     "respond with the result for session #0" in {
       Get("/verify/0") ~> _routsUnderTest ~> check {
-//        printRequestResponsePair(s"GET, /verify/0", responseAs[String])
+        //printRequestResponsePair(s"GET, /verify/0", responseAs[String])
         responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)

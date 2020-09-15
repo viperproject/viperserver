@@ -1,10 +1,8 @@
-/**
-  * This Source Code Form is subject to the terms of the Mozilla Public
-  * License, v. 2.0. If a copy of the MPL was not distributed with this
-  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
-  *
-  * Copyright (c) 2011-2019 ETH Zurich.
-  */
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) 2011-2020 ETH Zurich.
 
 package viper.server.core
 
@@ -80,7 +78,7 @@ class VerificationWorker(private val reporterActor: ActorRef,
     def report(msg: Message): Unit = {
       implicit val askTimeout: Timeout = Timeout(viper_config.actorCommunicationTimeout() milliseconds)
       val q_offer = (actor_ref ? ReporterProtocol.ServerReport(msg)).mapTo[QueueOfferResult]
-      while(q_offer == null || !q_offer.isCompleted){
+      while(q_offer == null || !q_offer.isCompleted) {
         Thread.sleep(10)
       }
     }
