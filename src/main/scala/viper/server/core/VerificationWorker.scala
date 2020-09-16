@@ -12,7 +12,7 @@ import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperConfig
 import viper.server.protocol.ReporterProtocol
-import viper.server.vsi.{Letter, SLetter, TaskProtocol, VerificationTask}
+import viper.server.vsi.{Envelope, TaskProtocol, VerificationTask}
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
 import viper.silver.frontend.{DefaultStates, SilFrontend}
@@ -26,7 +26,7 @@ import scala.language.postfixOps
 class ViperServerException extends Exception
 case class ViperServerWrongTypeException(name: String) extends ViperServerException {
   override def toString: String = s"Verification backend (<: SilFrontend) `$name`."
-}
+} 
 case class ViperServerBackendNotFoundException(name: String) extends ViperServerException {
   override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be found."
 }
@@ -62,9 +62,7 @@ class VerificationWorker(private val viper_config: ViperConfig,
     val name = s"ViperServer_$tag"
 
     def report(msg: Message): Unit = {
-      val myLetter: SLetter = new SLetter()
-      myLetter.pack(msg)
-      enqueueMessages(myLetter)
+      enqueueMessages(msg)
     }
   }
 
@@ -109,7 +107,15 @@ class VerificationWorker(private val viper_config: ViperConfig,
       q_actor ! TaskProtocol.FinalServerReport(false)
     }
   }
+
+  override type A = Message
+
+  override def pack(m: A): Envelope = {
+    SEnvelope(m)
+  }
 }
+
+case class SEnvelope(m: Message) extends Envelope
 
 class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program) {
 

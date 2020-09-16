@@ -3,12 +3,13 @@ package viper.server.core
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
+import viper.server.vsi.JobID
 import viper.silver.reporter.{EntityFailureMessage, Message}
 import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
-import scala.util.{Success}
+import scala.util.Success
 
 object ViperCoreServerUtils {
   implicit private val executionContext = ExecutionContext.global
@@ -43,7 +44,7 @@ object ViperCoreServerUtils {
     *
     * Deletes the jobhandle on completion.
     */
-  def getMessagesFuture(core: ViperCoreServer, jid: Int)(implicit actor_system: ActorSystem): Future[List[Message]] = {
+  def getMessagesFuture(core: ViperCoreServer, jid: JobID)(implicit actor_system: ActorSystem): Future[List[Message]] = {
     val actor = actor_system.actorOf(SeqActor.props())
     core.streamMessages(jid, actor)
     implicit val askTimeout: Timeout = Timeout(core.config.actorCommunicationTimeout() milliseconds)
@@ -61,7 +62,7 @@ object ViperCoreServerUtils {
     *
     * Deletes the jobhandle on completion.
     */
-  def getResultsFuture(core: ViperCoreServer, jid: Int)(implicit actor_system: ActorSystem): Future[VerificationResult] = {
+  def getResultsFuture(core: ViperCoreServer, jid: JobID)(implicit actor_system: ActorSystem): Future[VerificationResult] = {
     val messages_future = getMessagesFuture(core, jid)
     val result_future: Future[VerificationResult] = messages_future.map(msgs => {
 

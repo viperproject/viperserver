@@ -66,7 +66,7 @@ trait VerificationServerHTTP extends ProcessManagement with CustomizableHttp {
 
   /** Implement VerificationServer- specific handling of a request for streaming results
     * */
-  def unpackMessages(s: Source[Letter, NotUsed]): ToResponseMarshallable
+  def unpackMessages(s: Source[Envelope, NotUsed]): ToResponseMarshallable
 
   /** Implement VerificationServer- specific handling of a failed request for streaming results
     * */
@@ -111,13 +111,13 @@ trait VerificationServerHTTP extends ProcessManagement with CustomizableHttp {
       * <jid> must be an ID of an existing verification job.
       */
     get {
-      jobs.lookupJob(jid) match {
+      jobs.lookupJob(JobID(jid)) match {
         case Some(handle_future) =>
           // Found a job with this jid.
           onComplete(handle_future) {
             case Success(handle) =>
-              val s: Source[Letter, NotUsed] = Source.fromPublisher((handle.publisher))
-              _termActor ! Terminator.WatchJobQueue(jid, handle)
+              val s: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
+              _termActor ! Terminator.WatchJobQueue(JobID(jid), handle)
               complete(unpackMessages(s))
             case Failure(error) =>
               complete(verificationRequestRejection(jid, error))
@@ -131,12 +131,12 @@ trait VerificationServerHTTP extends ProcessManagement with CustomizableHttp {
       * <jid> must be an ID of an existing verification job.
       */
     get {
-      jobs.lookupJob(jid) match {
+      jobs.lookupJob(JobID(jid)) match {
         case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>
               implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-              val interrupt_done: Future[String] = (handle.controller_actor ? Stop(true)).mapTo[String]
+              val interrupt_done: Future[String] = (handle.controller_actor ? Stop).mapTo[String]
               onSuccess(interrupt_done) { msg =>
                 handle.controller_actor ! PoisonPill // the actor played its part.
                 complete(discardJObConfirmation(jid, msg))

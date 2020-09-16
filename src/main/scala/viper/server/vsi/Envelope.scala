@@ -1,31 +1,15 @@
 package viper.server.vsi
 
-import viper.silver.reporter.Message
+trait Envelope {}
 
-trait Envelope{
-}
-
-trait Letter {
+trait Packer {
   type A
-  var message: A = _
 
-  def pack(m: A) = {
-    message = m
-  }
-
-  def unpack(): A = {
-    message
-  }
+  def pack(m: A): Envelope
 }
 
-//class Letter[A](m: A) {
-//  val message: A = m
-//
-//  def unpack(): A = {
-//    message
-//  }
-//}
+trait Unpacker {
+  type A
 
-class SLetter() extends Letter {
- type A = Message
+  def unpack(m: Envelope): A
 }

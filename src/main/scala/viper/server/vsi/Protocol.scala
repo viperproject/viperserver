@@ -6,21 +6,17 @@ import spray.json.{DefaultJsonProtocol, RootJsonFormat}
 import viper.server.vsi.Requests.{jsonFormat1, jsonFormat2}
 
 object TaskProtocol {
-  case object ClientRequest
-  case class ServerReport(msg: Letter)
+  case class ServerReport(msg: Envelope)
   case class FinalServerReport(success: Boolean)
 }
 
 object VerificationProtocol {
 
-  // Main Actor requests Verification with File Name
-  case class Verify(task: Thread, queue: SourceQueueWithComplete[Letter], publisher: Publisher[Letter])
+  // Request Job Actor to execute verification task
+  case class Verify(task: Thread, queue: SourceQueueWithComplete[Envelope], publisher: Publisher[Envelope])
 
-  // VerificationActor sends backend to Main Actor
-  case class Backend(backend: viper.silver.verifier.Verifier)
-
-  // Verification interrupt request to Main Actor
-  case class Stop(call_me_back: Boolean)
+  // Verification interrupt request to Terminator Actor
+  case class Stop()
 }
 
 object Requests extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {

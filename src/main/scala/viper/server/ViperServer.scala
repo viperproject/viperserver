@@ -13,7 +13,7 @@ object ViperServerRunner {
 
   /** Creates batch script to run a <a href="https://github.com/viperproject/viper_client">viper_client</a> written in python.
     * */
-  private def writeBatchScripts(portOption: ScallopOption[Int], file: Option[String]): Unit ={
+  private def writeBatchScripts(portOption: ScallopOption[Int], file: Option[String]): Unit = {
     if(!portOption.isDefined){
       println("port was not defined, batch files won't be created.")
       return
@@ -45,7 +45,7 @@ object ViperServerRunner {
 
   /** Start VCS in HTTP mode.
     * */
-  def startNewHttpServer(args: Array[String]): Unit ={
+  def startNewHttpServer(args: Array[String]): Unit = {
     implicit val executionContext = ExecutionContext.global
     val config = new ViperConfig(args)
     config.verify()

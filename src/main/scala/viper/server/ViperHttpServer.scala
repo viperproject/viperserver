@@ -17,7 +17,7 @@ import viper.server.protocol.ViperIDEProtocol.{AlloyGenerationRequestComplete, A
 import viper.silver.reporter.Message
 import viper.server.utility.AstGenerator
 import viper.server.vsi.Requests.CacheResetRequest
-import viper.server.vsi.{VerificationServerHTTP, JobNotFoundException, Letter, Requests, SLetter, VerificationJobHandler}
+import viper.server.vsi.{Envelope, JobNotFoundException, Requests, JobID, VerificationServerHTTP}
 
 import scala.util.{Failure, Success, Try}
 
@@ -74,7 +74,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
     }
 
     val id: Int = if (ast_option.isDefined && backend_option.isDefined) {
-      val jobHandler: VerificationJobHandler = verify(file, backend_option.get, ast_option.get)
+      val jobHandler: JobID = verify(file, backend_option.get, ast_option.get)
       jobHandler.id
     } else {
       -1
@@ -86,12 +86,9 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
     }
   }
 
-  override def unpackMessages(s: Source[Letter, NotUsed]): ToResponseMarshallable = {
+  override def unpackMessages(s: Source[Envelope, NotUsed]): ToResponseMarshallable = {
     import viper.server.protocol.ViperIDEProtocol._
-    val src_message: Source[Message, NotUsed] = s.map({
-      case sl: SLetter => sl.unpack()
-      case _ => throw new Throwable("Wrong message type")
-    })
+    val src_message: Source[Message, NotUsed] = s.map(e => unpack(e))
     src_message
   }
 

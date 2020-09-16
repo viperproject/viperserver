@@ -283,7 +283,7 @@ object ViperCache extends VerificationServerInterfaceCache {
 }
 
 
-object ViperCacheHelper{
+object ViperCacheHelper {
   private val _node_hash_memo = MutableMap.empty[String, MutableMap[Node, String]]
   def node_hash_memo = _node_hash_memo
 

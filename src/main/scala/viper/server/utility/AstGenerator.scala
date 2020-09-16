@@ -42,7 +42,7 @@ class AstGenerator (private val _logger: ViperLogger){
     if(ver_backend.errors.isEmpty){
       _logger.get.info("There was no error while parsing!")
       Some(ver_backend.parsingResult)
-    }else{
+    }else {
       _logger.get.error("There was some error while parsing!")
       None
     }

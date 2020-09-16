@@ -3,13 +3,12 @@ package viper.server.core
 import akka.actor.ActorRef
 import viper.server.ViperConfig
 import viper.server.core.ViperBackendConfigs._
-import viper.server.vsi.{Letter, ProcessManagement, VerificationJobHandler}
+import viper.server.vsi.{Envelope, ProcessManagement, JobID}
 import viper.silver.ast
 import viper.silver.logger.ViperLogger
+import viper.silver.reporter.Message
 
 import scala.language.postfixOps
-
-class SilverLetter() extends Letter
 
 class ViperCoreServer(private var _config: ViperConfig) extends ProcessManagement {
 
@@ -20,13 +19,11 @@ class ViperCoreServer(private var _config: ViperConfig) extends ProcessManagemen
   protected var _logger: ViperLogger = _
   final def logger: ViperLogger = _logger
 
-
   /** Configures an instance of ViperCoreServer.
     *
     * This function should be called before any other.
     * */
   def start(): Unit = {
-    println("Hi from VCS start")
     config.verify()
 
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
@@ -40,7 +37,7 @@ class ViperCoreServer(private var _config: ViperConfig) extends ProcessManagemen
 
   /** Verifies a Viper AST using the specified backend.
     * */
-  def verify(programID: String, backend_config: ViperBackendConfig, program: ast.Program): VerificationJobHandler = {
+  def verify(programID: String, backend_config: ViperBackendConfig, program: ast.Program): JobID = {
     val args: List[String] = backend_config match {
       case _ : SiliconConfig => "silicon" :: backend_config.partialCommandLine
       case _ : CarbonConfig => "carbon" :: backend_config.partialCommandLine
@@ -72,8 +69,16 @@ class ViperCoreServer(private var _config: ViperConfig) extends ProcessManagemen
 
     * Deletes the jobhandle on completion.
     */
-  def streamMessages(jid: Int, clientActor: ActorRef): Unit = {
+  def streamMessages(jid: JobID, clientActor: ActorRef): Unit = {
     terminateVerificationProcess(jid, clientActor)
+  }
+
+  override type A = Message
+
+  override def unpack(e: Envelope): A = {
+    e match {
+      case SEnvelope(m) => m
+    }
   }
 }
 
