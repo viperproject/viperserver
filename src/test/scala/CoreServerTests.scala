@@ -1,8 +1,15 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) 2011-2020 ETH Zurich.
+
+package viper.server.core
+
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.{Matchers, WordSpec}
 import viper.server.core.ViperBackendConfigs.SiliconConfig
-import viper.server.core.{ViperCoreServer, ViperCoreServerUtils}
 import viper.server.vsi._
 import viper.server.utility.AstGenerator
 import viper.server.ViperConfig
@@ -39,7 +46,6 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
           case _ =>
         }
       case ClientActor.Terminate =>
-        println("terminating external actor system")
         system.terminate()
     }
   }
@@ -58,8 +64,10 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
   private val noCache_backend = SiliconConfig(List("--disableCaching"))
   private val cache_backend = SiliconConfig(List())
 
+  private val empty_args: Array[String] = Array()
+
   "An instance of ViperCoreServer" when {
-    "verifying a single file with caching disabled" should {
+    "verifying a single program with caching disabled" should {
       val config = new ViperConfig(List())
       config.verify()
       val core = new ViperCoreServer(config)
@@ -104,10 +112,12 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         }
       }
     }
-    "verifying a single file with caching enabled" should {
+
+    "verifying a single program with caching enabled" should {
       val config = new ViperConfig(List())
       config.verify()
       val core = new ViperCoreServer(config)
+
       "be able to execute 'start()' without exceptions" in {
         core.start()
       }
@@ -160,7 +170,8 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         }
       }
     }
-    "verifying multiple files with caching disabled and retrieving results via 'getMessagesFuture()'" should {
+
+    "verifying multiple programs with caching disabled and retrieving results via 'getMessagesFuture()'" should {
       val files: List[String] = List(empty_file, sum_file, verificationError_file)
       val programs: List[Program] = List(empty_ast, sum_ast, verificationError_ast)
 
@@ -208,7 +219,8 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         core.stop()
       }
     }
-    "verifying multiple files with caching enabled and retrieving results via 'getMessagesFuture()'" should {
+
+    "verifying multiple programs with caching enabled and retrieving results via 'getMessagesFuture()'" should {
       val files: List[String] = List(empty_file, sum_file, verificationError_file)
       val programs: List[Program] = List(empty_ast, sum_ast, verificationError_ast)
 
@@ -250,7 +262,8 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         core.stop()
       }
     }
-    "verifying multiple files with caching disabled and retrieving results via 'streamMessages()" should {
+
+    "verifying multiple programs with caching disabled and retrieving results via 'streamMessages()" should {
       val file1 = empty_file
       val file2 = sum_file
       val file3 = verificationError_file
@@ -268,14 +281,40 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       val jid2 = core.verify(file2, noCache_backend, ast2)
       val jid3 = core.verify(file3, noCache_backend, ast3)
 
+      var streamOption1: Option[Future[Unit]] = null
+      var streamOption2: Option[Future[Unit]] = null
+      var streamOption3: Option[Future[Unit]] = null
+
+      var streamState1: Future[Unit] = null
+      var streamState2: Future[Unit] = null
+      var streamState3: Future[Unit] = null
+
       "be able to have 'streamMessages()' stream a sequence of Viper messages without errors" in {
-        core.streamMessages(jid1, test_actor_0)
-        core.streamMessages(jid2, test_actor_1)
-        core.streamMessages(jid3, test_actor_2)
+        streamOption1 = core.streamMessages(jid1, test_actor_0)
+        streamOption2 = core.streamMessages(jid2, test_actor_1)
+        streamOption3 = core.streamMessages(jid3, test_actor_2)
+      }
+
+      "have the option returned by 'streamMessages()' be defined" in {
+        streamState1 = streamOption1.getOrElse(fail())
+        streamState2 = streamOption2.getOrElse(fail())
+        streamState3 = streamOption3.getOrElse(fail())
+      }
+
+      "eventually have future returned by 'streamMessages()' be completed" in {
+        def allCompleted(): Boolean = {
+          streamState1.isCompleted &&
+          streamState2.isCompleted &&
+          streamState3.isCompleted
+        }
+
+        while(!allCompleted()){
+          Thread.sleep(500)
+        }
       }
 
       "have the stream of messages contain the expected verification result" in {
-        Thread.sleep(20000)
+        Thread.sleep(2000)
         assert(actor_tests_results(0) == Some(true))
         assert(actor_tests_results(1) == Some(true))
         assert(actor_tests_results(2) == Some(false))
@@ -285,6 +324,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         core.stop()
       }
     }
+
     "verifying an incorrect viper program several times with caching enabled" should {
       val config = new ViperConfig(List())
       config.verify()
@@ -350,6 +390,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         core.stop()
       }
     }
+
     "maximum capacity of verification jobs is exceeded" should {
       val config = new ViperConfig(List())
       config.verify()

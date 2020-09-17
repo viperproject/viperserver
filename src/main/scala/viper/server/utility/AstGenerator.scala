@@ -1,3 +1,9 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) 2011-2020 ETH Zurich.
+
 package viper.server.utility
 
 import java.nio.file.Paths
@@ -39,11 +45,11 @@ class AstGenerator (private val _logger: ViperLogger){
     */
   private def parse(): Option[PProgram] = {
     ver_backend.parsing()
-    if(ver_backend.errors.isEmpty){
+    if(ver_backend.errors.isEmpty) {
       _logger.get.info("There was no error while parsing!")
       Some(ver_backend.parsingResult)
-    }else {
-      _logger.get.error("There was some error while parsing!")
+    } else {
+      _logger.get.error(s"There was some error while parsing: ${ver_backend.errors}")
       None
     }
   }
@@ -61,8 +67,8 @@ class AstGenerator (private val _logger: ViperLogger){
         _logger.get.info("There was no error while translating!")
         ver_backend.verifier.stop()
         return Some(ver_backend.translationResult)
-      }else {
-        _logger.get.error ("There was some error while translating!")
+      } else {
+        _logger.get.error (s"There was some error while translating ${ver_backend.errors}")
       }
     }
     ver_backend.verifier.stop()
