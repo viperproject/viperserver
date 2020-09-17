@@ -41,7 +41,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
   }
 
   def setRoutes(): Route = {
-    addRoute(routes(), flushCacheRoute())
+    addRoute(routes(), AdditionalViperServerRoute())
   }
 
   override def serverStopConfirmation(interrupt: Try[List[String]]): ToResponseMarshallable = {
@@ -107,7 +107,7 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
     JobDiscardReject(s"The verification job #$jid does not exist.")
   }
 
-  def flushCacheRoute(): Route =  path("cache" /  "flush") {
+  def AdditionalViperServerRoute(): Route = path("cache" /  "flush") {
     /**
       * Send GET request to "/cache/flush".
       *

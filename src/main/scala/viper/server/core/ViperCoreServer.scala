@@ -3,14 +3,15 @@ package viper.server.core
 import akka.actor.ActorRef
 import viper.server.ViperConfig
 import viper.server.core.ViperBackendConfigs._
-import viper.server.vsi.{Envelope, ProcessManagement, JobID}
+import viper.server.vsi.{Envelope, JobID, VerificationServer}
 import viper.silver.ast
 import viper.silver.logger.ViperLogger
 import viper.silver.reporter.Message
 
+import scala.concurrent.Future
 import scala.language.postfixOps
 
-class ViperCoreServer(private var _config: ViperConfig) extends ProcessManagement {
+class ViperCoreServer(private var _config: ViperConfig) extends VerificationServer {
 
   // --- VCS : Configuration ---
 
@@ -69,7 +70,7 @@ class ViperCoreServer(private var _config: ViperConfig) extends ProcessManagemen
 
     * Deletes the jobhandle on completion.
     */
-  def streamMessages(jid: JobID, clientActor: ActorRef): Unit = {
+  def streamMessages(jid: JobID, clientActor: ActorRef): Option[Future[Unit]] = {
     terminateVerificationProcess(jid, clientActor)
   }
 
@@ -77,7 +78,7 @@ class ViperCoreServer(private var _config: ViperConfig) extends ProcessManagemen
 
   override def unpack(e: Envelope): A = {
     e match {
-      case SEnvelope(m) => m
+      case SilverEnvelope(m) => m
     }
   }
 }

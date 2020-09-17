@@ -24,14 +24,14 @@ object ViperCache extends VerificationServerInterfaceCache {
     _logger = logger
   }
 
-  def apply(
+  def use(
         backendName: String,
         file: String,
         p: Program): (Program, List[CacheResult]) = {
 
     val file_key = getKey(backendName, file)
     val cacheable_ast = ViperAst(p)
-    val (output_ast, cache_entries) = super.apply(file_key, cacheable_ast)
+    val (output_ast, cache_entries) = super.use(file_key, cacheable_ast)
     val output_prog = output_ast.asInstanceOf[ViperAst].p
 
     val ver_results = cache_entries.map(ce => {
@@ -461,13 +461,13 @@ class AccessPath(val accessPath: List[Number]) {
 
 case class ViperAst(p: Program) extends AST {
 
-  def compose(cs: List[Concerning]): AST = {
+  def compose(cs: List[CacheableMember]): AST = {
     val new_methods: List[Method] = cs.map(_.asInstanceOf[ViperMethod].m)
     val new_program = Program(p.domains, p.fields, p.functions, p.predicates, new_methods, p.extensions)(p.pos, p.info, p.errT)
     ViperAst(new_program)
   }
 
-  def decompose(): List[Concerning] = {
+  def decompose(): List[CacheableMember] = {
     p.methods.map(m => ViperMethod(m)).toList
   }
 }
@@ -476,24 +476,23 @@ case class CacheResult(method: Method, verification_errors: List[VerificationErr
 
 case class ViperMember(h: Hashable) extends Member {
 
-  def hashFunction(): String = {
+  def hash(): String = {
     h.entityHash
   }
 }
 
-case class ViperMethod(m: Method) extends Concerning {
+case class ViperMethod(m: Method) extends CacheableMember {
 
-  def hashFunction(): String = {
+  def hash(): String = {
     m.entityHash
   }
 
-  def transform: Concerning = {
+  def transform: CacheableMember = {
     ViperMethod(m.copy(body = None)(m.pos, ConsInfo(m.info, Cached), m.errT))
   }
 
   def getDependencies(ast: AST): List[Member] = {
     val p = ast.asInstanceOf[ViperAst].p
-//    p.getDependencies(p, m).map(h => ViperMember(h))
     p.getDependencies(p, m).map(h => ViperMember(h))
   }
 }

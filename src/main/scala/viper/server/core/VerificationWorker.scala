@@ -11,7 +11,6 @@ package viper.server.core
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperConfig
-import viper.server.protocol.ReporterProtocol
 import viper.server.vsi.{Envelope, TaskProtocol, VerificationTask}
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
@@ -26,10 +25,12 @@ import scala.language.postfixOps
 class ViperServerException extends Exception
 case class ViperServerWrongTypeException(name: String) extends ViperServerException {
   override def toString: String = s"Verification backend (<: SilFrontend) `$name`."
-} 
+}
 case class ViperServerBackendNotFoundException(name: String) extends ViperServerException {
   override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be found."
 }
+
+case class SilverEnvelope(m: Message) extends Envelope
 
 class VerificationWorker(private val viper_config: ViperConfig,
                          private val logger: Logger,
@@ -89,7 +90,7 @@ class VerificationWorker(private val viper_config: ViperConfig,
       case _: InterruptedException =>
       case _: java.nio.channels.ClosedByInterruptException =>
       case e: Throwable =>
-        q_actor ! ReporterProtocol.ServerReport(ExceptionReport(e))
+        enqueueMessages(ExceptionReport(e))
         logger.trace(s"Creation/Execution of the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
     }finally {
       try {
@@ -101,21 +102,19 @@ class VerificationWorker(private val viper_config: ViperConfig,
     }
     if (backend != null) {
       logger.info(s"The command `${command.mkString(" ")}` has been executed.")
-      q_actor ! TaskProtocol.FinalServerReport(true)
+      registerTaskEnd(true)
     } else {
       logger.error(s"The command `${command.mkString(" ")}` did not result in initialization of verification backend.")
-      q_actor ! TaskProtocol.FinalServerReport(false)
+      registerTaskEnd(false)
     }
   }
 
   override type A = Message
 
   override def pack(m: A): Envelope = {
-    SEnvelope(m)
+    SilverEnvelope(m)
   }
 }
-
-case class SEnvelope(m: Message) extends Envelope
 
 class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program) {
 
@@ -275,11 +274,11 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
       * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
 
     val file: String = _frontend.config.file()
-    val (transformed_prog, cache_results) = ViperCache.apply(backendName, file, real_program)
+    val (transformed_prog, cached_results) = ViperCache.use(backendName, file, real_program)
 
-    //collect and report errors
+    // collect and report errors
     val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
-    cache_results.foreach (result => {
+    cached_results.foreach (result => {
       val cached_errors = result.verification_errors
       if(cached_errors.isEmpty){
         _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName,result.method, Success))
@@ -292,13 +291,13 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     _frontend.logger.debug(
       s"Retrieved data from cache..." +
         s" cachedErrors: ${errors.map(_.loggableMessage)};" +
-        s" methodsToVerify: ${cache_results.map(_.method.name)}.")
+        s" methodsToVerify: ${cached_results.map(_.method.name)}.")
     _frontend.logger.trace(s"The cached program is equivalent to: \n${transformed_prog.toString()}")
 
     _frontend.setVerificationResult(_frontend.verifier.verify(transformed_prog))
     _frontend.setState(DefaultStates.Verification)
 
-    //update cache
+    // update cache
     val methodsToVerify = transformed_prog.methods.filter(_.body.isDefined)
     methodsToVerify.foreach(m => {
       // Results come back irrespective of program Member.
@@ -321,7 +320,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
       }
     })
 
-    //combine errors:
+    // combine errors:
     if (errors.nonEmpty) {
       _frontend.getVerificationResult.get match {
         case Failure(errorList) =>
@@ -361,7 +360,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
             {
               return None
             }
-            //The position of the error is used to determine to which Method it belongs.
+            // The position of the error is used to determine to which Method it belongs.
             if (errorPos >= methodPos.get._1 && errorPos <= methodPos.get._2) result += e
           case _ =>
             return None

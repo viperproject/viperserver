@@ -45,7 +45,6 @@ class JobPool(val MAX_ACTIVE_JOBS: Int = 3){
   }
 
   /** Discards the JobHandle for the given JobID
-    *
     * */
   def discardJob(jid: JobID): mutable.Map[Int, Future[JobHandle]] = {
     jobHandles -= jid.id
@@ -70,7 +69,7 @@ class JobPool(val MAX_ACTIVE_JOBS: Int = 3){
   *  the QueueActor acts as a middleman for communication between a VerificationTask's backend and the
   *  server. The Terminator Actor is in charge of terminating both individual processes and the server.
   */
-trait ProcessManagement extends Unpacker {
+trait VerificationServer extends Unpacker {
 
   implicit val system: ActorSystem = ActorSystem("Main")
   implicit val executionContext = ExecutionContext.global
@@ -190,10 +189,10 @@ trait ProcessManagement extends Unpacker {
   class QueueActor(jid: Int, queue: SourceQueueWithComplete[Envelope]) extends Actor {
 
     override def receive: PartialFunction[Any, Unit] = {
-      case TaskProtocol.ServerReport(msg) =>
+      case TaskProtocol.BackendReport(msg) =>
         val offer_status = queue.offer(msg)
         sender() ! offer_status
-      case TaskProtocol.FinalServerReport(success) =>
+      case TaskProtocol.FinalBackendReport(success) =>
         queue.complete()
         if ( success )
           println(s"Job #$jid has been completed successfully.")
@@ -236,10 +235,34 @@ trait ProcessManagement extends Unpacker {
     }
   }
 
+  /** A verification process ends after the results are retrieved.
+    *
+    * This should be done providing an actor that can receive the envelopes stored in the Queue actor's source queue
+    */
+  protected def terminateVerificationProcess(jid: JobID, clientActor: ActorRef): Option[Future[Unit]] = {
+    if(!isRunning) {
+      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
+    }
+
+    jobs.lookupJob(jid) match {
+      case Some(handle_future) =>
+        def mapHandle(handle: JobHandle): Future[Unit] = {
+          val src_envelope: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
+          val src_msg: Source[A , NotUsed] = src_envelope.map(e => unpack(e))
+          src_msg.runWith(Sink.actorRef(clientActor, Success))
+          _termActor ! Terminator.WatchJobQueue(jid, handle)
+          handle.queue.watchCompletion().map(_ => ())
+        }
+        Some(handle_future.flatMap(mapHandle))
+      case None =>
+        clientActor ! JobNotFoundException()
+        None
+    }
+  }
+
   /** This method shuts the server down.
     *
     * After calling stop, no other method may be called.
-    *
     * */
   def stop(): Unit = {
     if(!isRunning) {
@@ -271,29 +294,6 @@ trait ProcessManagement extends Unpacker {
     val overall_interrupt_future: Future[List[String]] = Future.sequence(interrupt_future_list)
     overall_interrupt_future
   }
-
-  /** A verification process ends after the results are retrieved.
-    *
-    * This should be done providing an actor that can receive the envelopes stored in the Queue actor's source queue
-    */
-  protected def terminateVerificationProcess(jid: JobID, clientActor: ActorRef): Unit = {
-    if(!isRunning) {
-      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
-    }
-
-    jobs.lookupJob(jid) match {
-      case Some(handle_future) =>
-        handle_future.onComplete({
-          case Success(handle) =>
-            val src_envelope: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
-            val src_msg: Source[A , NotUsed] = src_envelope.map(e => unpack(e))
-            src_msg.runWith(Sink.actorRef(clientActor, Success))
-            _termActor ! Terminator.WatchJobQueue(jid, handle)
-          case Failure(e) =>  clientActor ! e
-        })
-      case None => clientActor ! JobNotFoundException()
-    }
-  }
 }
 
 
@@ -309,9 +309,9 @@ trait ProcessManagement extends Unpacker {
   * */
 abstract class VerificationTask()(implicit val executionContext: ExecutionContext) extends Runnable with Packer {
 
-  protected var q_actor: ActorRef = _
+  private var q_actor: ActorRef = _
 
-  def setQueueActor(actor: ActorRef): Unit = {
+  final def setQueueActor(actor: ActorRef): Unit = {
     q_actor = actor
   }
 
@@ -325,12 +325,22 @@ abstract class VerificationTask()(implicit val executionContext: ExecutionContex
     implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
 
     var current_offer: Future[QueueOfferResult] = null
-    val answer = q_actor ? TaskProtocol.ServerReport(pack(msg))
+    val answer = q_actor ? TaskProtocol.BackendReport(pack(msg))
     current_offer = answer.flatMap({
       case res: Future[QueueOfferResult] => res
     })
     while(current_offer == null || !current_offer.isCompleted){
       Thread.sleep(10)
     }
+  }
+
+  /** Notify the queue actor that the task has come to an end
+    *
+    * The actor receiving this message will close the queue.
+    *
+    * @param success indicates whether or not the task has ended as successfully.
+    * */
+  protected def registerTaskEnd(success: Boolean): Unit = {
+    q_actor ! TaskProtocol.FinalBackendReport(success)
   }
 }

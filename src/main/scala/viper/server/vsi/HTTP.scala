@@ -29,6 +29,8 @@ trait BasicHttp {
   * */
 trait CustomizableHttp extends BasicHttp {
 
+  /** Given two routes, merges them into one.
+    * */
   def addRoute(existingRoute: Route, newRoute: Route): Route = {
     existingRoute ~ newRoute
   }
@@ -42,14 +44,13 @@ trait CustomizableHttp extends BasicHttp {
   * In particular, this means providing a protocol that returns the VerSer's responses as type
   * [[ToResponseMarshallable]].
   * */
-trait VerificationServerHTTP extends ProcessManagement with CustomizableHttp {
+trait VerificationServerHTTP extends VerificationServer with CustomizableHttp {
 
   def setRoutes(): Route
 
   val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(setRoutes, "localhost", setPort())
 
   override def start(active_jobs: Int): Unit = {
-    println("hi from HTTP start")
     jobs = new JobPool()
     _termActor = system.actorOf(Terminator.props(bindingFuture), "terminator")
     isRunning = true

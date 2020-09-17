@@ -6,8 +6,8 @@ import spray.json.{DefaultJsonProtocol, RootJsonFormat}
 import viper.server.vsi.Requests.{jsonFormat1, jsonFormat2}
 
 object TaskProtocol {
-  case class ServerReport(msg: Envelope)
-  case class FinalServerReport(success: Boolean)
+  case class BackendReport(msg: Envelope)
+  case class FinalBackendReport(success: Boolean)
 }
 
 object VerificationProtocol {
