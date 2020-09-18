@@ -23,24 +23,27 @@ import viper.server.protocol.ViperIDEProtocol.{AlloyGenerationRequestComplete, A
 import viper.silver.reporter.Message
 import viper.server.utility.AstGenerator
 import viper.server.vsi.Requests.CacheResetRequest
-import viper.server.vsi.{Envelope, JobNotFoundException, Requests, JobID, VerificationServerHTTP}
+import viper.server.vsi.{Envelope, JobID, JobNotFoundException, Requests, VerificationServerHTTP}
+import viper.silver.ast.Program
 
 import scala.util.{Failure, Success, Try}
 
 class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(_config)
                                                               with VerificationServerHTTP {
 
- override def start(): Unit = {
-   config.verify()
 
-   _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
-   println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
-   ViperCache.initialize(logger.get, config.backendSpecificCache())
+  override def start(): Unit = {
+    config.verify()
+
+    _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
+    println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
+
+    ViperCache.initialize(logger.get, config.backendSpecificCache())
 
     super.start(config.maximumActiveJobs())
     println(s"ViperServer online at http://localhost:${config.port()}")
- }
+  }
 
   def setPort() = {
     config.port()
@@ -67,26 +70,30 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
     val file: String = arg_list.last
     val arg_list_partial = arg_list.dropRight(1)
     val astGen = new AstGenerator(logger)
-    val ast_option = astGen.generateViperAst(file)
+    var ast_option: Option[Program] = None
+    try {
+      ast_option = astGen.generateViperAst(file)
+    } catch {
+      case _: java.nio.file.NoSuchFileException =>
+        return VerificationRequestReject("The file for which verification has been requested was not found.")
+    }
 
-    val backend_option: Option[ViperBackendConfig] = arg_list_partial match {
-      case "silicon" :: args => Some(SiliconConfig(args))
-      case "carbon" :: args => Some(CarbonConfig(args))
-      case custom :: args => Some(CustomConfig(args))
+    val ast = ast_option.getOrElse(return VerificationRequestReject("The file for which verification has been requested contained syntax errors."))
+
+    val backend = arg_list_partial match {
+      case "silicon" :: args => SiliconConfig(args)
+      case "carbon" :: args => CarbonConfig(args)
+      case "custom" :: args => CustomConfig(args)
       case args =>
-        logger.get.error("invalid arguments: ${args.toString}",
-          "You need to specify the verification backend, e.g., `silicon [args]`")
-        None
+        logger.get.error(s"Invalid arguments: ${args.toString} " +
+          s"You need to specify the verification backend, e.g., `silicon [args]`")
+        return VerificationRequestReject("Invalid arguments for backend.")
     }
 
-    val id: Int = if (ast_option.isDefined && backend_option.isDefined) {
-      val jobHandler: JobID = verify(file, backend_option.get, ast_option.get)
-      jobHandler.id
-    } else {
-      -1
-    }
-    if (id >= 0) {
-      VerificationRequestAccept(id)
+    val jid: JobID = verify(file, backend, ast)
+
+    if (jid.id >= 0) {
+      VerificationRequestAccept(jid.id)
     } else {
       VerificationRequestReject(s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
     }

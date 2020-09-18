@@ -64,7 +64,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
   private val noCache_backend = SiliconConfig(List("--disableCaching"))
   private val cache_backend = SiliconConfig(List())
 
-  private val empty_args: Array[String] = Array()
+//  private val empty_args: Array[String] = Array()
 
   "An instance of ViperCoreServer" when {
     "verifying a single program with caching disabled" should {

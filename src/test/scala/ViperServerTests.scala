@@ -58,7 +58,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
   private val testNonExistingFile_cmd = s"$tool --disableCaching ${getResourcePath(nonExistingFile)}"
 
   "ViperServer" should {
-    s"start a verification session using `$tool` over a small Viper program" in {
+    s"start a verification process using `$tool` over a small Viper program" in {
       Post("/verify", VerificationRequest(testSimpleViperCode_cmd)) ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"POST, /verify, $testSimpleViperCode_cmd", responseAs[String])
         status should ===(StatusCodes.OK)
@@ -66,7 +66,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
 
-    "respond with the result for session #0" in {
+    "respond with the result for process #0" in {
       Get("/verify/0") ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"GET, /verify/0", responseAs[String])
         responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
@@ -75,7 +75,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
 
-    s"start another verification session using `$tool` " in {
+    s"start another verification process using `$tool` on an empty file" in {
       Post("/verify", VerificationRequest(testEmptyFile_cmd)) ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"POST, /verify, $testEmptyFile_cmd", responseAs[String])
         status should ===(StatusCodes.OK)
@@ -83,10 +83,19 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
 
-    "respond with the result for session #1" in {
+    "respond with the result for process #1" in {
       Get("/verify/1") ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"GET, /verify/1", responseAs[String])
         responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
+        status should ===(StatusCodes.OK)
+        contentType should ===(ContentTypes.`application/json`)
+      }
+    }
+
+    s"start another verification process using `$tool` on an inexistent file" in {
+      Post("/verify", VerificationRequest(testNonExistingFile_cmd)) ~> _routsUnderTest ~> check {
+        //printRequestResponsePair(s"POST, /verify, $testEmptyFile_cmd", responseAs[String])
+        responseAs[String] should include (s"not found")
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
       }

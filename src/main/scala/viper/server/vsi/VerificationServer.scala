@@ -239,7 +239,7 @@ trait VerificationServer extends Unpacker {
     *
     * This should be done providing an actor that can receive the envelopes stored in the Queue actor's source queue
     */
-  protected def terminateVerificationProcess(jid: JobID, clientActor: ActorRef): Option[Future[Unit]] = {
+  protected def streamResults(jid: JobID, clientActor: ActorRef): Option[Future[Unit]] = {
     if(!isRunning) {
       throw new IllegalStateException("Instance of ViperCoreServer already stopped")
     }

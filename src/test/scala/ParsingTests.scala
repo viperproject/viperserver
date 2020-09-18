@@ -32,16 +32,14 @@ class ParsingTests extends WordSpec with Matchers with ScalatestRouteTest {
     }
 
     var test_ast: Option[Program] = null
-    s"be able to execute 'generateViperAst()' for the file 'sum_method.vpr'" in {
-      test_ast = ast_gen.generateViperAst(sumFile)
-    }
-
     s"have 'generateViperAst()' return an defined option for the file 'sum_method.vpr'" in {
+      test_ast = ast_gen.generateViperAst(sumFile)
       assert(test_ast.isDefined)
     }
 
-    s"be able to re-execute 'generateViperAst()' for a different file" in {
+    s"have 'generateViperAst()' return an defined option for the file 'let.vpr'" in {
       test_ast = ast_gen.generateViperAst(verifiableFile)
+      assert(test_ast.isDefined)
     }
 
     s"have 'generateViperAst()' return an defined option for the file 'empty.vpr'" in {

@@ -76,7 +76,7 @@ class ViperCoreServer(private var _config: ViperConfig) extends VerificationServ
     * Deletes the jobhandle on completion.
     */
   def streamMessages(jid: JobID, clientActor: ActorRef): Option[Future[Unit]] = {
-    terminateVerificationProcess(jid, clientActor)
+    streamResults(jid, clientActor)
   }
 
   override type A = Message
