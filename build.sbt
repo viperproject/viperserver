@@ -42,6 +42,7 @@ lazy val server = (project in file("."))
         libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.5.22",
         libraryDependencies += "com.typesafe.akka" %% "akka-stream-testkit" % "2.5.22" % Test,
         libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.1.8" % Test,
+        libraryDependencies += "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.8.1", // Java implementation of language server protocol
 
         // Run settings
         run / javaOptions += "-Xss128m",

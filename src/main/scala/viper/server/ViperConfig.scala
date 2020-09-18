@@ -87,7 +87,7 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
       + "If the option is omitted, a default timeout of 5000 milliseconds will be set."),
     default = Some(5000),
     noshort = false,
-    hidden = false
+    hidden = true
   )
 
   val maximumActiveJobs: ScallopOption[Int] = opt[Int]("maximumActiveJobs", 'm',
