@@ -28,12 +28,11 @@ import viper.silver.ast.Program
 
 import scala.util.{Failure, Success, Try}
 
-class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(_config)
-                                                              with VerificationServerHTTP {
-
-
+class ViperHttpServer(_args: Array[String])
+  extends ViperCoreServer(_args) with VerificationServerHTTP {
 
   override def start(): Unit = {
+    _config = new ViperConfig(_args)
     config.verify()
 
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
@@ -41,12 +40,9 @@ class ViperHttpServer(private var _config: ViperConfig) extends ViperCoreServer(
 
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 
+    port = config.port()
     super.start(config.maximumActiveJobs())
     println(s"ViperServer online at http://localhost:${config.port()}")
-  }
-
-  def setPort() = {
-    config.port()
   }
 
   def setRoutes(): Route = {

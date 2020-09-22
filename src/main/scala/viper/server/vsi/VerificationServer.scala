@@ -25,7 +25,7 @@ case class JobHandle(controller_actor: ActorRef,
 
 /** This class manages the verification jobs the server receives.
   */
-class JobPool(val MAX_ACTIVE_JOBS: Int = 3){
+class JobPool(val MAX_ACTIVE_JOBS: Int = 3) {
   var jobHandles: mutable.Map[Int, Future[JobHandle]] = mutable.Map[Int, Future[JobHandle]]()
   private var _nextJobId: Int = 0
 

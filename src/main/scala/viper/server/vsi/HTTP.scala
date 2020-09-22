@@ -20,7 +20,7 @@ import scala.util.{Failure, Success, Try}
   * */
 trait BasicHttp {
 
-  def setPort(): Int
+  var port: Int = _
 
   def routes(): Route
 }
@@ -36,7 +36,6 @@ trait CustomizableHttp extends BasicHttp {
   }
 }
 
-
 /** This expands a VerifiationServer (VerSer) by providing common HTTP functionality.
   *  (E.g.: Stopping a VerSer, submitting Verification Requests and requesting their results)
   *
@@ -48,10 +47,11 @@ trait VerificationServerHTTP extends VerificationServer with CustomizableHttp {
 
   def setRoutes(): Route
 
-  val bindingFuture: Future[Http.ServerBinding] = Http().bindAndHandle(setRoutes, "localhost", setPort())
+  var bindingFuture: Future[Http.ServerBinding] = _
 
   override def start(active_jobs: Int): Unit = {
-    jobs = new JobPool()
+    jobs = new JobPool(active_jobs)
+    bindingFuture = Http().bindAndHandle(setRoutes, "localhost", port)
     _termActor = system.actorOf(Terminator.props(bindingFuture), "terminator")
     isRunning = true
   }

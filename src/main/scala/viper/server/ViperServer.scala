@@ -15,18 +15,11 @@ import scala.concurrent.ExecutionContext
 
 object ViperServerRunner {
 
-  var newViperHttpServer: ViperHttpServer = _
+  var viperServerHTTP: ViperHttpServer = _
 
   /** Creates batch script to run a <a href="https://github.com/viperproject/viper_client">viper_client</a> written in python.
     * */
-  private def writeBatchScripts(portOption: ScallopOption[Int], file: Option[String]): Unit = {
-    if(!portOption.isDefined){
-      println("port was not defined, batch files won't be created.")
-      return
-    }
-
-    val port = portOption.apply()
-
+  private def writeBatchScripts(port: Int, file: Option[String]): Unit = {
     import java.io.{File, FileWriter}
 
     val term_file = new File("ter.bat")
@@ -52,14 +45,11 @@ object ViperServerRunner {
   /** Start VCS in HTTP mode.
     * */
   def startNewHttpServer(args: Array[String]): Unit = {
-    implicit val executionContext = ExecutionContext.global
-    val config = new ViperConfig(args)
-    config.verify()
 
-    newViperHttpServer = new ViperHttpServer(config)
-    newViperHttpServer.start()
+    viperServerHTTP = new ViperHttpServer(args)
+    viperServerHTTP.start()
 
-    writeBatchScripts(config.port, Some("sum_method.vpr"))
+//    writeBatchScripts(viperServerHTTP.setPort(), Some("sum_method.vpr"))
   }
 
   def main(args: Array[String]): Unit = {
