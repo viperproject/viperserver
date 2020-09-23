@@ -75,7 +75,7 @@ trait VerificationServerHTTP extends VerificationServer with CustomizableHttp {
 
   /** Implement VerificationServer- specific handling of a sucessful request for discarding a job
     * */
-  def discardJObConfirmation(jid: Int, msg: String): ToResponseMarshallable
+  def discardJobConfirmation(jid: Int, msg: String): ToResponseMarshallable
 
   /** Implement VerificationServer- specific handling of a failed request for for discarding a job
     * */
@@ -87,15 +87,8 @@ trait VerificationServerHTTP extends VerificationServer with CustomizableHttp {
     path("exit") {
       get {
         onComplete(getInterruptFutureList()) { err: Try[List[String]] =>
-          err match {
-            case Success(_) =>
-              _termActor ! Terminator.Exit
-              complete( serverStopConfirmation(err) )
-            case Failure(err_msg) =>
-              println(s"Interrupting one of the verification threads timed out: $err_msg")
-              _termActor ! Terminator.Exit
-              complete( serverStopConfirmation(err) )
-          }
+          _termActor ! Terminator.Exit
+          complete( serverStopConfirmation(err) )
         }
       }
     }
@@ -137,10 +130,10 @@ trait VerificationServerHTTP extends VerificationServer with CustomizableHttp {
           onComplete(handle_future) {
             case Success(handle) =>
               implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-              val interrupt_done: Future[String] = (handle.controller_actor ? Stop).mapTo[String]
+              val interrupt_done: Future[String] = (handle.job_actor ? Stop).mapTo[String]
               onSuccess(interrupt_done) { msg =>
-                handle.controller_actor ! PoisonPill // the actor played its part.
-                complete(discardJObConfirmation(jid, msg))
+                handle.job_actor ! PoisonPill // the actor played its part.
+                complete(discardJobConfirmation(jid, msg))
               }
             case Failure(_) =>
               complete(discardJobRejection(jid))

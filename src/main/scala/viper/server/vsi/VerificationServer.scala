@@ -19,7 +19,7 @@ class VerificationServerException extends Exception
 case class JobNotFoundException() extends VerificationServerException
 
 case class JobID(id: Int)
-case class JobHandle(controller_actor: ActorRef,
+case class JobHandle(job_actor: ActorRef,
                      queue: SourceQueueWithComplete[Envelope],
                      publisher: Publisher[Envelope])
 
@@ -118,11 +118,9 @@ trait VerificationServer extends Unpacker {
         val queue_completion_future: Future[Done] = handle.queue.watchCompletion()
         queue_completion_future.onComplete( {
           case Failure(e) =>
-            println(s"Terminator detected failure in job #$jid: $e")
             throw e
           case Success(_) =>
             jobs.discardJob(jid)
-            println(s"Terminator deleted job #$jid")
         })
     }
   }
@@ -142,7 +140,6 @@ trait VerificationServer extends Unpacker {
       if (_verificationTask != null && _verificationTask.isAlive) {
         _verificationTask.interrupt()
         _verificationTask.join()
-        println(s"Job #$id has been successfully interrupted.")
         return true
       }
       false
@@ -174,7 +171,6 @@ trait VerificationServer extends Unpacker {
     private def startJob(task: Thread, queue: SourceQueueWithComplete[Envelope], publisher: Publisher[Envelope]): JobHandle = {
       _verificationTask = task
       _verificationTask.start()
-      println(s"Starting job #$id...")
       JobHandle(self, queue, publisher)
     }
   }
@@ -192,12 +188,8 @@ trait VerificationServer extends Unpacker {
       case TaskProtocol.BackendReport(msg) =>
         val offer_status = queue.offer(msg)
         sender() ! offer_status
-      case TaskProtocol.FinalBackendReport(success) =>
+      case TaskProtocol.FinalBackendReport(_) =>
         queue.complete()
-        if ( success )
-          println(s"Job #$jid has been completed successfully.")
-        else
-          println(s"Job #$jid has been completed ERRONEOUSLY.")
         self ! PoisonPill
       case _ =>
     }
@@ -230,8 +222,7 @@ trait VerificationServer extends Unpacker {
       val (id, _) = jobs.bookNewJob(createJob)
       JobID(id)
     } else {
-      println(s"the maximum number of active verification jobs are currently running ($jobs.MAX_ACTIVE_JOBS).")
-      JobID(-1) // Not able to create a new JobHandle
+      JobID(-1) // Process Management running  at max capacity.
     }
   }
 
@@ -275,7 +266,6 @@ trait VerificationServer extends Unpacker {
         _termActor ! Terminator.Exit
         println(s"shutting down...")
       case Failure(err_msg) =>
-        println(s"Interrupting one of the verification threads timed out: $err_msg")
         _termActor ! Terminator.Exit
         println(s"forcibly shutting down...")
     }

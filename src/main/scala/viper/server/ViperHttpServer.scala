@@ -17,8 +17,8 @@ import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
 import spray.json.DefaultJsonProtocol
 import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, SiliconConfig}
-import viper.server.core.{ViperBackendConfig, ViperCache, ViperCoreServer}
-import viper.silver.logger.{ViperLogger, ViperStdOutLogger}
+import viper.server.core.{ViperCache, ViperCoreServer}
+import viper.silver.logger.{ViperLogger}
 import viper.server.protocol.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
 import viper.silver.reporter.Message
 import viper.server.utility.AstGenerator
@@ -52,20 +52,23 @@ class ViperHttpServer(_args: Array[String])
   override def serverStopConfirmation(interrupt: Try[List[String]]): ToResponseMarshallable = {
     interrupt match {
       case Success(_) =>
+        println("shutting down...")
         ServerStopConfirmed("shutting down...")
       case Failure(err_msg) =>
-        println(s"Interrupting one of the verification threads timed out: $err_msg")
+        logger.get.error(s"Interrupting one of the verification threads timed out: $err_msg")
+        println("forcibly shutting down...")
         ServerStopConfirmed("forcibly shutting down...")
     }
   }
 
   override def onVerifyPost(vr: Requests.VerificationRequest): ToResponseMarshallable = {
-    val logger = ViperStdOutLogger("temp Logger")
-
+    // Extract file name from args list
     val arg_list = getArgListFromArgString(vr.arg)
     val file: String = arg_list.last
     val arg_list_partial = arg_list.dropRight(1)
-    val astGen = new AstGenerator(logger)
+
+    // Parse file
+    val astGen = new AstGenerator(_logger)
     var ast_option: Option[Program] = None
     try {
       ast_option = astGen.generateViperAst(file)
@@ -73,9 +76,9 @@ class ViperHttpServer(_args: Array[String])
       case _: java.nio.file.NoSuchFileException =>
         return VerificationRequestReject("The file for which verification has been requested was not found.")
     }
-
     val ast = ast_option.getOrElse(return VerificationRequestReject("The file for which verification has been requested contained syntax errors."))
 
+    // prepare backend config
     val backend = arg_list_partial match {
       case "silicon" :: args => SiliconConfig(args)
       case "carbon" :: args => CarbonConfig(args)
@@ -89,8 +92,11 @@ class ViperHttpServer(_args: Array[String])
     val jid: JobID = verify(file, backend, ast)
 
     if (jid.id >= 0) {
+      logger.get.info(s"Verification process #${jid.id} has successfully started.")
       VerificationRequestAccept(jid.id)
     } else {
+      logger.get.error(s"Could not start verification process. " +
+        s"The maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
       VerificationRequestReject(s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
     }
   }
@@ -103,16 +109,22 @@ class ViperHttpServer(_args: Array[String])
 
   override def verificationRequestRejection(jid: Int, e: Throwable): ToResponseMarshallable = {
     e match {
-      case JobNotFoundException() => VerificationRequestReject(s"The verification job #$jid does not exist.")
-      case _ => VerificationRequestReject(s"The verification job #$jid resulted in a terrible error: $e")
+      case JobNotFoundException() =>
+        logger.get.error(s"The verification job #$jid does not exist.")
+        VerificationRequestReject(s"The verification job #$jid does not exist.")
+      case _ =>
+        logger.get.error(s"The verification job #$jid resulted in a terrible error: $e")
+        VerificationRequestReject(s"The verification job #$jid resulted in a terrible error: $e")
     }
   }
 
-  override def discardJObConfirmation(jid: Int, msg: String): ToResponseMarshallable = {
+  override def discardJobConfirmation(jid: Int, msg: String): ToResponseMarshallable = {
+    _logger.get.info(s"The verification job #$jid was successfully stopped.")
     JobDiscardAccept(msg)
   }
 
   override def discardJobRejection(jid: Int): ToResponseMarshallable = {
+    _logger.get.error(s"The verification job #$jid does not exist.")
     JobDiscardReject(s"The verification job #$jid does not exist.")
   }
 
@@ -142,8 +154,10 @@ class ViperHttpServer(_args: Array[String])
           r =>
             ViperCache.forgetFile(r.backend, r.file) match {
               case Some(_) =>
+                _logger.get.info(s"The cache for tool (${r.backend}) for file (${r.file}) has been flushed successfully.")
                 complete( CacheFlushAccept(s"The cache for tool (${r.backend}) for file (${r.file}) has been flushed successfully.") )
               case None =>
+                _logger.get.error(s"The cache does not exist for tool (${r.backend}) for file (${r.file}).")
                 complete( CacheFlushReject(s"The cache does not exist for tool (${r.backend}) for file (${r.file}).") )
             }
         }
@@ -174,17 +188,22 @@ class ViperHttpServer(_args: Array[String])
 
             val commands = world.getAllCommands
             if (commands.size() != 1) {
+              _logger.get.error(s"Expected only one command, but got ${commands.size()}")
               complete( AlloyGenerationRequestReject(s"Expected only one command, but got ${commands.size()}") )
             }
             val command = commands.get(0)
             val solution = TranslateAlloyToKodkod.execute_command(reporter, world.getAllReachableSigs, command, options)
             if (solution.satisfiable()) {
+              _logger.get.info("Model is satisfiable")
               complete( AlloyGenerationRequestComplete(solution) )
             } else {
+              _logger.get.info(s"Model could not be satisfied.")
               complete( AlloyGenerationRequestReject(s"Model could not be satisfied.") )
             }
           } catch {
-            case e => complete( AlloyGenerationRequestReject(s"An exception occurred during model-generation:\n${e.toString}") )
+            case e =>
+              _logger.get.error(s"An exception occurred during model-generation:\n${e.toString}")
+              complete( AlloyGenerationRequestReject(s"An exception occurred during model-generation:\n${e.toString}") )
           }
         }
       }

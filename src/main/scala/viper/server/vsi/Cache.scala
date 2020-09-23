@@ -50,7 +50,7 @@ abstract class VerificationServerInterfaceCache {
     *
     * The method also returns previously cached verification result for members of the AST that hit the cache.
     * */
-  def use(
+  def applyCache(
         file_key: String,
         input_prog: AST): (AST, List[CacheEntry]) = {
 

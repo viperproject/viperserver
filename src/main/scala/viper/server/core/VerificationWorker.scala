@@ -9,7 +9,7 @@ package viper.server.core
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperConfig
-import viper.server.vsi.{Envelope, TaskProtocol, VerificationTask}
+import viper.server.vsi.{Envelope, VerificationTask}
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
 import viper.silver.frontend.{DefaultStates, SilFrontend}
@@ -272,7 +272,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
       * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
 
     val file: String = _frontend.config.file()
-    val (transformed_prog, cached_results) = ViperCache.use(backendName, file, real_program)
+    val (transformed_prog, cached_results) = ViperCache.applyCache(backendName, file, real_program)
 
     // collect and report errors
     val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
