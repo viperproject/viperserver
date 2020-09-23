@@ -12,7 +12,7 @@ import edu.mit.csail.sdg.translator.{A4Solution, A4Tuple}
 import spray.json._
 
 import scala.collection.mutable.ListBuffer
-import collection.JavaConversions._
+import collection.JavaConverters._
 
 object AlloySolutionWriter {
 
@@ -28,15 +28,15 @@ object AlloySolutionWriter {
   private def toJSON(f: Field, sol: A4Solution): JsValue = {
     JsObject(
       "name" -> JsString(f.label),
-      "atoms" -> JsArray(sol.eval(f).map(toJSON).toVector)
+      "atoms" -> JsArray(sol.eval(f).asScala.map(toJSON).toVector)
     )
   }
 
   private def toJSON(sig: Sig, sol: A4Solution): JsValue = {
     JsObject(
       "label" -> JsString(sig.label),
-      "atoms" -> JsArray(sol.eval(sig).flatMap(s => toJSON(s).elements).toVector),
-      "fields" -> JsArray(sig.getFields.map(f => toJSON(f, sol)).toVector)
+      "atoms" -> JsArray(sol.eval(sig).asScala.flatMap(s => toJSON(s).elements).toVector),
+      "fields" -> JsArray(sig.getFields.asScala.map(f => toJSON(f, sol)).toVector)
     )
   }
 
@@ -47,13 +47,13 @@ object AlloySolutionWriter {
     )
 
   def toJSON(solution: A4Solution): JsValue = {
-    val signatures = solution.getAllReachableSigs
-                             .iterator()
+    val signatures = solution.getAllReachableSigs.asScala
+//                             .iterator
                              .filter(s => s.label.startsWith("this/"))
                              .map(s => toJSON(s, solution))
     JsObject(
       "signatures" -> JsArray(signatures.toVector),
-      "atoms" -> JsArray(solution.getAllAtoms.map(toJSON).toVector)
+      "atoms" -> JsArray(solution.getAllAtoms.asScala.map(toJSON).toVector)
     )
   }
 }
