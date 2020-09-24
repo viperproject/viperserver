@@ -8,14 +8,16 @@ package viper.server.vsi
 
 trait Envelope {}
 
-trait Packer {
+trait Post {
   type A
+}
+
+trait Packer extends Post {
 
   def pack(m: A): Envelope
 }
 
-trait Unpacker {
-  type A
+trait Unpacker extends Post{
 
   def unpack(m: Envelope): A
 }

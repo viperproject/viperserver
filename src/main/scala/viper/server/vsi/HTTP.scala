@@ -79,7 +79,7 @@ trait VerificationServerHTTP extends VerificationServer with CustomizableHttp {
     * */
   def verificationRequestRejection(jid: Int, e: Throwable): ToResponseMarshallable
 
-  /** Implement VerificationServer- specific handling of a sucessful request for discarding a job
+  /** Implement VerificationServer- specific handling of a successful request for discarding a job
     * */
   def discardJobConfirmation(jid: Int, msg: String): ToResponseMarshallable
 

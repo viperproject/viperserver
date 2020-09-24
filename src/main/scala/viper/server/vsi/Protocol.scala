@@ -9,7 +9,6 @@ package viper.server.vsi
 import akka.stream.scaladsl.SourceQueueWithComplete
 import org.reactivestreams.Publisher
 import spray.json.{DefaultJsonProtocol, RootJsonFormat}
-import viper.server.vsi.Requests.{jsonFormat1, jsonFormat2}
 
 object TaskProtocol {
   case class BackendReport(msg: Envelope)

@@ -201,7 +201,7 @@ class ViperHttpServer(_args: Array[String])
               complete( AlloyGenerationRequestReject(s"Model could not be satisfied.") )
             }
           } catch {
-            case e =>
+            case e: Throwable =>
               _logger.get.error(s"An exception occurred during model-generation:\n${e.toString}")
               complete( AlloyGenerationRequestReject(s"An exception occurred during model-generation:\n${e.toString}") )
           }
