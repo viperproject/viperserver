@@ -19,7 +19,6 @@ import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
 import viper.server.ViperRequests.{AlloyGenerationRequest, CacheResetRequest, VerificationRequest}
 import viper.server.core.{JobID, ViperCache, ViperCoreServer}
 import viper.server.protocol.ViperIDEProtocol._
-import viper.server.protocol.ViperServerProtocol
 import viper.server.protocol.ViperServerProtocol._
 import viper.server.utility.AstGenerator
 import viper.silver.logger.ViperLogger

@@ -14,7 +14,6 @@ import viper.silver.logger.ViperStdOutLogger
 
 
 class ParsingTests extends WordSpec with Matchers with ScalatestRouteTest {
-  import scala.language.postfixOps
 
   private val verifiableFile = "src/test/resources/viper/let.vpr"
   private val emptyFile = "src/test/resources/viper/empty.vpr"
