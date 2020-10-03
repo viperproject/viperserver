@@ -9,7 +9,7 @@ package viper.server.core
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
-import viper.server.vsi.JobID
+import viper.server.vsi.{JobID, JobNotFoundException}
 import viper.silver.reporter.{EntityFailureMessage, Message}
 import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 
@@ -28,18 +28,12 @@ object ViperCoreServerUtils {
   class SeqActor() extends Actor {
 
     var messages: List[Message] = List()
-    var messages_promise: Promise[List[Message]] = Promise[List[Message]]()
 
     override def receive: PartialFunction[Any, Unit] = {
       case m: Message =>
         messages = messages :+ m
       case SeqActor.Result =>
-        messages_promise.future
-        sender() ! messages_promise
-      case e: Throwable =>
-        //receiving an error means the promise can be finalized with failure.
-        messages_promise failure e
-      case Success => messages_promise success messages
+        sender() ! messages
     }
   }
 
@@ -54,13 +48,16 @@ object ViperCoreServerUtils {
     import scala.language.postfixOps
 
     val actor = actor_system.actorOf(SeqActor.props())
-    core.streamMessages(jid, actor)
-    implicit val askTimeout: Timeout = Timeout(core.config.actorCommunicationTimeout() milliseconds)
-    val answer: Future[Any] = actor ? SeqActor.Result
-    val messages_future: Future[List[Message]] = answer.flatMap({
-      case res: Future[List[Message]] => res
+    val complete_future = core.streamMessages(jid, actor).getOrElse(return Future.failed(JobNotFoundException()))
+    val res: Future[List[Message]] = complete_future.flatMap(_ => {
+      implicit val askTimeout: Timeout = Timeout(core.config.actorCommunicationTimeout() milliseconds)
+      val answer: Future[Any] = actor ? SeqActor.Result
+      //recover result type from "Any"
+      answer.map({
+        case res: List[Message] => res
+      })
     })
-    messages_future
+    res
   }
 
   /** Get a Future containing only verification results.

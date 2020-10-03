@@ -251,9 +251,7 @@ trait VerificationServer extends Unpacker {
           handle.queue.watchCompletion().map(_ => ())
         }
         Some(handle_future.flatMap(mapHandle))
-      case None =>
-        clientActor ! JobNotFoundException()
-        None
+      case None => None
     }
   }
 
