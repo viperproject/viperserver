@@ -238,7 +238,6 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
   }).mapValues(_.size)
   private def reportProgramStats(prog: Program): Unit = {
     val stats = countInstances(prog)
-
     _frontend.reporter.report(ProgramOutlineReport(prog.members.toList))
     _frontend.reporter.report(StatisticsReport(
       stats.getOrElse("method", 0),

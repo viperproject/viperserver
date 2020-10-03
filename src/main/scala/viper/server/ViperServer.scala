@@ -10,15 +10,14 @@ object ViperServerRunner {
 
   def main(args: Array[String]): Unit = {
     try {
-      var port = Integer.parseInt(args.head)
+      val port = Integer.parseInt(args.head)
       runServer(port)
     } catch {
-      case e: NoSuchElementException => {
+      case _: NoSuchElementException => {
         println("No port number provided")
         sys.exit(1)
-        return
       }
-      case e: NumberFormatException => {
+      case _: NumberFormatException => {
         println("Invalid port number")
         sys.exit(1)
         return
@@ -30,11 +29,17 @@ object ViperServerRunner {
     // start listening on port
     try {
       val socket = new Socket("localhost", port)
-      println(s"going to listen on port $port")
+      val localAddress = socket.getLocalAddress.getHostAddress
+      println(s"going to listen on $localAddress:$port")
 
-      val server: ViperLanguageServer = new ViperLanguageServer()
+      Coordinator.port = port
+      Coordinator.url = localAddress
+
+
+      val server: LanguageServerReceiver = new LanguageServerReceiver()
       val launcher = Launcher.createLauncher(server, classOf[LanguageClient], socket.getInputStream, socket.getOutputStream)
       server.connect(launcher.getRemoteProxy)
+
       // start listening on input stream in a new thread:
       val fut = launcher.startListening()
       // wait until stream is closed again

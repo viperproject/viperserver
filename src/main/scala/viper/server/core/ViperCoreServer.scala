@@ -44,7 +44,7 @@ class ViperCoreServer(private val _args: Array[String]) {
   private var _config: ViperConfig = _
   final def config: ViperConfig = _config
 
-  private var _logger: ViperLogger = _
+  protected var _logger: ViperLogger = _
   final def logger: ViperLogger = _logger
 
   implicit val materializer: ActorMaterializer = ActorMaterializer()
