@@ -275,20 +275,20 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     val (transformed_prog, cached_results) = ViperCache.applyCache(backendName, file, real_program)
 
     // collect and report errors
-    val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
+    val all_cached_errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
     cached_results.foreach (result => {
       val cached_errors = result.verification_errors
       if(cached_errors.isEmpty){
         _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName,result.method, Success))
       } else {
-        errors ++= cached_errors
-        _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(errors)))
+        all_cached_errors ++= cached_errors
+        _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(all_cached_errors)))
       }
     })
 
     _frontend.logger.debug(
       s"Retrieved data from cache..." +
-        s" cachedErrors: ${errors.map(_.loggableMessage)};" +
+        s" cachedErrors: ${all_cached_errors.map(_.loggableMessage)};" +
         s" methodsToVerify: ${cached_results.map(_.method.name)}.")
     _frontend.logger.trace(s"The cached program is equivalent to: \n${transformed_prog.toString()}")
 
@@ -319,12 +319,12 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     })
 
     // combine errors:
-    if (errors.nonEmpty) {
+    if (all_cached_errors.nonEmpty) {
       _frontend.getVerificationResult.get match {
         case Failure(errorList) =>
-          _frontend.setVerificationResult(Failure(errorList ++ errors))
+          _frontend.setVerificationResult(Failure(errorList ++ all_cached_errors))
         case Success =>
-          _frontend.setVerificationResult(Failure(errors))
+          _frontend.setVerificationResult(Failure(all_cached_errors))
       }
     }
   }

@@ -18,7 +18,7 @@ import scala.collection.mutable.{Map => MutableMap}
 
 // ===== CACHE OBJECT ==================================================================
 
-object ViperCache extends VerificationServerInterfaceCache {
+object ViperCache extends Cache {
 
   private var _backendSpecificCache: Boolean = false
 
@@ -475,6 +475,10 @@ case class ViperAst(p: Program) extends AST {
 
   def decompose(): List[CacheableMember] = {
     p.methods.map(m => ViperMethod(m)).toList
+  }
+
+  override def equals(other: AST): Boolean = {
+    this.toString == other.toString
   }
 }
 

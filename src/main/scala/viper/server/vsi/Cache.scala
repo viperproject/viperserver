@@ -8,6 +8,7 @@ package viper.server.vsi
 
 import viper.silver.utility.CacheHelper
 
+import scala.collection.mutable
 import scala.collection.mutable.{ListBuffer, Map => MutableMap}
 
 /** The goal of this generic caching trait is to provide
@@ -35,7 +36,7 @@ import scala.collection.mutable.{ListBuffer, Map => MutableMap}
   * This program should thereby have been transformed in such a way that a verifier may not perform
   * unnecessary verifications on its members.
   * */
-abstract class VerificationServerInterfaceCache {
+abstract class Cache {
 
   override def toString: String = _cache.toString
 
@@ -47,6 +48,8 @@ abstract class VerificationServerInterfaceCache {
     */
   protected val _cache = MutableMap[String, FileCash]()
   type FileCash = MutableMap[String, List[CacheEntry]]
+
+  protected val program_cache = MutableMap[AST, MutableMap[CacheableMember, List[Member]]]()
 
   /** This method transforms a program and returns verification results based on the cache's current state.
     *
@@ -66,17 +69,41 @@ abstract class VerificationServerInterfaceCache {
 
     //read errors from cache
     val cachable_members = input_prog.decompose()
-    cachable_members.foreach((c: CacheableMember) => {
-      val dependencies = c.getDependencies(input_prog)
-      get(file_key, c, dependencies) match {
-        case Some(matched_entry) =>
-          concerningsToCache += c.transform
-          cache_entries += matched_entry
-        case None =>
-          //Nothing in cache, request verification
-          concerningsToVerify += c
-      }
+
+    val prog_dependencies = program_cache.find({
+      case (k, _) => k.equals(input_prog)
     })
+
+    prog_dependencies match {
+      case Some((_, dep_map)) =>
+        cachable_members.foreach(cm => {
+          val dependencies = dep_map(cm)
+          get(file_key, cm, dependencies) match {
+            case Some(matched_entry) =>
+              concerningsToCache += cm.transform
+              cache_entries += matched_entry
+            case None =>
+              //Nothing in cache, request verification
+              concerningsToVerify += cm
+          }
+        })
+      case None =>
+        val dep_map = MutableMap[CacheableMember, List[Member]]()
+        cachable_members.foreach(cm => {
+          val dependencies = cm.getDependencies(input_prog)
+          dep_map += (cm -> dependencies)
+          get(file_key, cm, dependencies) match {
+            case Some(matched_entry) =>
+              concerningsToCache += cm.transform
+              cache_entries += matched_entry
+            case None =>
+              //Nothing in cache, request verification
+              concerningsToVerify += cm
+          }
+        })
+        program_cache += (input_prog -> dep_map)
+    }
+
     val all_concernings: List[CacheableMember] = concerningsToCache.toList ++ concerningsToVerify.toList
     val output_prog: AST = input_prog.compose(all_concernings)
     (output_prog, cache_entries.toList)
@@ -227,6 +254,8 @@ trait AST {
   /** Must return a list of members which are cacheable in this AST.
     * */
   def decompose(): List[CacheableMember]
+
+  def equals(other: AST): Boolean
 }
 
 
