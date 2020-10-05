@@ -11,6 +11,7 @@ import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.{Matchers, WordSpec}
 import viper.server.core.ViperBackendConfigs.SiliconConfig
 import viper.server.vsi._
+
 import viper.server.utility.AstGenerator
 import viper.server.ViperConfig
 import viper.silver.ast.Program
@@ -21,7 +22,6 @@ import scala.concurrent.Future
 import scala.util.{Failure, Success}
 
 class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
-  import scala.language.postfixOps
 
   implicit var actor_system: ActorSystem = ActorSystem("Test")
   val test_actor_0 = actor_system.actorOf(ClientActor.props(0))

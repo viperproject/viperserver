@@ -185,7 +185,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
             t.functions.flatMap { func =>
               Definition(func.name, "Function", func.pos, Some(p)) +: (func.pos match {
                 case func_p: AbstractSourcePosition =>
-                  func.formalArgs.map { arg => Definition(arg.name, "Argument", arg.pos, Some(func_p)) }
+                  func.formalArgs.map { arg => Definition(if (arg.isInstanceOf[LocalVarDecl]) arg.asInstanceOf[LocalVarDecl].name else "unnamed parameter", "Argument", arg.pos, Some(func_p)) }
                 case _ => Seq()
               })
             } ++ t.axioms.flatMap { ax =>
