@@ -279,14 +279,6 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       var streamState2: Future[Unit] = null
       var streamState3: Future[Unit] = null
 
-      var streamOption1: Option[Future[Unit]] = null
-      var streamOption2: Option[Future[Unit]] = null
-      var streamOption3: Option[Future[Unit]] = null
-
-      var streamState1: Future[Unit] = null
-      var streamState2: Future[Unit] = null
-      var streamState3: Future[Unit] = null
-
       "be able to have 'streamMessages()' stream a sequence of Viper messages without errors" in {
         streamOption1 = core.streamMessages(jid1, test_actor_0)
         streamOption2 = core.streamMessages(jid2, test_actor_1)
