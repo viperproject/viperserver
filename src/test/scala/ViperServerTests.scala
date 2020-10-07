@@ -12,20 +12,21 @@ import akka.http.scaladsl.model.{StatusCodes, _}
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
 import akka.testkit.TestDuration
 import org.scalatest.{Matchers, WordSpec}
-import viper.server.{ViperRequests, ViperServerRunner}
+
+import viper.server.ViperServerRunner
+import viper.server.vsi.Requests._
 
 import scala.concurrent.duration._
 
 class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
 
   import scala.language.postfixOps
-  import ViperRequests._
   implicit val jsonStreamingSupport: JsonEntityStreamingSupport = EntityStreamingSupport.json()
   implicit val requestTimeput: RouteTestTimeout = RouteTestTimeout(10.second dilated)
 
   ViperServerRunner.main(Array())
 
-  private val _routsUnderTest = ViperServerRunner.httpServer.routes(ViperServerRunner.httpServer.logger)
+  private val _routsUnderTest = ViperServerRunner.viperServerHTTP.routes()
 
   def printRequestResponsePair(req: String, res: String): Unit = {
     println(s">>> ViperServer test request `$req` response in the following response: $res")
@@ -57,7 +58,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
   private val testNonExistingFile_cmd = s"$tool --disableCaching ${getResourcePath(nonExistingFile)}"
 
   "ViperServer" should {
-    s"start a verification session using `$tool` over a small Viper program" in {
+    s"start a verification process using `$tool` over a small Viper program" in {
       Post("/verify", VerificationRequest(testSimpleViperCode_cmd)) ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"POST, /verify, $testSimpleViperCode_cmd", responseAs[String])
         status should ===(StatusCodes.OK)
@@ -65,7 +66,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
 
-    "respond with the result for session #0" in {
+    "respond with the result for process #0" in {
       Get("/verify/0") ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"GET, /verify/0", responseAs[String])
         responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
@@ -74,7 +75,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
 
-    s"start another verification session using `$tool` " in {
+    s"start another verification process using `$tool` on an empty file" in {
       Post("/verify", VerificationRequest(testEmptyFile_cmd)) ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"POST, /verify, $testEmptyFile_cmd", responseAs[String])
         status should ===(StatusCodes.OK)
@@ -82,10 +83,19 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
 
-    "respond with the result for session #1" in {
+    "respond with the result for process #1" in {
       Get("/verify/1") ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"GET, /verify/1", responseAs[String])
         responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
+        status should ===(StatusCodes.OK)
+        contentType should ===(ContentTypes.`application/json`)
+      }
+    }
+
+    s"start another verification process using `$tool` on an inexistent file" in {
+      Post("/verify", VerificationRequest(testNonExistingFile_cmd)) ~> _routsUnderTest ~> check {
+        //printRequestResponsePair(s"POST, /verify, $testEmptyFile_cmd", responseAs[String])
+        responseAs[String] should include (s"not found")
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
       }

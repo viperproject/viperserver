@@ -6,18 +6,26 @@
 
 package viper.server
 
+import org.rogach.scallop.ScallopOption
+
+import scala.concurrent.ExecutionContext
+
+
+// === HTTP SERVER =====================================
+
 object ViperServerRunner {
 
-  var httpServer: ViperHttpServer = _
+  var viperServerHTTP: ViperHttpServer = _
 
   /** Start VCS in HTTP mode.
     * */
-  def startHttpServer(args: Array[String]): Unit = {
-    httpServer = new ViperHttpServer(args)
-    httpServer.start()
+  def startNewHttpServer(args: Array[String]): Unit = {
+
+    viperServerHTTP = new ViperHttpServer(args)
+    viperServerHTTP.start()
   }
 
   def main(args: Array[String]): Unit = {
-    startHttpServer(args)
+    startNewHttpServer(args)
   } // method main
 }
