@@ -16,10 +16,9 @@ import viper.silver.parser.PProgram
 import viper.silver.reporter.StdIOReporter
 
 class AstGenerator (private val _logger: ViperLogger){
-  private var ver_backend: SilFrontend = create_backend()
+  private val ver_backend: SilFrontend = create_backend()
 
-  /** Creates a backend to work with the file.
-    *
+  /** Creates a backend that reads and parses the file
     */
   private def create_backend() : SilFrontend = {
     _logger.get.info(s"Creating new verification backend.")
@@ -28,6 +27,7 @@ class AstGenerator (private val _logger: ViperLogger){
 
   /** Parses and translates a Viper file into a Viper AST.
     *
+    * Throws an exception when passed an inexistent file!
     */
   def generateViperAst(vpr_file_path: String): Option[Program] = {
     val args: Array[String] = Array(vpr_file_path)
@@ -41,7 +41,6 @@ class AstGenerator (private val _logger: ViperLogger){
   }
 
   /** Parses a Viper file
-    *
     */
   private def parse(): Option[PProgram] = {
     ver_backend.parsing()
@@ -55,7 +54,6 @@ class AstGenerator (private val _logger: ViperLogger){
   }
 
   /** Translates a Parsed Viper file into a Viper AST
-    *
     */
   private def translate(parse_ast : Option[PProgram]) : Option[Program] = {
     if(parse_ast.isDefined){

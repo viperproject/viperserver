@@ -6,24 +6,18 @@
 
 package viper.server.core
 
-import akka.actor.ActorRef
-import akka.pattern.ask
-import akka.stream.QueueOfferResult
-import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperConfig
-import viper.server.protocol.ReporterProtocol
+import viper.server.vsi.{Envelope, VerificationTask}
 import viper.silicon.SiliconFrontend
-import viper.silver.ast.{Position, _}
+import viper.silver.ast._
 import viper.silver.frontend.{DefaultStates, SilFrontend}
-import viper.silver.reporter._
-import viper.silver.verifier.errors._
+import viper.silver.reporter.{Reporter, _}
 import viper.silver.verifier.{AbstractVerificationError, VerificationResult, _}
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext
 import scala.language.postfixOps
 
 class ViperServerException extends Exception
@@ -34,14 +28,14 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
   override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be found."
 }
 
-class VerificationWorker(private val reporterActor: ActorRef,
-                         private val viper_config: ViperConfig,
+case class SilverEnvelope(m: Message) extends Envelope
+
+class VerificationWorker(private val viper_config: ViperConfig,
                          private val logger: Logger,
                          private val command: List[String],
-                         private val program: Program) extends Runnable {
+                         private val program: Program)(implicit val ec: ExecutionContext) extends VerificationTask {
 
   private var backend: ViperBackend = _
-  implicit val executionContext = ExecutionContext.global
 
   private def resolveCustomBackend(clazzName: String, rep: Reporter): Option[SilFrontend] = {
     (try {
@@ -63,24 +57,11 @@ class VerificationWorker(private val reporterActor: ActorRef,
   }
 
   // Implementation of the Reporter interface used by the backend.
-  class ActorReporter(private val actor_ref: ActorRef,
-                      val tag: String) extends viper.silver.reporter.Reporter {
-
+  class ActorReporter(val tag: String) extends Reporter {
     val name = s"ViperServer_$tag"
-    var current_offer: Future[QueueOfferResult] = null
 
-    /** Sends massage to the attached actor.
-      *
-      * The actor receiving this message offers it to a queue. This offer returns a Future, which will eventually
-      * indicate whether or not the offer was successful. This method is blocking, as it waits for the successful
-      * completion of such an offer.
-      * */
     def report(msg: Message): Unit = {
-      implicit val askTimeout: Timeout = Timeout(viper_config.actorCommunicationTimeout() milliseconds)
-      val q_offer = (actor_ref ? ReporterProtocol.ServerReport(msg)).mapTo[QueueOfferResult]
-      while(q_offer == null || !q_offer.isCompleted) {
-        Thread.sleep(10)
-      }
+      enqueueMessages(msg)
     }
   }
 
@@ -89,16 +70,15 @@ class VerificationWorker(private val reporterActor: ActorRef,
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
-          val arep = new ActorReporter(reporterActor, "silicon")
-          backend = new ViperBackend(new SiliconFrontend(new ActorReporter(reporterActor, "silicon"), logger), program)
+          backend = new ViperBackend(new SiliconFrontend(new ActorReporter("silicon"), logger), program)
           backend.execute(args)
         case "carbon" :: args =>
           logger.info("Creating new Carbon verification backend.")
-          backend = new ViperBackend(new CarbonFrontend(new ActorReporter(reporterActor, "carbon"), logger), program)
+          backend = new ViperBackend(new CarbonFrontend(new ActorReporter("carbon"), logger), program)
           backend.execute(args)
         case custom :: args =>
           logger.info(s"Creating new verification backend based on class $custom.")
-          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(reporterActor, custom)).get, program)
+          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(custom)).get, program)
           backend.execute(args)
         case args =>
           logger.error("invalid arguments: ${args.toString}",
@@ -108,7 +88,7 @@ class VerificationWorker(private val reporterActor: ActorRef,
       case _: InterruptedException =>
       case _: java.nio.channels.ClosedByInterruptException =>
       case e: Throwable =>
-        reporterActor ! ReporterProtocol.ServerReport(ExceptionReport(e))
+        enqueueMessages(ExceptionReport(e))
         logger.trace(s"Creation/Execution of the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
     } finally {
       try {
@@ -120,11 +100,17 @@ class VerificationWorker(private val reporterActor: ActorRef,
     }
     if (backend != null) {
       logger.info(s"The command `${command.mkString(" ")}` has been executed.")
-      reporterActor ! ReporterProtocol.FinalServerReport(true)
+      registerTaskEnd(true)
     } else {
       logger.error(s"The command `${command.mkString(" ")}` did not result in initialization of verification backend.")
-      reporterActor ! ReporterProtocol.FinalServerReport(false)
+      registerTaskEnd(false)
     }
+  }
+
+  override type A = Message
+
+  override def pack(m: A): Envelope = {
+    SilverEnvelope(m)
   }
 }
 
@@ -199,7 +185,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
             t.functions.flatMap { func =>
               Definition(func.name, "Function", func.pos, Some(p)) +: (func.pos match {
                 case func_p: AbstractSourcePosition =>
-                  func.formalArgs.map { arg => Definition(arg.name, "Argument", arg.pos, Some(func_p)) }
+                  func.formalArgs.map { arg => Definition(if (arg.isInstanceOf[LocalVarDecl]) arg.asInstanceOf[LocalVarDecl].name else "unnamed parameter", "Argument", arg.pos, Some(func_p)) }
                 case _ => Seq()
               })
             } ++ t.axioms.flatMap { ax =>
@@ -223,6 +209,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
 
     } flatten) toList
   }
+
   private def countInstances(p: Program): Map[String, Int] = p.members.groupBy({
     case m: Method => "method"
     case fu: Function => "function"
@@ -231,6 +218,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     case fi: Field => "field"
     case _ => "other"
   }).mapValues(_.size)
+
   private def reportProgramStats(prog: Program): Unit = {
     val stats = countInstances(prog)
 
@@ -272,21 +260,85 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
         _frontend.reporter report OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime)
       // TODO: Think again about where to detect and trigger SymbExLogging
       case Some(f@Failure(_)) =>
-        _frontend.reporter report OverallFailureMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime,
           // Cached errors will be reported as soon as they are retrieved from the cache.
-          Failure(f.errors.filter { e => !e.cached }))
+        _frontend.reporter report OverallFailureMessage(_frontend.getVerifierName,
+                                                        System.currentTimeMillis() - _frontend.startTime,
+                                                        Failure(f.errors.filter { e => !e.cached }))
+      case None =>
     }
     _frontend.verifier.stop()
   }
 
-  /*
-  Tries to determine which of the given errors are caused by the given method.
-  If an error's scope field is set, this information is used.
-  Otherwise, if both the given method and the error have line/column position information, we calculate if the error's
-  position is inside the method.
-  If at least one error has no scope set and no position, or the method's position is not set, we cannot determine
-  if the error belongs to the method and return None.
-   */
+  private def doCachedVerification(real_program: Program) = {
+    /** Top level branch is here for the same reason as in
+      * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
+
+    val file: String = _frontend.config.file()
+    val (transformed_prog, cached_results) = ViperCache.applyCache(backendName, file, real_program)
+
+    // collect and report errors
+    val all_cached_errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
+    cached_results.foreach (result => {
+      val cached_errors = result.verification_errors
+      if(cached_errors.isEmpty){
+        _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName,result.method, Success))
+      } else {
+        all_cached_errors ++= cached_errors
+        _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(all_cached_errors)))
+      }
+    })
+
+    _frontend.logger.debug(
+      s"Retrieved data from cache..." +
+        s" cachedErrors: ${all_cached_errors.map(_.loggableMessage)};" +
+        s" methodsToVerify: ${cached_results.map(_.method.name)}.")
+    _frontend.logger.trace(s"The cached program is equivalent to: \n${transformed_prog.toString()}")
+
+    _frontend.setVerificationResult(_frontend.verifier.verify(transformed_prog))
+    _frontend.setState(DefaultStates.Verification)
+
+    // update cache
+    val methodsToVerify = transformed_prog.methods.filter(_.body.isDefined)
+    methodsToVerify.foreach(m => {
+      // Results come back irrespective of program Member.
+      val cachable_errors =
+        for {
+          verRes <- _frontend.getVerificationResult
+          cache_errs <- verRes match {
+            case Failure(errs) => getMethodSpecificErrors(m, errs)
+            case Success => Some(Nil)
+          }
+        } yield cache_errs
+
+      if(cachable_errors.isDefined){
+        ViperCache.update(backendName, file, m, transformed_prog, cachable_errors.get) match {
+          case e :: es =>
+            _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
+          case Nil =>
+            _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}) FAILED.")
+        }
+      }
+    })
+
+    // combine errors:
+    if (all_cached_errors.nonEmpty) {
+      _frontend.getVerificationResult.get match {
+        case Failure(errorList) =>
+          _frontend.setVerificationResult(Failure(errorList ++ all_cached_errors))
+        case Success =>
+          _frontend.setVerificationResult(Failure(all_cached_errors))
+      }
+    }
+  }
+
+  /**
+    * Tries to determine which of the given errors are caused by the given method.
+    * If an error's scope field is set, this information is used.
+    * Otherwise, if both the given method and the error have line/column position information, we calculate if the error's
+    * position is inside the method.
+    * If at least one error has no scope set and no position, or the method's position is not set, we cannot determine
+    * if the error belongs to the method and return None.
+    */
   private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): Option[List[AbstractVerificationError]] = {
     val methodPos = m.pos match {
       case sp: SourcePosition => Some(sp.start.line, sp.end.get.line)
@@ -308,7 +360,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
             {
               return None
             }
-            //The position of the error is used to determine to which Method it belongs.
+            // The position of the error is used to determine to which Method it belongs.
             if (errorPos >= methodPos.get._1 && errorPos <= methodPos.get._2) result += e
           case _ =>
             return None
@@ -319,288 +371,5 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     Some(result.toList)
   }
 
-  private def doCachedVerification(real_program: Program) = {
-    /** Top level branch is here for the same reason as in
-      * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
-
-    val (methodsToVerify, methodsToCache, cachedErrors) = consultCache(real_program)
-    _frontend.logger.debug(
-      s"Retrieved data from cache..." +
-        s" methodsToCache: ${methodsToCache.map(_.name)};" +
-        s" cachedErrors: ${cachedErrors.map(_.loggableMessage)};" +
-        s" methodsToVerify: ${methodsToVerify.map(_.name)}.")
-
-    val prog: Program = Program(real_program.domains, real_program.fields, real_program.functions, real_program.predicates,
-      methodsToVerify ++ methodsToCache, real_program.extensions)(real_program.pos, real_program.info, real_program.errT)
-
-    _frontend.logger.trace(s"The cached program is equivalent to: \n${prog.toString()}")
-    _frontend.setVerificationResult(_frontend.verifier.verify(prog))
-
-    _frontend.setState(DefaultStates.Verification)
-
-    //update cache
-    methodsToVerify.foreach(m => {
-      _frontend.getVerificationResult.get match {
-        case Failure(errors) =>
-          val errorsToCacheMaybe = getMethodSpecificErrors(m, errors)
-          errorsToCacheMaybe match {
-            case Some(errorsToCache) => {
-              ViperCache.update(backendName, file, prog, m, errorsToCache) match {
-                case e :: es =>
-                  _frontend.logger.debug(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
-                case Nil =>
-                  _frontend.logger.warn(s"Storing new entry in cache for method (${m.name}) FAILED. List of errors for this method: $errorsToCache")
-              }
-            }
-            case None =>
-          }
-        case Success =>
-          ViperCache.update(backendName, file, prog, m, Nil) match {
-            case e :: es =>
-              _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
-            case Nil =>
-              _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}) FAILED.")
-          }
-      }
-    })
-
-    //combine errors:
-    if (cachedErrors.nonEmpty) {
-      _frontend.getVerificationResult.get match {
-        case Failure(errorList) =>
-          _frontend.setVerificationResult(Failure(errorList ++ cachedErrors))
-        case Success =>
-          _frontend.setVerificationResult(Failure(cachedErrors))
-      }
-    }
-  }
-
-  def consultCache(prog: Program): (List[Method], List[Method], List[VerificationError]) = {
-    val errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
-    val methodsToVerify: collection.mutable.ListBuffer[Method] = ListBuffer()
-    val methodsToCache: collection.mutable.ListBuffer[Method] = ListBuffer()
-
-    val file: String = _frontend.config.file()
-
-    //read errors from cache
-    prog.methods.foreach((m: Method) => {
-      ViperCache.get(backendName, file, m) match {
-        case Nil =>
-          methodsToVerify += m
-        case cache_entry_list =>
-          cache_entry_list.find { e =>
-            prog.dependencyHashMap(m) == e.dependencyHash
-          } match {
-            case None =>
-              //even if the method itself did not change, a re-verification is required if it's dependencies changed
-              methodsToVerify += m
-            case Some(matched_entry) =>
-              try {
-                val cachedErrors: Seq[VerificationError] = updateErrorLocation(prog, m, matched_entry)
-                errors ++= cachedErrors
-                methodsToCache += ViperCache.removeBody(m)
-                //Send the intermediate results to the user as soon as they are available. Approximate the time with zero.
-                if ( cachedErrors.isEmpty ) {
-                  _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, m, Success))
-                } else {
-                  _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, m, Failure(cachedErrors)))
-                }
-              } catch {
-                case e: Exception =>
-                  _frontend.logger.warn("The cache lookup failed: " + e)
-                  //Defaults to verifying the method in case the cache lookup fails.
-                  methodsToVerify += m
-              }
-          }
-      }
-    })
-    (methodsToVerify.toList, methodsToCache.toList, errors.toList)
-  }
-
-  private def updateErrorLocation(p: Program, m: Method, cacheEntry: CacheEntry): List[VerificationError] = {
-    cacheEntry.errors.map(updateErrorLocation(p, m, _))
-  }
-
-  private def updateErrorLocation(p: Program, m: Method, error: LocalizedError): VerificationError = {
-    assert(error.error != null && error.accessPath != null && error.reasonAccessPath != null)
-
-    //get the corresponding offending node in the new AST
-    //TODO: are these casts ok?
-    val offendingNode = ViperCache.getNode(backendName, file, p, error.accessPath, error.error.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
-    val reasonOffendingNode = ViperCache.getNode(backendName, file, p, error.reasonAccessPath, error.error.reason.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
-
-    if (offendingNode.isEmpty || reasonOffendingNode.isEmpty) {
-      throw new Exception(s"Cache error: no corresponding node found for error: $error")
-    }
-
-    //create a new VerificationError that only differs in the Position of the offending Node
-    //the cast is fine, because the offending Nodes are supposed to be ErrorNodes
-    val updatedOffendingNode = updatePosition(error.error.offendingNode, offendingNode.get.pos).asInstanceOf[errors.ErrorNode]
-    val updatedReasonOffendingNode = updatePosition(error.error.reason.offendingNode, reasonOffendingNode.get.pos).asInstanceOf[errors.ErrorNode]
-    //TODO: how to also update the position of error.error.reason.offendingNode?
-    val updatedError = error.error.withNode(updatedOffendingNode).asInstanceOf[AbstractVerificationError]
-    setCached(updatedError)
-  }
-
-  def setCached(error: AbstractVerificationError): AbstractVerificationError = {
-    error match {
-      case e: Internal => e.copy(cached = true)
-      case e: AssignmentFailed => e.copy(cached = true)
-      case e: CallFailed => e.copy(cached = true)
-      case e: ContractNotWellformed => e.copy(cached = true)
-      case e: PreconditionInCallFalse => e.copy(cached = true)
-      case e: PreconditionInAppFalse => e.copy(cached = true)
-      case e: ExhaleFailed => e.copy(cached = true)
-      case e: InhaleFailed => e.copy(cached = true)
-      case e: IfFailed => e.copy(cached = true)
-      case e: WhileFailed => e.copy(cached = true)
-      case e: AssertFailed => e.copy(cached = true)
-      case e: TerminationFailed => e.copy(cached = true)
-      case e: PostconditionViolated => e.copy(cached = true)
-      case e: FoldFailed => e.copy(cached = true)
-      case e: UnfoldFailed => e.copy(cached = true)
-      case e: PackageFailed => e.copy(cached = true)
-      case e: ApplyFailed => e.copy(cached = true)
-      case e: LoopInvariantNotPreserved => e.copy(cached = true)
-      case e: LoopInvariantNotEstablished => e.copy(cached = true)
-      case e: FunctionNotWellformed => e.copy(cached = true)
-      case e: PredicateNotWellformed => e.copy(cached = true)
-      case e: MagicWandNotWellformed => e.copy(cached = true)
-      case e: LetWandFailed => e.copy(cached = true)
-      case e: HeuristicsFailed => e.copy(cached = true)
-      case e: VerificationErrorWithCounterexample => e.copy(cached = true)
-      case e: AbstractVerificationError =>
-        _frontend.logger.warn("Setting a verification error to cached was not possible for " + e + ". Make sure to handle this types of errors")
-        e
-    }
-  }
-
-  def updatePosition(n: Node, pos: Position): Node = {
-    n match {
-      case t: Trigger => t.copy()(pos, t.info, t.errT)
-      case t: Program => t.copy()(pos, t.info, t.errT)
-
-      //Members
-      case t: Field => t.copy()(pos, t.info, t.errT)
-      case t: Function => t.copy()(pos, t.info, t.errT)
-      case t: Method => t.copy()(pos, t.info, t.errT)
-      case t: Predicate => t.copy()(pos, t.info, t.errT)
-      case t: Domain => t.copy()(pos, t.info, t.errT)
-
-      //DomainMembers
-      case t: NamedDomainAxiom => t.copy()(pos, t.info, t.domainName, t.errT)
-      case t: AnonymousDomainAxiom => t.copy()(pos, t.info, t.domainName, t.errT)
-      case t: DomainFunc => t.copy()(pos, t.info, t.domainName, t.errT)
-
-      //Statements
-      case t: NewStmt => t.copy()(pos, t.info, t.errT)
-      case t: LocalVarAssign => t.copy()(pos, t.info, t.errT)
-      case t: FieldAssign => t.copy()(pos, t.info, t.errT)
-      case t: Fold => t.copy()(pos, t.info, t.errT)
-      case t: Unfold => t.copy()(pos, t.info, t.errT)
-      case t: Package => t.copy()(pos, t.info, t.errT)
-      case t: Apply => t.copy()(pos, t.info, t.errT)
-      case t: Inhale => t.copy()(pos, t.info, t.errT)
-      case t: Exhale => t.copy()(pos, t.info, t.errT)
-      case t: Assert => t.copy()(pos, t.info, t.errT)
-      case t: MethodCall => t.copy()(pos, t.info, t.errT)
-      case t: Seqn => t.copy()(pos, t.info, t.errT)
-      case t: While => t.copy()(pos, t.info, t.errT)
-      case t: If => t.copy()(pos, t.info, t.errT)
-      case t: Label => t.copy()(pos, t.info, t.errT)
-      case t: Goto => t.copy()(pos, t.info, t.errT)
-      case t: LocalVarDeclStmt => t.copy()(pos, t.info, t.errT)
-
-      case t: LocalVarDecl => t.copy()(pos, t.info, t.errT)
-
-      //Expressions
-      case t: FalseLit => t.copy()(pos, t.info, t.errT)
-      case t: NullLit => t.copy()(pos, t.info, t.errT)
-      case t: TrueLit => t.copy()(pos, t.info, t.errT)
-      case t: IntLit => t.copy()(pos, t.info, t.errT)
-      case t: LocalVar => t.copy(typ = t.typ)(pos, t.info, t.errT)
-      case t: viper.silver.ast.Result => t.copy(t.typ)(pos, t.info, t.errT)
-      case t: FieldAccess => t.copy()(pos, t.info, t.errT)
-      case t: PredicateAccess => t.copy()(pos, t.info, t.errT)
-      case t: Unfolding => t.copy()(pos, t.info, t.errT)
-      case t: Applying => t.copy()(pos, t.info, t.errT)
-      case t: CondExp => t.copy()(pos, t.info, t.errT)
-      case t: Let => t.copy()(pos, t.info, t.errT)
-      case t: Exists => t.copy()(pos, t.info, t.errT)
-      case t: Forall => t.copy()(pos, t.info, t.errT)
-      case t: ForPerm => t.copy()(pos, t.info, t.errT)
-      case t: InhaleExhaleExp => t.copy()(pos, t.info, t.errT)
-      case t: WildcardPerm => t.copy()(pos, t.info, t.errT)
-      case t: FullPerm => t.copy()(pos, t.info, t.errT)
-      case t: NoPerm => t.copy()(pos, t.info, t.errT)
-      case t: EpsilonPerm => t.copy()(pos, t.info, t.errT)
-      case t: CurrentPerm => t.copy()(pos, t.info, t.errT)
-      case t: FieldAccessPredicate => t.copy()(pos, t.info, t.errT)
-      case t: PredicateAccessPredicate => t.copy()(pos, t.info, t.errT)
-
-      //Binary operators
-      case t: Add => t.copy()(pos, t.info, t.errT)
-      case t: Sub => t.copy()(pos, t.info, t.errT)
-      case t: Mul => t.copy()(pos, t.info, t.errT)
-      case t: Div => t.copy()(pos, t.info, t.errT)
-      case t: Mod => t.copy()(pos, t.info, t.errT)
-      case t: LtCmp => t.copy()(pos, t.info, t.errT)
-      case t: LeCmp => t.copy()(pos, t.info, t.errT)
-      case t: GtCmp => t.copy()(pos, t.info, t.errT)
-      case t: GeCmp => t.copy()(pos, t.info, t.errT)
-      case t: EqCmp => t.copy()(pos, t.info, t.errT)
-      case t: NeCmp => t.copy()(pos, t.info, t.errT)
-      case t: Or => t.copy()(pos, t.info, t.errT)
-      case t: And => t.copy()(pos, t.info, t.errT)
-      case t: Implies => t.copy()(pos, t.info, t.errT)
-      case t: MagicWand => t.copy()(pos, t.info, t.errT)
-      case t: FractionalPerm => t.copy()(pos, t.info, t.errT)
-      case t: PermDiv => t.copy()(pos, t.info, t.errT)
-      case t: PermAdd => t.copy()(pos, t.info, t.errT)
-      case t: PermSub => t.copy()(pos, t.info, t.errT)
-      case t: PermMul => t.copy()(pos, t.info, t.errT)
-      case t: IntPermMul => t.copy()(pos, t.info, t.errT)
-      case t: PermLtCmp => t.copy()(pos, t.info, t.errT)
-      case t: PermLeCmp => t.copy()(pos, t.info, t.errT)
-      case t: PermGtCmp => t.copy()(pos, t.info, t.errT)
-      case t: PermGeCmp => t.copy()(pos, t.info, t.errT)
-      case t: AnySetUnion => t.copy()(pos, t.info, t.errT)
-      case t: AnySetIntersection => t.copy()(pos, t.info, t.errT)
-      case t: AnySetSubset => t.copy()(pos, t.info, t.errT)
-      case t: AnySetMinus => t.copy()(pos, t.info, t.errT)
-      case t: AnySetContains => t.copy()(pos, t.info, t.errT)
-
-      //Unary operators
-      case t: Minus => t.copy()(pos, t.info, t.errT)
-      case t: Not => t.copy()(pos, t.info, t.errT)
-      case t: PermMinus => t.copy()(pos, t.info, t.errT)
-      case t: Old => t.copy()(pos, t.info, t.errT)
-      case t: LabelledOld => t.copy()(pos, t.info, t.errT)
-      case t: AnySetCardinality => t.copy()(pos, t.info, t.errT)
-      case t: FuncApp => t.copy()(pos, t.info, t.typ, t.errT)
-      case t: DomainFuncApp => t.copy()(pos, t.info, t.typ, t.domainName, t.errT)
-      case t: EmptySeq => t.copy()(pos, t.info, t.errT)
-      case t: ExplicitSeq => t.copy()(pos, t.info, t.errT)
-      case t: RangeSeq => t.copy()(pos, t.info, t.errT)
-      case t: SeqAppend => t.copy()(pos, t.info, t.errT)
-      case t: SeqIndex => t.copy()(pos, t.info, t.errT)
-      case t: SeqTake => t.copy()(pos, t.info, t.errT)
-      case t: SeqDrop => t.copy()(pos, t.info, t.errT)
-      case t: SeqContains => t.copy()(pos, t.info, t.errT)
-      case t: SeqUpdate => t.copy()(pos, t.info, t.errT)
-      case t: SeqLength => t.copy()(pos, t.info, t.errT)
-
-      //others
-      case t: EmptySet => t.copy()(pos, t.info, t.errT)
-      case t: ExplicitSet => t.copy()(pos, t.info, t.errT)
-      case t: EmptyMultiset => t.copy()(pos, t.info, t.errT)
-      case t: ExplicitMultiset => t.copy()(pos, t.info, t.errT)
-      case t =>
-        _frontend.logger.warn("The location was not updated for the node " + t + ". Make sure to handle this type of node")
-        t
-    }
-  }
-
   def stop(): Unit = _frontend.verifier.stop()
 }
-

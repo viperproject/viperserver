@@ -10,8 +10,10 @@ import akka.actor.{Actor, ActorSystem, Props}
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.{Matchers, WordSpec}
 import viper.server.core.ViperBackendConfigs.SiliconConfig
-import viper.server.core.{JobID, ViperCoreServer, ViperCoreServerUtils}
+import viper.server.vsi._
+
 import viper.server.utility.AstGenerator
+import viper.server.ViperConfig
 import viper.silver.ast.Program
 import viper.silver.logger.SilentLogger
 import viper.silver.reporter._
@@ -20,7 +22,6 @@ import scala.concurrent.Future
 import scala.util.{Failure, Success}
 
 class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
-  import scala.language.postfixOps
 
   implicit var actor_system: ActorSystem = ActorSystem("Test")
   val test_actor_0 = actor_system.actorOf(ClientActor.props(0))
@@ -73,19 +74,19 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         core.start()
       }
 
-      var handler: JobID = null
+      var jid: JobID = null
       "be able to execute 'verify()' without exceptions" in {
-        handler = core.verify("verification error", noCache_backend, verificationError_ast)
-        assert(handler != null)
+        jid = core.verify(verificationError_file, noCache_backend, verificationError_ast)
+        assert(jid != null)
       }
 
       "be able to have 'verify()' return a JobHandler with non-negative id" in {
-        assert(handler.id >= 0)
+        assert(jid.id >= 0)
       }
 
       var messages_future: Future[Seq[Message]] = null
       "be able to have 'getMessagesFuture()' return a future of a sequence of Viper messages." in {
-        messages_future = ViperCoreServerUtils.getMessagesFuture(core, handler)
+        messages_future = ViperCoreServerUtils.getMessagesFuture(core, jid)
         assert(messages_future != null)
       }
 
@@ -117,19 +118,19 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         core.start()
       }
 
-      var handler: JobID = null
+      var jid: JobID = null
       "be able to execute 'verify()' without exceptions" in {
-        handler = core.verify(sum_file, cache_backend, sum_ast)
-        assert(handler != null)
+        jid = core.verify(sum_file, cache_backend, sum_ast)
+        assert(jid != null)
       }
 
       "be able to have 'verify()' return a JobHandler with  non-negative id" in {
-        assert(handler.id >= 0)
+        assert(jid.id >= 0)
       }
 
       var messages_future: Future[Seq[Message]] = null
       "be able to have 'getMessagesFuture()' return a future of a sequence of Viper messages" in {
-        messages_future = ViperCoreServerUtils.getMessagesFuture(core, handler)
+        messages_future = ViperCoreServerUtils.getMessagesFuture(core, jid)
         assert(messages_future != null)
       }
 
@@ -150,7 +151,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
           Thread.sleep(100)
         }
         messages_future.onComplete({
-          case Success(verRes) => fail()
+          case Success(_) => fail()
           case Failure(_) => succeed
         })
       }
@@ -266,9 +267,9 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       val core = new ViperCoreServer(empty_args)
       core.start()
 
-      val vjh1 = core.verify(file1, noCache_backend, ast1)
-      val vjh2 = core.verify(file2, noCache_backend, ast2)
-      val vjh3 = core.verify(file3, noCache_backend, ast3)
+      val jid1 = core.verify(file1, noCache_backend, ast1)
+      val jid2 = core.verify(file2, noCache_backend, ast2)
+      val jid3 = core.verify(file3, noCache_backend, ast3)
 
       var streamOption1: Option[Future[Unit]] = null
       var streamOption2: Option[Future[Unit]] = null
@@ -279,9 +280,9 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       var streamState3: Future[Unit] = null
 
       "be able to have 'streamMessages()' stream a sequence of Viper messages without errors" in {
-        streamOption1 = core.streamMessages(vjh1, test_actor_0)
-        streamOption2 = core.streamMessages(vjh2, test_actor_1)
-        streamOption3 = core.streamMessages(vjh3, test_actor_2)
+        streamOption1 = core.streamMessages(jid1, test_actor_0)
+        streamOption2 = core.streamMessages(jid2, test_actor_1)
+        streamOption3 = core.streamMessages(jid3, test_actor_2)
       }
 
       "have the option returned by 'streamMessages()' be defined" in {
@@ -319,8 +320,8 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       core.start()
 
       "produce an OverallFailure Message with a non-empty error list upon first verification." in {
-        val vjh_original = core.verify(verificationError_file, cache_backend, verificationError_ast)
-        val messages_future_original = ViperCoreServerUtils.getMessagesFuture(core, vjh_original)
+        val jid_original = core.verify(verificationError_file, cache_backend, verificationError_ast)
+        val messages_future_original = ViperCoreServerUtils.getMessagesFuture(core, jid_original)
           while (!messages_future_original.isCompleted) {
             Thread.sleep(500)
           }
@@ -336,8 +337,8 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         }
 
       "produce an OverallFailure Message with an empty error list when re- verified." in {
-        val vjh_cached = core.verify(verificationError_file, cache_backend, verificationError_ast)
-        val messages_future_cached = ViperCoreServerUtils.getMessagesFuture(core, vjh_cached)
+        val jid_cached = core.verify(verificationError_file, cache_backend, verificationError_ast)
+        val messages_future_cached = ViperCoreServerUtils.getMessagesFuture(core, jid_cached)
         while (!messages_future_cached.isCompleted) {
           Thread.sleep(100)
         }
@@ -357,8 +358,8 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       }
 
       "produce an OverallFailure Message with an empty error list when re- verified after flushing the cache." in {
-        val vjh_flushed = core.verify(verificationError_file, cache_backend, verificationError_ast)
-        val messages_future_flushed = ViperCoreServerUtils.getMessagesFuture(core, vjh_flushed)
+        val jid_flushed = core.verify(verificationError_file, cache_backend, verificationError_ast)
+        val messages_future_flushed = ViperCoreServerUtils.getMessagesFuture(core, jid_flushed)
         while (!messages_future_flushed.isCompleted) {
           Thread.sleep(100)
         }
@@ -382,7 +383,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       val core = new ViperCoreServer(empty_args)
       core.start()
 
-      val handler = core.verify(sum_file, noCache_backend, sum_ast)
+      val jid = core.verify(sum_file, noCache_backend, sum_ast)
       core.verify(sum_file, noCache_backend, sum_ast)
       core.verify(sum_file, noCache_backend, sum_ast)
 
@@ -392,7 +393,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       }
 
       "have 'verify()' return a non-negative id upon freeing up a verification request by calling 'getMessagesFuture()'" in {
-        val result_future = ViperCoreServerUtils.getMessagesFuture(core, handler)
+        val result_future = ViperCoreServerUtils.getMessagesFuture(core, jid)
         while (!result_future.isCompleted) {
           Thread.sleep(100)
         }
