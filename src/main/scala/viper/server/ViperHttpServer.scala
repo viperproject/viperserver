@@ -7,25 +7,24 @@
 package viper.server
 
 import akka.NotUsed
-import akka.http.scaladsl.marshalling.ToResponseMarshallable
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
+import akka.http.scaladsl.marshalling.ToResponseMarshallable
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.stream.scaladsl.Source
 import edu.mit.csail.sdg.alloy4.A4Reporter
 import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
-
 import spray.json.DefaultJsonProtocol
 import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, SiliconConfig}
 import viper.server.core.{ViperCache, ViperCoreServer}
-import viper.silver.logger.{ViperLogger}
 import viper.server.protocol.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
-import viper.silver.reporter.Message
 import viper.server.utility.AstGenerator
 import viper.server.vsi.Requests.CacheResetRequest
-import viper.server.vsi.{Envelope, JobID, JobNotFoundException, Requests, VerificationServerHTTP}
+import viper.server.vsi._
 import viper.silver.ast.Program
+import viper.silver.logger.ViperLogger
+import viper.silver.reporter.Message
 
 import scala.util.{Failure, Success, Try}
 

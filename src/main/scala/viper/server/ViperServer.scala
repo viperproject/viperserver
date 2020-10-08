@@ -6,10 +6,6 @@
 
 package viper.server
 
-import org.rogach.scallop.ScallopOption
-
-import scala.concurrent.ExecutionContext
-
 
 // === HTTP SERVER =====================================
 

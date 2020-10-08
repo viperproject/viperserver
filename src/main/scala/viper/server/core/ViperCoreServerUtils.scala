@@ -14,8 +14,7 @@ import viper.silver.reporter.{EntityFailureMessage, Message}
 import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future, Promise}
-import scala.util.Success
+import scala.concurrent.{ExecutionContext, Future}
 
 object ViperCoreServerUtils {
   implicit private val executionContext = ExecutionContext.global

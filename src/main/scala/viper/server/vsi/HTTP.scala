@@ -6,20 +6,20 @@
 
 package viper.server.vsi
 
+import akka.NotUsed
 import akka.actor.PoisonPill
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.marshalling.ToResponseMarshallable
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
-import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
-import akka.NotUsed
-import akka.http.scaladsl.Http
 import akka.pattern.ask
 import akka.stream.scaladsl.Source
 import akka.util.Timeout
 import viper.server.vsi.VerificationProtocol.Stop
 
-import scala.concurrent.duration._
 import scala.concurrent.Future
+import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
 /** This trait contains the bear essentials required for an HTTP server.

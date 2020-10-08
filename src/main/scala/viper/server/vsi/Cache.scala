@@ -8,7 +8,6 @@ package viper.server.vsi
 
 import viper.silver.utility.CacheHelper
 
-import scala.collection.mutable
 import scala.collection.mutable.{ListBuffer, Map => MutableMap}
 
 /** The goal of this generic caching trait is to provide:

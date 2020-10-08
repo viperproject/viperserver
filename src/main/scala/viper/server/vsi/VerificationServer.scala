@@ -6,13 +6,13 @@
 
 package viper.server.vsi
 
-import akka.{Done, NotUsed}
 import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.http.scaladsl.Http
 import akka.pattern.ask
 import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
 import akka.stream.{ActorMaterializer, OverflowStrategy, QueueOfferResult}
 import akka.util.Timeout
+import akka.{Done, NotUsed}
 import org.reactivestreams.Publisher
 
 import scala.collection.mutable
