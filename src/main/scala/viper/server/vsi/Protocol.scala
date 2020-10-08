@@ -10,11 +10,13 @@ import akka.stream.scaladsl.SourceQueueWithComplete
 import org.reactivestreams.Publisher
 import spray.json.{DefaultJsonProtocol, RootJsonFormat}
 
+// Protocol to communicate with QueueActor
 object TaskProtocol {
   case class BackendReport(msg: Envelope)
   case class FinalBackendReport(success: Boolean)
 }
 
+// Protocol to start/stop verification process.
 object VerificationProtocol {
 
   // Request Job Actor to execute verification task

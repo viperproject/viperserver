@@ -22,32 +22,39 @@ import scala.concurrent.duration._
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
-/** At it's core every HTTP server should implement the routes function that describes the HTTP paths.
+/** This trait contains the bear essentials required for an HTTP server.
   * */
-trait BasicHttp {
+sealed trait BasicHttp {
 
   var port: Int = _
 
+  /** Must be implemented to return the routes defined for this server.
+    * */
   def routes(): Route
 }
 
-/** A customizable HTTPServer additionally provides the means to add Routes.
+/** This trait provides the functionality to add additional routes to an HTTP Server.
   * */
-trait CustomizableHttp extends BasicHttp {
+sealed trait CustomizableHttp extends BasicHttp {
 
-  /** Given two routes, merges them into one.
+  /** This method merges two given routes into one.
     * */
   def addRoute(existingRoute: Route, newRoute: Route): Route = {
     existingRoute ~ newRoute
   }
 }
 
-/** This expands a VerifiationServer (VerSer) by providing common HTTP functionality.
-  *  (E.g.: Stopping a VerSer, submitting Verification Requests and requesting their results)
+/** This trait extends a VerificationServer by providing common HTTP functionality.
   *
-  * The VerSer- specific functionality will need to be implemented for each individual server.
-  * In particular, this means providing a protocol that returns the VerSer's responses as type
-  * [[ToResponseMarshallable]].
+  *  Examples for such functionality are:
+  *
+  *     - Stopping a VerifiationServer.
+  *     - Submitting verification requests.
+  *     - Requesting results for verification requests.
+  *
+  * The VerificationServer-specific functionality will need to be implemented for each individual
+  * server. In particular, this means providing a protocol that returns the VerificationServer's
+  * responses as type [[ToResponseMarshallable]].
   * */
 trait VerificationServerHTTP extends VerificationServer with CustomizableHttp {
 
@@ -62,28 +69,28 @@ trait VerificationServerHTTP extends VerificationServer with CustomizableHttp {
     isRunning = true
   }
 
-  /** Implement VerificationServer- specific handling of server shutdown
+  /** Implement VerificationServer- specific handling of server shutdown.
     * (Response should depend on interruption state.)
     * */
   def serverStopConfirmation(interruption_future: Try[List[String]]): ToResponseMarshallable
 
-  /** Implement VerificationServer- specific handling of VerificationRequests
+  /** Implement VerificationServer- specific handling of VerificationRequests.
     * */
   def onVerifyPost(vr: Requests.VerificationRequest): ToResponseMarshallable
 
-  /** Implement VerificationServer- specific handling of a request for streaming results
+  /** Implement VerificationServer- specific handling of a request for streaming results.
     * */
   def unpackMessages(s: Source[Envelope, NotUsed]): ToResponseMarshallable
 
-  /** Implement VerificationServer- specific handling of a failed request for streaming results
+  /** Implement VerificationServer- specific handling of a failed request for streaming results.
     * */
   def verificationRequestRejection(jid: Int, e: Throwable): ToResponseMarshallable
 
-  /** Implement VerificationServer- specific handling of a successful request for discarding a job
+  /** Implement VerificationServer- specific handling of a successful request for discarding a job.
     * */
   def discardJobConfirmation(jid: Int, msg: String): ToResponseMarshallable
 
-  /** Implement VerificationServer- specific handling of a failed request for for discarding a job
+  /** Implement VerificationServer- specific handling of a failed request for for discarding a job.
     * */
   def discardJobRejection(jid: Int): ToResponseMarshallable
 

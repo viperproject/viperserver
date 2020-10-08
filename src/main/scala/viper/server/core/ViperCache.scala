@@ -37,12 +37,12 @@ object ViperCache extends Cache {
 
     val file_key = getKey(backendName, file)
     val cacheable_ast = ViperAst(p)
-    val (output_ast, cache_entries) = super.applyCache(file_key, cacheable_ast)
+    val (output_ast, cache_entries) = super.retrieve(file_key, cacheable_ast)
     val output_prog = output_ast.asInstanceOf[ViperAst].p
 
     val ver_results = cache_entries.map(ce => {
       val concerning_method: Method = ce.concerning.asInstanceOf[ViperMethod].m
-      val content = ce.cacheContent.asInstanceOf[ViperCacheContent]
+      val content = ce.content.asInstanceOf[ViperCacheContent]
       val ver_errors = updateErrorLocation(file_key, p, concerning_method, content)
       CacheResult(concerning_method, ver_errors)
     })
@@ -465,9 +465,9 @@ class AccessPath(val accessPath: List[Number]) {
   override def toString = s"AccessPath(accessPath=${accessPath.map(_.hashCode.toHexString)})"
 }
 
-case class ViperAst(p: Program) extends AST {
+case class ViperAst(p: Program) extends Ast {
 
-  def compose(cs: List[CacheableMember]): AST = {
+  def compose(cs: List[CacheableMember]): Ast = {
     val new_methods: List[Method] = cs.map(_.asInstanceOf[ViperMethod].m)
     val new_program = Program(p.domains, p.fields, p.functions, p.predicates, new_methods, p.extensions)(p.pos, p.info, p.errT)
     ViperAst(new_program)
@@ -477,7 +477,7 @@ case class ViperAst(p: Program) extends AST {
     p.methods.map(m => ViperMethod(m)).toList
   }
 
-  override def equals(other: AST): Boolean = {
+  override def equals(other: Ast): Boolean = {
     this.toString == other.toString
   }
 }
@@ -501,7 +501,7 @@ case class ViperMethod(m: Method) extends CacheableMember {
     ViperMethod(m.copy(body = None)(m.pos, ConsInfo(m.info, Cached), m.errT))
   }
 
-  def getDependencies(ast: AST): List[Member] = {
+  def getDependencies(ast: Ast): List[Member] = {
     val p = ast.asInstanceOf[ViperAst].p
     p.getDependencies(p, m).map(h => ViperMember(h))
   }
