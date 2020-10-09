@@ -6,7 +6,6 @@ import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import edu.mit.csail.sdg.translator.A4Solution
 import spray.json.DefaultJsonProtocol
-import viper.server.core.ViperBackend
 import viper.server.writer.{AlloySolutionWriter, SymbExLogReportWriter, TermWriter}
 import viper.silicon.SymbLog
 import viper.silicon.state.terms.Term

@@ -1,6 +1,6 @@
 package viper.server
 
-import org.eclipse.lsp4j.{Range, Position}
+import org.eclipse.lsp4j.{Diagnostic, Position, Range}
 
 object VerificationSuccess extends Enumeration {
   type VerificationSuccess = Value
@@ -11,7 +11,7 @@ object VerificationSuccess extends Enumeration {
   val Error = Value               // Caused by veification taking too long
   val Timeout = Value
 }
-import VerificationSuccess._
+import viper.server.VerificationSuccess._
 
 object VerificationState extends Enumeration {
   type VerificationState = Value
@@ -23,14 +23,14 @@ object VerificationState extends Enumeration {
   val Stopping = Value
   val Stage = Value
 }
-import VerificationState._
+import viper.server.VerificationState._
 
 object SettingsErrorType extends Enumeration {
   type SettingsErrorType = Value
 
   val Error, Warning = Value
 }
-import SettingsErrorType._
+import viper.server.SettingsErrorType._
 
 object LogLevel extends Enumeration {
   type LogLevel = Value
@@ -43,7 +43,7 @@ object LogLevel extends Enumeration {
   val LowLevelDebug = Value   // all output of used tools is written to logFile,
 }                             // some of it also to the console
 
-case class Progress (
+case class ProgressReport (
               domain: String,
               current: Double,
               total: Double,
@@ -52,23 +52,24 @@ case class Progress (
 
 case class Hint(msg: String, showButton1: Boolean, showButton2: Boolean)
 
+//Might need to change assignments
 case class StateChangeParams(
               newState: VerificationState,
-              progress: Double = null,
+              manuallyTriggered: Boolean, //should be Boolean
+              verificationCompleted: Boolean, //should be Boolean
+              progress: Double = -1,
               success: VerificationSuccess = null,
-              verificationCompleted: Boolean = null,
-              manuallyTriggered: Boolean = null,
               filename: String = null,
               backendName: String = null,
-              time: Int = null,
-              nofErrors: Int = null,
-              verificationNeeded: Boolean = null,
+              time: Int = -1,
+              nofErrors: Int = -1,
+//              verificationNeeded: Double = Double.NaN, //should be Boolean
               uri: String = null,
               stage: String = null,
               error: String = null,
-              diagnostics: String = null)
+              diagnostics: Array[Diagnostic] = null)
 
-case class Backend(
+case class BackendProperties(
               name: String,
               backend_type: String,
               paths: Array[String],
@@ -112,12 +113,12 @@ case class Versions(
               extensionVersion: String)
 
 case class ViperSettings(
-              viperServerSettings: ViperServerSettings, // All viperServer related settings
-              verificationBackends: Array[Backend],     // Description of backends
-              paths: PathSettings,          // Used paths
-              preferences: UserPreferences, // General user preferences
-              javaSettings: JavaSettings,   // Java settings
-              advancedFeatures: AdvancedFeatureSettings) // Settings for AdvancedFeatures
+                          viperServerSettings: ViperServerSettings, // All viperServer related settings
+                          verificationBackends: Array[BackendProperties], // Description of backends
+                          paths: PathSettings, // Used paths
+                          preferences: UserPreferences, // General user preferences
+                          javaSettings: JavaSettings, // Java settings
+                          advancedFeatures: AdvancedFeatureSettings) // Settings for AdvancedFeatures
 
 case class Stage(
               name: String,      //The per backend unique name of this stage
@@ -189,11 +190,11 @@ case class BackendOutput(
               typ: String,
               name: String = null,
               backendType: String = null,
-              nofMethods: Int = null,
-              nofPredicates: Int = null,
-              nofFunctions: Int = null,  //for End
-              time: Long = null,  //for Error
+              nofMethods: Int = -1,
+              nofPredicates: Int = -1,
+              nofFunctions: Int = -1,  //for End
+              time: Long = -1,  //for Error
               file: String = null,
               errors: Array[Error] = null,  //for Outlin
-              members: Array[Member] = null,  //for Definitions
+//              members: Array[Member] = null,  //for Definitions
               definitions: Array[Definition] = null)

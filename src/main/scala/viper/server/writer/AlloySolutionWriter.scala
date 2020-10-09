@@ -5,8 +5,8 @@ import edu.mit.csail.sdg.ast.{ExprVar, Sig}
 import edu.mit.csail.sdg.translator.{A4Solution, A4Tuple}
 import spray.json.{JsArray, JsObject, JsString, JsValue}
 
+import scala.collection.JavaConversions._
 import scala.collection.mutable.ListBuffer
-import collection.JavaConversions._
 
 object AlloySolutionWriter {
 

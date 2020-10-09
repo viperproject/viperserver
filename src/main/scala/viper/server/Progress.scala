@@ -1,5 +1,3 @@
-package viper.server
-
 /**
   * This Source Code Form is subject to the terms of the Mozilla Public
   * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -7,6 +5,9 @@ package viper.server
   *
   * Copyright (c) 2011-2019 ETH Zurich.
   */
+
+package viper.server
+
 class Progress(val nofPredicates: Int, val nofFunctions: Int, val nofMethods: Int) {
 
   var currentFunctions = 0;
@@ -25,7 +26,7 @@ class Progress(val nofPredicates: Int, val nofFunctions: Int, val nofMethods: In
     }
   }
 
-  def toPercent(): Double = {
+  def toPercent: Double = {
     val total = nofFunctions + nofMethods + nofPredicates
     val current = currentFunctions + currentMethods + currentPredicates
     100 * current / total

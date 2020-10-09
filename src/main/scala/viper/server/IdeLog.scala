@@ -1,6 +1,6 @@
 package viper.server
 
-import LogLevel._
+import viper.server.LogLevel._
 
 object Log {
   def log(message: String, logLevel: LogLevel) = {
@@ -27,7 +27,7 @@ object Log {
     val progress = 100.0 * cur / len
     if (Math.floor(progress) > lastProgress) {
       lastProgress = progress
-      val data = Progress(domain, cur, len, progress, null)
+      val data = ProgressReport(domain, cur, len, progress, Double.NaN)
       Coordinator.client.notifyProgress(data, logLevel.id)
     }
   }

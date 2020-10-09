@@ -2,9 +2,9 @@ package viper.server
 
 import java.util.concurrent.CompletableFuture
 
-import org.eclipse.lsp4j.{Diagnostic, Position}
-import org.eclipse.lsp4j.services.LanguageClient
+import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.jsonrpc.services.{JsonNotification, JsonRequest}
+import org.eclipse.lsp4j.services.LanguageClient
 
 
 trait IdeLanguageClient extends LanguageClient {
@@ -27,13 +27,13 @@ trait IdeLanguageClient extends LanguageClient {
   def notifyBackendChanged(name: String)
 
   @JsonNotification(S2C_Commands.Progress)
-  def notifyProgress(progress: Progress, logLevel: Int)
+  def notifyProgress(progress: ProgressReport, logLevel: Int)
 
   @JsonNotification(S2C_Commands.Log)
   def notifyLog(msg: String, logLevel: Int)
 
   @JsonNotification(S2C_Commands.Hint)
-  def notifyHint(msg: String, logLevel: Int)
+  def notifyHint(msg: String, hint: Hint)
 
   @JsonNotification(S2C_Commands.VerificationNotStarted)
   def notifyVerificationNotStarted(uri: String)
