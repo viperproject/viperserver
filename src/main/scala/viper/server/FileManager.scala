@@ -1,5 +1,7 @@
 package viper.server
 
+import java.net.URI
+import java.nio.file.{Path, Paths}
 import java.util.concurrent.{CompletableFuture => CFuture}
 
 import akka.actor.{Actor, Props}
@@ -12,10 +14,11 @@ import viper.silver.reporter._
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
-class FileManager(fileUri: String) {
+class FileManager(file_uri: String) {
   // file under verification
-  var path: String = _
-  var filename: String = _
+  var uri: URI = URI.create(file_uri)
+  var path: Path = Paths.get(uri)
+  var filename: String = path.getFileName.toString
   var lastSuccess: VerificationSuccess = NA
   var internalErrorMessage: String = ""
 
@@ -36,7 +39,7 @@ class FileManager(fileUri: String) {
   var backendType: String = _
   var progress: Progress = _
 //  var shownExecutionTrace: Array[ExecutionTrace] = _
-  var symbolInformation: ArrayBuffer[SymbolInformation] = _
+  var symbolInformation: ArrayBuffer[SymbolInformation] = ArrayBuffer()
   var definitions: ArrayBuffer[Definition] = _
 
   //working variables
@@ -47,7 +50,7 @@ class FileManager(fileUri: String) {
   def resetDiagnostics(): Unit = {
     diagnostics = ArrayBuffer()
     val diagnosticParams = new PublishDiagnosticsParams()
-    diagnosticParams.setUri(fileUri)
+    diagnosticParams.setUri(file_uri)
     diagnosticParams.setDiagnostics(diagnostics.asJava)
     Coordinator.client.publishDiagnostics(diagnosticParams)
   }
@@ -89,10 +92,12 @@ class FileManager(fileUri: String) {
     })
   }
 
-  def startStageProcess(stage: Stage, fileToVerify: String): Option[String] = {
+  def startStageProcess(fileToVerify: String): Option[String] = {
+//  def startStageProcess(stage: Stage, fileToVerify: String): Option[String] = {
     try {
       Log.lowLevel("Start Stage Process")
-      Some(getStageCommand(fileToVerify, stage))
+//      Some(getStageCommand(fileToVerify, stage))
+      Some("silicon " + fileToVerify)
     } catch {
       case e: Throwable =>
         Log.debug("Error starting stage process: " + e)
@@ -101,9 +106,9 @@ class FileManager(fileUri: String) {
   }
 
   def getStageCommand(fileToVerify: String, stage: Stage): String = {
-//    val args: String = getViperBackendClassName(stage) + " " + stage.customArguments
+    val args: String = getViperBackendClassName(stage) + " " + stage.customArguments
 //    val command = Settings.expandCustomArguments(args, stage, fileToVerify, Coordinator.backend)
-    val command = "silicon --cachingDisabled"
+    val command = ""
     Log.debug(command)
     command
   }
@@ -123,28 +128,28 @@ class FileManager(fileUri: String) {
     prepareVerification()
     this.manuallyTriggered = manuallyTriggered
 
-    // This should have exactly one stage
-    val stage = Coordinator.backend.stages.head
-    if (stage == null) {
-//      Log.debug("backend " + Coordinator.backend.name + " has no " + Settings.VERIFY + " stage, even though the settigns were checked.")
-      Log.debug("Should have exactly one stage")
-      return false
-    }
+    //TODO this should work with precisely one stage
+    //This should have exactly one stage
+//    if (Coordinator.backend.stages == null || Coordinator.backend.stages.head == null) {
+////      Log.debug("backend " + Coordinator.backend.name + " has no " + Settings.VERIFY + " stage, even though the settigns were checked.")
+//      println("no stage found!")
+//      Log.debug("Should have exactly one stage")
+//      return false
+//    }
+//    val stage = Coordinator.backend.stages.head
 
-    // why must this be variable?
-    path = Common.uriToPath(fileUri)
-    filename = Common.filenameFromPath(path)
-    Log.toLogFile("verify " + filename)
-
-    Coordinator.executedStages.append(stage)
+//    Coordinator.executedStages.append(stage)
+    Log.info("verify " + filename)
     Log.info(Coordinator.backend.name + " verification started")
 
-    val params = StateChangeParams(VerificationRunning, manuallyTriggered, false, filename = filename)
+    val params = StateChangeParams(VerificationRunning.id, manuallyTriggered, false, filename = filename)
     Coordinator.sendStateChangeNotification(params, Some(this))
 
-    val command_opt = startStageProcess(stage, path)
-    val command = command_opt.getOrElse(return false)
+//    val command = startStageProcess(stage, path).getOrElse(return false)
+    val command = startStageProcess(path.toString).getOrElse(return false)
+    println(s"Successfully generated command: $command")
     jid = Coordinator.verifier.startVerification(command)
+    println(s"Successfully started verifying with id: $jid")
     Coordinator.verifier.startStreaming(jid, RelayActor.props(this))
     true
   }
@@ -159,7 +164,13 @@ class FileManager(fileUri: String) {
       case ProgramOutlineReport(members) =>
         symbolInformation = ArrayBuffer()
         members.foreach(m => {
-          val location: Location = new Location(fileUri, null)
+          val member_start = m.pos.asInstanceOf[SourcePosition].start
+          val member_end = m.pos.asInstanceOf[SourcePosition].end.getOrElse(member_start)
+          val range_start = new Position(member_start.line, member_start.column)
+          val range_end = new Position(member_end.line, member_end.column)
+          val range = new Range(range_start, range_end)
+          val location: Location = new Location(file_uri, range)
+
           val kind = m match {
             case _: Method => SymbolKind.Method
             case _: Function => SymbolKind.Function
@@ -169,7 +180,7 @@ class FileManager(fileUri: String) {
             case _ => SymbolKind.Enum
           }
           val info: SymbolInformation = new SymbolInformation(m.name, kind, location)
-          symbolInformation.append(info)
+          task.symbolInformation.append(info)
         })
       case ProgramDefinitionsReport(defs) =>
         definitions = ArrayBuffer()
@@ -196,7 +207,7 @@ class FileManager(fileUri: String) {
     case StatisticsReport(m, f, p, _, _) =>
 //      TODO: pass in task (probably as props to actor).
       progress = new Progress(p, f, m)
-      val params = StateChangeParams(VerificationRunning, manuallyTriggered, false, progress = 0, filename = filename)
+      val params = StateChangeParams(VerificationRunning.id, manuallyTriggered, false, progress = 0, filename = filename)
       Coordinator.sendStateChangeNotification(params, Some(task))
     case EntitySuccessMessage(_, concerning, _, _) =>
       if (progress == null) {
@@ -205,7 +216,7 @@ class FileManager(fileUri: String) {
         val output = BackendOutput(BackendOutputType.FunctionVerified, name = concerning.name)
         progress.updateProgress(output)
         val progressPercentage = progress.toPercent
-        val params = StateChangeParams(VerificationRunning, manuallyTriggered, false, progress = progressPercentage, filename = filename)
+        val params = StateChangeParams(VerificationRunning.id, manuallyTriggered, false, progress = progressPercentage, filename = filename)
         Coordinator.sendStateChangeNotification(params, Some(task))
       }
     case EntityFailureMessage(_, _, _, res, _) =>
@@ -236,8 +247,8 @@ class FileManager(fileUri: String) {
         diagnostics.append(diag)
 
         val params = StateChangeParams(
-                      VerificationRunning, manuallyTriggered, false, filename = filename,
-                      nofErrors = diagnostics.length,uri = fileUri,
+                      VerificationRunning.id, manuallyTriggered, false, filename = filename,
+                      nofErrors = diagnostics.length,uri = file_uri,
                       diagnostics = diagnostics.toArray)
         Coordinator.sendStateChangeNotification(params, Some(task))
         //Server.sendDiagnostics({ uri: this.fileUri, diagnostics: this.diagnostics })
@@ -276,7 +287,7 @@ class FileManager(fileUri: String) {
 
   private def completionHandler(code: Int) {
     try {
-      Log.debug("completionHandler is called with code ${code}")
+      Log.debug(s"completionHandler is called with code ${code}")
       if (is_aborting) {
         is_verifying = false
         return
@@ -293,8 +304,8 @@ class FileManager(fileUri: String) {
       if (!isVerifyingStage) {
         success = Success
         val params = StateChangeParams(
-                        Ready, manuallyTriggered, false, success = Success, filename = filename,
-                        nofErrors = 0, time = time.toInt, uri = fileUri, error = internalErrorMessage)
+                        Ready.id, manuallyTriggered, false, success = Success.id, filename = filename,
+                        nofErrors = 0, time = time.toInt, uri = file_uri, error = internalErrorMessage)
         Coordinator.sendStateChangeNotification(params, Some(this))
       } else {
         if (partialData.length > 0) {
@@ -306,13 +317,13 @@ class FileManager(fileUri: String) {
         //Server.sendDiagnostics({ uri: this.fileUri, diagnostics: this.diagnostics })
 
         //inform client about postProcessing
-        var params = StateChangeParams(PostProcessing, manuallyTriggered, true, filename = filename)
+        var params = StateChangeParams(PostProcessing.id, manuallyTriggered, true, filename = filename)
         Coordinator.sendStateChangeNotification(params, Some(this))
 
         //notify client about outcome of verification
-        params = StateChangeParams(Ready, success = Success, manuallyTriggered = manuallyTriggered,
+        params = StateChangeParams(Ready.id, success = Success.id, manuallyTriggered = manuallyTriggered,
           filename = filename, nofErrors = diagnostics.length, time = time.toInt,
-          verificationCompleted = true, uri = fileUri, error = internalErrorMessage)
+          verificationCompleted = true, uri = file_uri, error = internalErrorMessage)
         Coordinator.sendStateChangeNotification(params, Some(this))
 
         if (code != 0 && code != 1 && code != 899) {
@@ -327,7 +338,7 @@ class FileManager(fileUri: String) {
     } catch {
       case e: Throwable =>
         is_verifying = false
-        Coordinator.client.notifyVerificationNotStarted(fileUri)
+        Coordinator.client.notifyVerificationNotStarted(file_uri)
         Log.debug("Error handling verification completion: ", e)
     }
   }

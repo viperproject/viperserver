@@ -54,15 +54,15 @@ case class Hint(msg: String, showButton1: Boolean, showButton2: Boolean)
 
 //Might need to change assignments
 case class StateChangeParams(
-              newState: VerificationState,
+              newState: Double,
               manuallyTriggered: Boolean, //should be Boolean
               verificationCompleted: Boolean, //should be Boolean
               progress: Double = -1,
-              success: VerificationSuccess = null,
+              success: Double = NA.id,
               filename: String = null,
               backendName: String = null,
-              time: Int = -1,
-              nofErrors: Int = -1,
+              time: Double = -1,
+              nofErrors: Double = -1,
 //              verificationNeeded: Double = Double.NaN, //should be Boolean
               uri: String = null,
               stage: String = null,
@@ -170,6 +170,7 @@ case class AdvancedFeatureSettings(
               version: String) extends VersionedSettings
 
 
+// scope == null means global scope
 case class Definition(definition_type: String, name: String, code_location: Position, scope: Range)
 
 object BackendOutputType {
@@ -198,3 +199,8 @@ case class BackendOutput(
               errors: Array[Error] = null,  //for Outlin
 //              members: Array[Member] = null,  //for Definitions
               definitions: Array[Definition] = null)
+
+case class BackendReadyParams (
+  name: String,  //name of the backend ready to use
+  restarted: Boolean,  //should the open file be reverified
+  isViperServer: Boolean)

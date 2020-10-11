@@ -37,7 +37,7 @@ object ViperServerRunner {
 
 
       val server: LanguageServerReceiver = new LanguageServerReceiver()
-      val launcher = Launcher.createLauncher(server, classOf[LanguageClient], socket.getInputStream, socket.getOutputStream)
+      val launcher = Launcher.createLauncher(server, classOf[IdeLanguageClient], socket.getInputStream, socket.getOutputStream)
       server.connect(launcher.getRemoteProxy)
 
       // start listening on input stream in a new thread:

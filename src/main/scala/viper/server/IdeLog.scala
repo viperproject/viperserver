@@ -4,6 +4,7 @@ import viper.server.LogLevel._
 
 object Log {
   def log(message: String, logLevel: LogLevel) = {
+    require(message != null && logLevel != null)
     Coordinator.client.notifyLog(message, logLevel.id)
   }
 
@@ -11,7 +12,7 @@ object Log {
 
   def debug(message: String) = log(message, Debug)
 
-  def debug(message: String, error: Throwable) = log(message, Debug)
+  def debug(message: String, error: Throwable) = log(s"$message $error", Debug)
 
   def info(message: String) = log(message, Info)
 

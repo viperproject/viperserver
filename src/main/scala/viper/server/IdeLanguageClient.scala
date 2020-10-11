@@ -3,7 +3,7 @@ package viper.server
 import java.util.concurrent.CompletableFuture
 
 import org.eclipse.lsp4j.Position
-import org.eclipse.lsp4j.jsonrpc.services.{JsonNotification, JsonRequest}
+import org.eclipse.lsp4j.jsonrpc.services._
 import org.eclipse.lsp4j.services.LanguageClient
 
 
@@ -21,7 +21,10 @@ trait IdeLanguageClient extends LanguageClient {
   def requestVprFileEndings(): CompletableFuture[Array[String]]
 
   @JsonNotification(S2C_Commands.BackendReady)
-  def notifyBackendReady(uri: String)
+  def notifyBackendReady(param: BackendReadyParams): Unit
+
+  @JsonNotification(C2S_Commands.StartBackend)
+  def notifyBackendStarted(name: String, forceRestart: Boolean, isViperServer: Boolean): Unit
 
   @JsonNotification(S2C_Commands.BackendChange)
   def notifyBackendChanged(name: String)
@@ -40,30 +43,4 @@ trait IdeLanguageClient extends LanguageClient {
 
   @JsonNotification(S2C_Commands.StateChange)
   def notifyStateChanged(params: StateChangeParams)
-
-
-  //  @JsonNotification("gobraServer/noVerificationInformation")
-//  def noVerificationInformation(): Unit
-//
-//  @JsonNotification("gobraServer/overallResult")
-//  def overallResult(params: String): Unit
-//
-//  @JsonNotification("gobraServer/verificationProgress")
-//  def verificationProgress(fileUri: String, progress: Int): Unit
-//
-//  @JsonNotification("gobraServer/verificationException")
-//  def verificationException(fileUri: String): Unit
-//
-//
-//  @JsonNotification("gobraServer/finishedGoifying")
-//  def finishedGoifying(fileUri: String, success: Boolean): Unit
-//
-//  @JsonNotification("gobraServer/finishedGobrafying")
-//  def finishedGobrafying(oldFilePath: String, newFilePath: String, success: Boolean): Unit
-//
-//  @JsonNotification("gobraServer/finishedViperCodePreview")
-//  def finishedViperCodePreview(ast: String, highlighted: String): Unit
-//
-//  @JsonNotification("gobraServer/finishedInternalCodePreview")
-//  def finishedInternalCodePreview(internal: String, highlighted: String): Unit
 }

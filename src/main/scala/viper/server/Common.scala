@@ -1,31 +1,33 @@
 package viper.server
 
-import java.nio.file.Paths
+import java.net.URI
+import java.nio.file.{Path, Paths}
 import java.util.concurrent.CompletableFuture
 
 import org.eclipse.lsp4j.Position
 
 object Common {
-  var viperFileEndings: Array[String] = _
+  //TODO Get this from client programatically
+  var viperFileEndings: Array[String] = Array("vpr", ".sil")
 
-  def uriToPath(uri: String): String = {
-    Paths.get(uri).toString
+  def uriFromString(uri: String): URI = {
+    URI.create(uri)
   }
 
-  def pathToUri(path: String): String = {
-    Paths.get(path).toUri.toString
+  def uriToPath(uri: URI): Path = {
+    Path.of(uri)
   }
 
-  def filenameFromPath(path: String): String = {
-    //Todo
-    "TODO"
+//  def pathToUri(path: String): String = {
+//    Paths.get(path).toUri.toString
+//  }
+
+  def filenameFromUri(uri: String): String = {
+    Paths.get(uri).getFileName.toString
   }
 
   def refreshEndings(): CompletableFuture[Void] = {
-    def f(endings: Array[String]): Unit = {
-      viperFileEndings = endings
-    }
-    Coordinator.client.requestVprFileEndings().thenAccept((s:Array[String]) => {
+    Coordinator.client.requestVprFileEndings().thenAccept((s: Array[String]) => {
       viperFileEndings = s
     }).exceptionally(e => {
       Log.debug(s"GetViperFileEndings request was rejected by the client: $e")
@@ -42,8 +44,11 @@ object Common {
       Log.debug("Refreshing the viper file endings.")
       refreshEndings().thenApply(a => {
         if (areEndingsDefined) {
+          println("Endings are defined!")
+          viperFileEndings.foreach(s => s.drop(1))
           viperFileEndings.exists(ending => uri.endsWith(ending))
         } else {
+          println("Endings not are defined!")
           false
         }
       })

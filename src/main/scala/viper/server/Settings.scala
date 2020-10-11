@@ -1,14 +1,19 @@
-//package viper.server
-//
-//import java.util.concurrent.CompletableFuture
-//
-//import scala.concurrent.{ExecutionContext, Future}
-//import scala.util.{Failure, Success}
+package viper.server
+
+import java.util.concurrent.{CompletableFuture => CFuture}
+
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success}
 //
 //case class ResolvedPath (path: String, exists: Boolean, error: Option[String])
 //
 object Settings {
-//  implicit val ex = ExecutionContext.global
+
+//  def checkSettings(viperToolsUpdated: Boolean): CFuture[Unit] = ???
+//
+//  def valid(): Boolean = ???
+
+  //  implicit val ex = ExecutionContext.global
 //  var settings: ViperSettings
 //  var isWin = System.getProperties.get("os.name")
 //  var isLinux = /^linux/.test(process.platform)
@@ -180,41 +185,36 @@ object Settings {
 //    }
 //
 //    //tries to restart backend,
-//    def initiateBackendRestartIfNeeded(oldSettings?: ViperSettings, selectedBackend?: String, viperToolsUpdated: Boolean = false) {
-//    Settings.checkSettings(viperToolsUpdated).then(() => {
-//    if (Settings.valid()) {
-//    var newBackend = Settings.selectBackend(Settings.settings, selectedBackend);
-//
-//    if (newBackend) {
-//    //only restart the backend after settings changed if the active backend was affected
-//
-//    Log.log("check if restart needed", LogLevel.LowLevelDebug);
-//    var backendChanged = !Settings.backendEquals(Coordinator.backend, newBackend) //change in backend
-//    var mustRestartBackend = !Coordinator.verifier.isReady() //backend is not ready -> restart
-//    || viperToolsUpdated //Viper Tools Update might have modified the binaries
-//    || (Coordinator.verifier.isViperServerService != this.useViperServer(newBackend)) //the new backend requires another engine type
-//    || (Settings.useViperServer(newBackend) && this.viperServerRelatedSettingsChanged(oldSettings)) // the viperServerSettings changed
-//    if (mustRestartBackend || backendChanged) {
-//    Log.log(`Change Backend: from ${LanguageServerState.backend ? LanguageServerState.backend.name : "No Backend"} to ${newBackend ? newBackend.name : "No Backend"}`, LogLevel.Info);
-//      Coordinator.backend = newBackend;
-//      Coordinator.files.forEach(task => task.resetLastSuccess());
-//      Coordinator.sendStartBackendMessage(Coordinator.backend.name, mustRestartBackend, Settings.useViperServer(newBackend));
-//  } else {
-//    Log.log("No need to restart backend. It is still the same", LogLevel.Debug)
-//      Coordinator.backend = newBackend;
-//      Coordinator.sendBackendReadyNotification({
-//    name: Coordinator.backend.name,
-//    restarted: false,
-//    isViperServer: Settings.useViperServer(newBackend)
-//  });
-//  }
-//  } else {
-//    Log.debug("No backend, even though the setting check succeeded.");
-//  }
-//  } else {
-//      Coordinator.verifier.stop();
-//  }
-//  });
+//    def initiateBackendRestartIfNeeded(oldSettings: Option[ViperSettings], selectedBackend: Option[String], viperToolsUpdated: Boolean = false) {
+//      checkSettings(viperToolsUpdated).thenApply(() => {
+//        if (valid()) {
+//          var newBackend = null
+//          if (newBackend) {
+//            //only restart the backend after settings changed if the active backend was affected
+//            Log.log("check if restart needed", LogLevel.LowLevelDebug);
+//            val backendChanged = false //change in backend
+//            val mustRestartBackend = false //backend is not ready -> restart
+//            if (mustRestartBackend || backendChanged) {
+//              Log.log(`Change Backend: from ${LanguageServerState.backend ? LanguageServerState.backend.name : "No Backend"} to ${newBackend ? newBackend.name : "No Backend"}`, LogLevel.Info);
+//              Coordinator.backend = newBackend;
+//              Coordinator.files.forEach(task => task.resetLastSuccess());
+//              Coordinator.sendStartBackendMessage(Coordinator.backend.name, mustRestartBackend, Settings.useViperServer(newBackend));
+//            } else {
+//              Log.log("No need to restart backend. It is still the same", LogLevel.Debug)
+//              Coordinator.backend = newBackend;
+//              Coordinator.sendBackendReadyNotification({
+//                name: Coordinator.backend.name,
+//                restarted: false,
+//                isViperServer: Settings.useViperServer(newBackend)
+//              });
+//            }
+//        } else {
+//          Log.debug("No backend, even though the setting check succeeded.");
+//        }
+//      } else {
+//          Coordinator.verifier.stop();
+//      }
+//      });
 //    }
 //
 //    private def addError(msg: String) {

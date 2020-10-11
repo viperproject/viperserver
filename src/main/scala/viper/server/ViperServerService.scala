@@ -18,36 +18,39 @@ import scala.concurrent.duration._
 
 class ViperServerService(args: Array[String]) extends ViperCoreServer(args) {
 
-  private var _ready: Boolean = false
-
   protected var timeout: Int = _
 
-  def isReady: Boolean = _ready
+  def isReady: Boolean = isRunning
 
   def setReady(backend: BackendProperties): Unit = {
-    _ready = true
     Coordinator.backend = backend
-    Coordinator.startingOrRestarting = false
+    start()
+    Coordinator.startingOrRestarting = true
+    val param = BackendReadyParams("Silicon", false, true)
+    Coordinator.client.notifyBackendReady(param)
     Log.info("The backend is ready for verification")
-    Coordinator.client.notifyBackendReady(S2C_Commands.BackendReady)
   }
 
   def swapBackend(newBackend: BackendProperties): Unit = {
-    setReady(newBackend)
+    Coordinator.backend = newBackend
+    Coordinator.startingOrRestarting = false
+    val param = BackendReadyParams("Silicon", false, true)
+    Coordinator.client.notifyBackendReady(param)
+    Log.info("The backend has been swapped and is now ready for verification")
   }
 
   def setStopping(): Unit = {
     Log.debug("Set Stopping... ")
-    _ready = false
+    isRunning = false
     Coordinator.startingOrRestarting = false
-    Coordinator.sendStateChangeNotification(StateChangeParams(Stopping, false, false), None)
+    Coordinator.sendStateChangeNotification(StateChangeParams(Stopping.id, false, false), None)
   }
 
   def setStopped(): Unit = {
     Log.debug("Set Stopped. ")
-    _ready = false
+    isRunning = false
     Coordinator.startingOrRestarting = false
-    Coordinator.sendStateChangeNotification(StateChangeParams(Stopped, false, false), None)
+    Coordinator.sendStateChangeNotification(StateChangeParams(Stopped.id, false, false), None)
   }
 
   private def getArgListFromArgString(arg_str: String): List[String] = {
@@ -61,7 +64,6 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) {
 
   def startVerification(command: String): Int = {
     Log.debug("Requesting ViperServer to start new job...")
-    // Todo start verification in VCS
 
     val arg_list = getArgListFromArgString(command)
     val file: String = arg_list.last
@@ -75,7 +77,7 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) {
     } catch {
       case _: java.nio.file.NoSuchFileException =>
         Log.debug("The file for which verification has been requested was not found.")
-        return-1
+        return -1
     }
     val ast = ast_option.getOrElse({
       Log.debug("The file for which verification has been requested contained syntax errors.")

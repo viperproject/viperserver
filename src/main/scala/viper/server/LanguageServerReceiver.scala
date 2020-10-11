@@ -5,7 +5,7 @@ import java.util.concurrent.{CompletableFuture => CFuture}
 import com.google.gson.JsonPrimitive
 import org.eclipse.lsp4j.jsonrpc.services.{JsonNotification, JsonRequest}
 import org.eclipse.lsp4j.services.{LanguageClient, LanguageClientAware}
-import org.eclipse.lsp4j.{CompletionItem, CompletionItemKind, CompletionList, CompletionParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentSymbolParams, InitializeParams, InitializeResult, Location, Range, ServerCapabilities, SymbolInformation, TextDocumentPositionParams}
+import org.eclipse.lsp4j.{CompletionItem, CompletionItemKind, CompletionList, CompletionParams, DidChangeConfigurationParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentSymbolParams, InitializeParams, InitializeResult, Location, Range, ServerCapabilities, SymbolInformation, TextDocumentPositionParams, TextDocumentSyncKind}
 import viper.server.LogLevel._
 
 import scala.collection.JavaConverters._
@@ -19,20 +19,24 @@ class LanguageServerReceiver extends LanguageClientAware {
     val capabilities = new ServerCapabilities()
     //    OG
     //    always send full text document for each notification:
-    //    capabilities.setTextDocumentSync(TextDocumentSyncKind.Full)
     //    capabilities.setCompletionProvider(new CompletionOptions(true, null))
 
+//    val Coordinator.verifier = new ViperServerService(Array())
+//    Coordinator.verifier.setReady(Option.empty)
+
+    capabilities.setTextDocumentSync(TextDocumentSyncKind.Full)
     capabilities.setDefinitionProvider(true)
     capabilities.setDocumentSymbolProvider(true)
     CFuture.completedFuture(new InitializeResult(capabilities))
   }
 
-  @JsonNotification("textDocument/didChange")
+  @JsonNotification(value = "textDocument/didOpen")
   def onDidOpenDocument(params: DidOpenTextDocumentParams): Unit = {
+    println("On opening document")
     try {
-      val uri = params.getTextDocument.getUri
+      val uri: String = params.getTextDocument.getUri
       Common.isViperSourceFile(uri).thenAccept(isViperFile => {
-        if (isViperFile) {
+        if (true) {
           //notify client
           Coordinator.client.notifyFileOpened(uri)
           if (!Coordinator.files.contains(uri)) {
@@ -43,12 +47,28 @@ class LanguageServerReceiver extends LanguageClientAware {
         }
       })
     } catch {
-      case e: Throwable => Log.debug("Error handling TextDocument opened")
+      case e: Throwable => Log.debug("Error handling TextDocument opened", e)
     }
   }
 
+  @JsonNotification("workspace/didChangeConfiguration")
+  def onDidChangeConfig(params: DidChangeConfigurationParams): Unit = {
+    println("On config change")
+    try {
+      val b = BackendProperties(
+        "new Backend", "Silicon", null, null,
+        5000, null, 5000, null)
+      Coordinator.verifier = new ViperServerService(Array())
+      Coordinator.verifier.setReady(b)
+    } catch {
+      case e: Throwable => Log.debug("Error handling swap backend request: " + e)
+    }
+  }
+
+
   @JsonNotification("textDocument/didChange")
   def onDidChangeDocument(params: DidChangeTextDocumentParams): Unit = {
+    println("On changing document")
     val manager_opt = Coordinator.files.get(params.getTextDocument.getUri)
     val manager: FileManager = manager_opt.getOrElse(return)
     manager.symbolInformation = ArrayBuffer()
@@ -57,18 +77,20 @@ class LanguageServerReceiver extends LanguageClientAware {
 
   @JsonNotification("textDocument/didClose")
   def onDidCloseDocument(params: DidCloseTextDocumentParams): Unit = {
+    println("On closing document")
     try {
       val uri = params.getTextDocument.getUri
       Common.isViperSourceFile(uri).thenAccept(isViperFile => {
         if (isViperFile) Coordinator.client.notifyFileClosed(uri)
       })
     } catch {
-      case e: Throwable => Log.debug("Error handling TextDocument opened")
+      case _: Throwable => Log.debug("Error handling TextDocument opened")
     }
   }
 
   @JsonNotification(S2C_Commands.FileClosed)
   def onFileClosed(uri: String): Unit = {
+    println("On closing file")
     val manager_opt = Coordinator.files.get(uri)
     val manager = manager_opt.getOrElse(return)
     manager.resetDiagnostics()
@@ -76,16 +98,16 @@ class LanguageServerReceiver extends LanguageClientAware {
   }
 
   @JsonRequest("textDocument/documentSymbol")
-  def onGetDocumentSymbol(params: DocumentSymbolParams): CFuture[List[SymbolInformation]] = {
-    var symbolInfo_list: List[SymbolInformation] = List()
+  def onGetDocumentSymbol(params: DocumentSymbolParams): CFuture[Array[SymbolInformation]] = {
+    var symbolInfo_list: Array[SymbolInformation] = Array()
     val manager_opt = Coordinator.files.get(params.getTextDocument.getUri)
     val manager = manager_opt.getOrElse(return CFuture.completedFuture(symbolInfo_list))
-    symbolInfo_list = manager.symbolInformation.toList
+    symbolInfo_list = manager.symbolInformation.toArray
     CFuture.completedFuture(symbolInfo_list)
   }
 
   @JsonRequest("textDocument/definition")
-  def onGetDefinition(params: TextDocumentPositionParams): CFuture[List[Location]] = {
+  def onGetDefinition(params: TextDocumentPositionParams): CFuture[Location] = {
     Log.log("Handling definitions request for params: " + params.toString, LogLevel.Debug)
     val document = params.getTextDocument
     val pos = params.getPosition
@@ -96,12 +118,20 @@ class LanguageServerReceiver extends LanguageClientAware {
         Log.log("Found verification task for URI " + document.getUri, LogLevel.LowLevelDebug)
         Coordinator.client.requestIdentifier(pos).thenApply(word => {
           Log.log("Got word: " + word, LowLevelDebug)
-          manager.definitions.filter(d => (d.scope.getStart == null) //is global
-                            || (Common.comparePosition(d.scope.getStart, pos) <= 0
-                            && Common.comparePosition(d.scope.getEnd, pos) >= 0)) // in scope
-                          .filter(d => word == d.name)
-                          .map(d => new Location(document.getUri, new Range(d.code_location, d.code_location)))
-                          .toList
+          def hasGlobalScope(d: Definition) = d.scope.getStart == null
+          def isPosInScope(d: Definition) = hasGlobalScope(d) ||
+                                            (Common.comparePosition(d.scope.getStart, pos) <= 0 &&
+                                            Common.comparePosition(d.scope.getEnd, pos) >= 0)
+          val defs_in_scope = manager.definitions.filter(isPosInScope)
+          val matching_def = defs_in_scope.find(d => word == d.name).getOrElse(return null)
+          val def_range = new Range(matching_def.code_location, matching_def.code_location)
+          new Location(document.getUri, def_range)
+//          manager.definitions.filter(d => (d.scope.getStart == null) //is global
+//                            || (Common.comparePosition(d.scope.getStart, pos) <= 0
+//                            && Common.comparePosition(d.scope.getEnd, pos) >= 0)) // in scope
+//                          .filter(d => word == d.name)
+//                          .map(d => new Location(document.getUri, new Range(d.code_location, d.code_location)))
+//                          .toArray
         })
       case None =>
         // No definition found - maybe it's a keyword.
@@ -124,6 +154,21 @@ class LanguageServerReceiver extends LanguageClientAware {
     CFuture.completedFuture(Coordinator.getAddress)
   }
 
+  @JsonNotification(C2S_Commands.StartBackend)
+  def onStartBackend(backendName: String): Unit = {
+    println("Starting ViperServeService")
+    try {
+      val b = BackendProperties(
+        "new Backend", backendName, null, null,
+        5000, null, 5000, null)
+      Coordinator.verifier = new ViperServerService(Array())
+      Coordinator.verifier.setReady(b)
+    } catch {
+      case e: Throwable => Log.debug("Error handling swap backend request: " + e)
+    }
+  }
+
+
   @JsonNotification(C2S_Commands.SwapBackend)
   def onSwapBackend(backendName: String): Unit = {
     try {
@@ -141,14 +186,16 @@ class LanguageServerReceiver extends LanguageClientAware {
     //it does not make sense to reverify if no changes were made and the verification is already running
     if (Coordinator.canVerificationBeStarted(data.uri, data.manuallyTriggered)) {
 //      Settings.workspace = data.workspace
-      Log.log("start or restart verification", LogLevel.Info)
       //stop all other verifications because the backend crashes if multiple verifications are run in parallel
       Coordinator.stopAllRunningVerifications().thenAccept(_ => {
-        //start verification
+        println("Verifications stopped successfully")
         Coordinator.executedStages = ArrayBuffer()
-        val hasVerificationstarted = Coordinator.files
-                                                .getOrElse(data.uri, return)
-                                                .verify(data.manuallyTriggered)
+        Log.log("start or restart verification", LogLevel.Info)
+
+        val manager = Coordinator.files.getOrElse(data.uri, return)
+        val hasVerificationstarted = manager.verify(data.manuallyTriggered)
+
+        Log.log("Verification Started", LogLevel.Info)
         if (!hasVerificationstarted) {
           Coordinator.client.notifyVerificationNotStarted(data.uri)
         }

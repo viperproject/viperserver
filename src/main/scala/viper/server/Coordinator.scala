@@ -20,7 +20,7 @@ object Coordinator {
 
   var startingOrRestarting: Boolean = false
   var backend: BackendProperties = _
-  val verifier: ViperServerService = new ViperServerService(Array())
+  var verifier: ViperServerService = _
 
   def getAddress: String = url + ":" + port
 
@@ -49,8 +49,8 @@ object Coordinator {
   }
 
   def stopAllRunningVerifications(): CompletableFuture[Void] = {
-    if (Coordinator.files.nonEmpty) {
-      val promises = Coordinator.files.values.map(task => task.abortVerification()).toSeq
+    if (files.nonEmpty) {
+      val promises = files.values.map(task => task.abortVerification()).toSeq
       CompletableFuture.allOf(promises:_*)
     } else {
       CompletableFuture.completedFuture(null)
@@ -59,8 +59,12 @@ object Coordinator {
 
   //Communication requests and notifications sent to language client
   def sendStateChangeNotification(params: StateChangeParams, task: Option[FileManager]): Unit = {
-    if (task.isDefined) task.get.state = params.newState
-    client.notifyStateChanged(params)
+    if (task.isDefined) task.get.state = VerificationState.apply(params.newState.toInt)
+    try {
+      client.notifyStateChanged(params)
+    } catch {
+      case e: Throwable => println(e)
+    }
   }
 
 //  def sendStepsAsDecorationOptions(decorations: StepsAsDecorationOptionsResult) = {
