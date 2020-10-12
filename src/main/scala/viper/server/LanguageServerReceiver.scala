@@ -7,6 +7,7 @@ import org.eclipse.lsp4j.jsonrpc.services.{JsonNotification, JsonRequest}
 import org.eclipse.lsp4j.services.{LanguageClient, LanguageClientAware}
 import org.eclipse.lsp4j.{CompletionItem, CompletionItemKind, CompletionList, CompletionParams, DidChangeConfigurationParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentSymbolParams, InitializeParams, InitializeResult, Location, Range, ServerCapabilities, SymbolInformation, TextDocumentPositionParams, TextDocumentSyncKind}
 import viper.server.LogLevel._
+import viper.server.VerificationState._
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
@@ -118,7 +119,7 @@ class LanguageServerReceiver extends LanguageClientAware {
         Log.log("Found verification task for URI " + document.getUri, LogLevel.LowLevelDebug)
         Coordinator.client.requestIdentifier(pos).thenApply(word => {
           Log.log("Got word: " + word, LowLevelDebug)
-          def hasGlobalScope(d: Definition) = d.scope.getStart == null
+          def hasGlobalScope(d: Definition) = d.scope == null
           def isPosInScope(d: Definition) = hasGlobalScope(d) ||
                                             (Common.comparePosition(d.scope.getStart, pos) <= 0 &&
                                             Common.comparePosition(d.scope.getEnd, pos) >= 0)
@@ -126,12 +127,6 @@ class LanguageServerReceiver extends LanguageClientAware {
           val matching_def = defs_in_scope.find(d => word == d.name).getOrElse(return null)
           val def_range = new Range(matching_def.code_location, matching_def.code_location)
           new Location(document.getUri, def_range)
-//          manager.definitions.filter(d => (d.scope.getStart == null) //is global
-//                            || (Common.comparePosition(d.scope.getStart, pos) <= 0
-//                            && Common.comparePosition(d.scope.getEnd, pos) >= 0)) // in scope
-//                          .filter(d => word == d.name)
-//                          .map(d => new Location(document.getUri, new Range(d.code_location, d.code_location)))
-//                          .toArray
         })
       case None =>
         // No definition found - maybe it's a keyword.
@@ -168,7 +163,6 @@ class LanguageServerReceiver extends LanguageClientAware {
     }
   }
 
-
   @JsonNotification(C2S_Commands.SwapBackend)
   def onSwapBackend(backendName: String): Unit = {
     try {
@@ -193,7 +187,7 @@ class LanguageServerReceiver extends LanguageClientAware {
         Log.log("start or restart verification", LogLevel.Info)
 
         val manager = Coordinator.files.getOrElse(data.uri, return)
-        val hasVerificationstarted = manager.verify(data.manuallyTriggered)
+        val hasVerificationstarted = manager.startVerification(data.manuallyTriggered)
 
         Log.log("Verification Started", LogLevel.Info)
         if (!hasVerificationstarted) {
@@ -215,6 +209,24 @@ class LanguageServerReceiver extends LanguageClientAware {
     println("flushing cache...")
   }
 
+  @JsonNotification(C2S_Commands.StopVerification)
+  def onStopVerification(uri: String): CFuture[Boolean] = {
+    println("on stopping verification")
+    try {
+      val manager = Coordinator.files.getOrElse(uri, return CFuture.completedFuture(false))
+        manager.abortVerification().thenApply((success) => {
+          val params = StateChangeParams(Ready.id, verificationCompleted = 0, verificationNeeded = 0, uri = uri)
+          Coordinator.sendStateChangeNotification(params, Some(manager))
+          true
+        })
+    } catch {
+      case e =>
+        Log.debug("Error handling stop verification request (critical): " + e);
+        CFuture.completedFuture(false)
+    }
+  }
+
+
   @JsonRequest(value = "shutdown")
   def shutdown(): CFuture[AnyRef] = {
     println("shutdown")
@@ -229,13 +241,10 @@ class LanguageServerReceiver extends LanguageClientAware {
 
   @JsonRequest("textDocument/completion")
   def completion(params: CompletionParams): CFuture[CompletionList] = {
-    val tsItem = new CompletionItem("TypeScript")
+    val tsItem = new CompletionItem("Do the completion for Viper!!")
     tsItem.setKind(CompletionItemKind.Text)
     tsItem.setData(1)
-    val jsItem = new CompletionItem("JavaScript")
-    jsItem.setKind(CompletionItemKind.Text)
-    jsItem.setData(2)
-    val completions = new CompletionList(List(tsItem, jsItem).asJava)
+    val completions = new CompletionList(List(tsItem).asJava)
     CFuture.completedFuture(completions)
   }
 

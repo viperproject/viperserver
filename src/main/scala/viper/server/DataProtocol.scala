@@ -52,18 +52,18 @@ case class ProgressReport (
 
 case class Hint(msg: String, showButton1: Boolean, showButton2: Boolean)
 
-//Might need to change assignments
+//Might
 case class StateChangeParams(
-              newState: Double,
-              manuallyTriggered: Boolean, //should be Boolean
-              verificationCompleted: Boolean, //should be Boolean
+              newState: Int,
               progress: Double = -1,
-              success: Double = NA.id,
+              success: Int = NA.id,
+              verificationCompleted: Double = -1,
+              manuallyTriggered: Double = -1,
               filename: String = null,
               backendName: String = null,
               time: Double = -1,
               nofErrors: Double = -1,
-//              verificationNeeded: Double = Double.NaN, //should be Boolean
+              verificationNeeded: Double = -1,
               uri: String = null,
               stage: String = null,
               error: String = null,

@@ -27,20 +27,23 @@ trait IdeLanguageClient extends LanguageClient {
   def notifyBackendStarted(name: String, forceRestart: Boolean, isViperServer: Boolean): Unit
 
   @JsonNotification(S2C_Commands.BackendChange)
-  def notifyBackendChanged(name: String)
+  def notifyBackendChanged(name: String): Unit
 
   @JsonNotification(S2C_Commands.Progress)
-  def notifyProgress(progress: ProgressReport, logLevel: Int)
+  def notifyProgress(progress: ProgressReport, logLevel: Int): Unit
 
   @JsonNotification(S2C_Commands.Log)
-  def notifyLog(msg: String, logLevel: Int)
+  def notifyLog(msg: String, logLevel: Int): Unit
 
   @JsonNotification(S2C_Commands.Hint)
-  def notifyHint(msg: String, hint: Hint)
+  def notifyHint(msg: String, hint: Hint): Unit
+
+  @JsonNotification(S2C_Commands.UnhandledViperServerMessageType)
+  def notifyUnhandledViperServerMessage(msg: String, logLevel: Int): Unit
 
   @JsonNotification(S2C_Commands.VerificationNotStarted)
-  def notifyVerificationNotStarted(uri: String)
+  def notifyVerificationNotStarted(uri: String): Unit
 
   @JsonNotification(S2C_Commands.StateChange)
-  def notifyStateChanged(params: StateChangeParams)
+  def notifyStateChanged(params: StateChangeParams): Unit
 }

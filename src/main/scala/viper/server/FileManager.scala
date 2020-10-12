@@ -40,7 +40,7 @@ class FileManager(file_uri: String) {
   var progress: Progress = _
 //  var shownExecutionTrace: Array[ExecutionTrace] = _
   var symbolInformation: ArrayBuffer[SymbolInformation] = ArrayBuffer()
-  var definitions: ArrayBuffer[Definition] = _
+  var definitions: ArrayBuffer[Definition] = ArrayBuffer()
 
   //working variables
   private var lines: Array[String] = Array()
@@ -124,7 +124,7 @@ class FileManager(file_uri: String) {
     }
   }
 
-  def verify(manuallyTriggered: Boolean): Boolean = {
+  def startVerification(manuallyTriggered: Boolean): Boolean = {
     prepareVerification()
     this.manuallyTriggered = manuallyTriggered
 
@@ -142,15 +142,19 @@ class FileManager(file_uri: String) {
     Log.info("verify " + filename)
     Log.info(Coordinator.backend.name + " verification started")
 
-    val params = StateChangeParams(VerificationRunning.id, manuallyTriggered, false, filename = filename)
+    val params = StateChangeParams(VerificationRunning.id, filename = filename)
+    println("state change params created")
     Coordinator.sendStateChangeNotification(params, Some(this))
+    println("state change params sent")
 
 //    val command = startStageProcess(stage, path).getOrElse(return false)
     val command = startStageProcess(path.toString).getOrElse(return false)
     println(s"Successfully generated command: $command")
-    jid = Coordinator.verifier.startVerification(command)
+    jid = Coordinator.verifier.verify(command)
     println(s"Successfully started verifying with id: $jid")
+    Log.debug(s"ViperServer started new job with ID ${jid}")
     Coordinator.verifier.startStreaming(jid, RelayActor.props(this))
+    Log.debug(s"Requesting ViperServer to stream results of verification job #${jid}...")
     true
   }
 
@@ -202,12 +206,11 @@ class FileManager(file_uri: String) {
           val location: Position = new Position(sourcePos.start.line, sourcePos.start.column)
           val definition: Definition = Definition(d.typ, d.name, location, range)
           definitions.append(definition)
-          //Log.log("Definition: " + JSON.stringify(definition), LogLevel.LowLevelDebug)
         })
     case StatisticsReport(m, f, p, _, _) =>
 //      TODO: pass in task (probably as props to actor).
       progress = new Progress(p, f, m)
-      val params = StateChangeParams(VerificationRunning.id, manuallyTriggered, false, progress = 0, filename = filename)
+      val params = StateChangeParams(VerificationRunning.id, progress = 0, filename = filename)
       Coordinator.sendStateChangeNotification(params, Some(task))
     case EntitySuccessMessage(_, concerning, _, _) =>
       if (progress == null) {
@@ -216,7 +219,7 @@ class FileManager(file_uri: String) {
         val output = BackendOutput(BackendOutputType.FunctionVerified, name = concerning.name)
         progress.updateProgress(output)
         val progressPercentage = progress.toPercent
-        val params = StateChangeParams(VerificationRunning.id, manuallyTriggered, false, progress = progressPercentage, filename = filename)
+        val params = StateChangeParams(VerificationRunning.id, progress = progressPercentage, filename = filename)
         Coordinator.sendStateChangeNotification(params, Some(task))
       }
     case EntityFailureMessage(_, _, _, res, _) =>
@@ -247,9 +250,8 @@ class FileManager(file_uri: String) {
         diagnostics.append(diag)
 
         val params = StateChangeParams(
-                      VerificationRunning.id, manuallyTriggered, false, filename = filename,
-                      nofErrors = diagnostics.length,uri = file_uri,
-                      diagnostics = diagnostics.toArray)
+                      VerificationRunning.id, filename = filename, nofErrors = diagnostics.length,
+                      uri = file_uri, diagnostics = diagnostics.toArray)
         Coordinator.sendStateChangeNotification(params, Some(task))
         //Server.sendDiagnostics({ uri: this.fileUri, diagnostics: this.diagnostics })
       })
@@ -261,6 +263,7 @@ class FileManager(file_uri: String) {
       state = VerificationReporting
       time = verificationTime
       completionHandler(0)
+    case m: Message => Coordinator.client.notifyUnhandledViperServerMessage(m.toString, 2)
     case e: Throwable =>
         //receiving an error means the promise can be finalized with failure.
     }
@@ -292,23 +295,15 @@ class FileManager(file_uri: String) {
         is_verifying = false
         return
       }
+      var params: StateChangeParams = null
       var success = NA
 
-      val isVerifyingStage = Coordinator.stage.getOrElse(return).isVerification
+      //      val isVerifyingStage = Coordinator.stage.getOrElse(return).isVerification
+      val isVerifyingStage = true
 
       //do we need to start a followUp Stage?
-      if (!is_aborting && isVerifyingStage) {
-        success = determineSuccess(code)
-      }
-
-      if (!isVerifyingStage) {
-        success = Success
-        val params = StateChangeParams(
-                        Ready.id, manuallyTriggered, false, success = Success.id, filename = filename,
-                        nofErrors = 0, time = time.toInt, uri = file_uri, error = internalErrorMessage)
-        Coordinator.sendStateChangeNotification(params, Some(this))
-      } else {
-        if (partialData.length > 0) {
+      if (isVerifyingStage) {
+        if (partialData != null && partialData.length > 0) {
           Log.debug("Some unparsed output was detected:\n" + partialData)
           partialData = ""
         }
@@ -317,18 +312,27 @@ class FileManager(file_uri: String) {
         //Server.sendDiagnostics({ uri: this.fileUri, diagnostics: this.diagnostics })
 
         //inform client about postProcessing
-        var params = StateChangeParams(PostProcessing.id, manuallyTriggered, true, filename = filename)
-        Coordinator.sendStateChangeNotification(params, Some(this))
+        success = determineSuccess(code)
+        params = StateChangeParams(PostProcessing.id, filename = filename)
+        Coordinator.sendStateChangeNotification(params, Some(this));
 
         //notify client about outcome of verification
-        params = StateChangeParams(Ready.id, success = Success.id, manuallyTriggered = manuallyTriggered,
-          filename = filename, nofErrors = diagnostics.length, time = time.toInt,
-          verificationCompleted = true, uri = file_uri, error = internalErrorMessage)
+        val mt = if(this.manuallyTriggered) 1 else 0
+        params = StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt,
+          filename = filename, nofErrors = diagnostics.length, time = time.toDouble,
+          verificationCompleted = 1, uri = file_uri, error = internalErrorMessage)
         Coordinator.sendStateChangeNotification(params, Some(this))
 
         if (code != 0 && code != 1 && code != 899) {
           Log.debug("Verification Backend Terminated Abnormally: with code " + code)
         }
+      } else {
+        success = Success
+        val mt = if(this.manuallyTriggered) 1 else 0
+        params = StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt,
+          filename = filename, nofErrors = 0, time = time.toDouble,
+          verificationCompleted = 0, uri = file_uri, error = internalErrorMessage)
+        Coordinator.sendStateChangeNotification(params, Some(this))
       }
 
       //reset for next verification

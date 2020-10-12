@@ -43,14 +43,14 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) {
     Log.debug("Set Stopping... ")
     isRunning = false
     Coordinator.startingOrRestarting = false
-    Coordinator.sendStateChangeNotification(StateChangeParams(Stopping.id, false, false), None)
+    Coordinator.sendStateChangeNotification(StateChangeParams(Stopping.id), None)
   }
 
   def setStopped(): Unit = {
     Log.debug("Set Stopped. ")
     isRunning = false
     Coordinator.startingOrRestarting = false
-    Coordinator.sendStateChangeNotification(StateChangeParams(Stopped.id, false, false), None)
+    Coordinator.sendStateChangeNotification(StateChangeParams(Stopped.id), None)
   }
 
   private def getArgListFromArgString(arg_str: String): List[String] = {
@@ -62,7 +62,7 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) {
     }
   }
 
-  def startVerification(command: String): Int = {
+  def verify(command: String): Int = {
     Log.debug("Requesting ViperServer to start new job...")
 
     val arg_list = getArgListFromArgString(command)
