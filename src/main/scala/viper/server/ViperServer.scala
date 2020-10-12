@@ -6,8 +6,7 @@
 
 package viper.server
 
-
-// === HTTP SERVER =====================================
+import viper.server.frontends.http.ViperHttpServer
 
 object ViperServerRunner {
 
@@ -15,13 +14,13 @@ object ViperServerRunner {
 
   /** Start VCS in HTTP mode.
     * */
-  def startNewHttpServer(args: Array[String]): Unit = {
+  def startHttpServer(args: Array[String]): Unit = {
 
     viperServerHTTP = new ViperHttpServer(args)
     viperServerHTTP.start()
   }
 
   def main(args: Array[String]): Unit = {
-    startNewHttpServer(args)
+    startHttpServer(args)
   } // method main
 }

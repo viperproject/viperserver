@@ -4,7 +4,7 @@
 //
 // Copyright (c) 2011-2020 ETH Zurich.
 
-package viper.server
+package viper.server.frontends.http
 
 import akka.NotUsed
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
@@ -16,9 +16,10 @@ import edu.mit.csail.sdg.alloy4.A4Reporter
 import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
 import spray.json.DefaultJsonProtocol
+import viper.server.ViperConfig
 import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, SiliconConfig}
 import viper.server.core.{ViperCache, ViperCoreServer}
-import viper.server.protocol.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
+import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
 import viper.server.utility.AstGenerator
 import viper.server.vsi.Requests.CacheResetRequest
 import viper.server.vsi._
@@ -102,7 +103,7 @@ class ViperHttpServer(_args: Array[String])
   }
 
   override def unpackMessages(s: Source[Envelope, NotUsed]): ToResponseMarshallable = {
-    import viper.server.protocol.ViperIDEProtocol._
+    import viper.server.frontends.http.jsonWriters.ViperIDEProtocol._
     val src_message: Source[Message, NotUsed] = s.map(e => unpack(e))
     src_message
   }
