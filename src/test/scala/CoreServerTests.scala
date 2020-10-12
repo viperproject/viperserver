@@ -9,7 +9,6 @@ package viper.server.core
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.{Matchers, WordSpec}
-import viper.server.ViperConfig
 import viper.server.core.ViperBackendConfigs.SiliconConfig
 import viper.server.vsi._
 import viper.server.utility.AstGenerator
@@ -95,7 +94,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         }
         messages_future.onComplete({
           case Success(_) => succeed
-          case Failure(_) => fail()
+          case Failure(e) => fail(e)
         })
       }
 
@@ -138,8 +137,8 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
           Thread.sleep(100)
         }
         messages_future.onComplete({
-          case Success(verRes) => succeed
-          case Failure(_) => fail()
+          case Success(_) => succeed
+          case Failure(e) => fail(e)
         })
       }
 
@@ -195,15 +194,15 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
             Thread.sleep(100)
           }
           mf.onComplete({
-            case Success(msgs) =>
-              msgs.last match {
-                case m: OverallSuccessMessage =>
+            case Success(messages) =>
+              messages.last match {
+                case _: OverallSuccessMessage =>
                   assert(f != verificationError_file)
-                case m: OverallFailureMessage =>
+                case _: OverallFailureMessage =>
                   assert(f == verificationError_file)
                 case _ => fail()
               }
-            case Failure(e) => fail()
+            case Failure(e) => fail(e)
           })
         })
       }
@@ -236,15 +235,15 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
             Thread.sleep(100)
           }
           mf.onComplete({
-            case Success(msgs) =>
-              msgs.last match {
-                case m: OverallSuccessMessage =>
+            case Success(messages) =>
+              messages.last match {
+                case _: OverallSuccessMessage =>
                   assert(f != verificationError_file)
-                case m: OverallFailureMessage =>
+                case _: OverallFailureMessage =>
                   assert(f == verificationError_file)
                 case _ => fail()
               }
-            case Failure(e) => fail()
+            case Failure(e) => fail(e)
           })
         })
       }
@@ -318,37 +317,37 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       val core = new ViperCoreServer(empty_args)
       core.start()
 
-      "produce an OverallFailure Message with a non-empty error list upon first verification." in {
+      "produce an OverallFailure message with a non-empty error list upon first verification." in {
         val jid_original = core.verify(verificationError_file, cache_backend, verificationError_ast)
         val messages_future_original = ViperCoreServerUtils.getMessagesFuture(core, jid_original)
           while (!messages_future_original.isCompleted) {
             Thread.sleep(500)
           }
           messages_future_original.onComplete({
-            case Success(msgs) =>
-              msgs.last match {
+            case Success(messages) =>
+              messages.last match {
                 case ofm: OverallFailureMessage =>
                   assert(ofm.result.errors.nonEmpty)
                 case _ => fail()
               }
-            case Failure(e) => fail()
+            case Failure(e) => fail(e)
           })
         }
 
-      "produce an OverallFailure Message with an empty error list when re- verified." in {
+      "produce an EntityFailure message with a set cached flag when reverified." in {
         val jid_cached = core.verify(verificationError_file, cache_backend, verificationError_ast)
         val messages_future_cached = ViperCoreServerUtils.getMessagesFuture(core, jid_cached)
         while (!messages_future_cached.isCompleted) {
           Thread.sleep(100)
         }
         messages_future_cached.onComplete({
-          case Success(msgs) =>
-            msgs.last match {
-              case ofm: OverallFailureMessage =>
-                assert(ofm.result.errors.isEmpty)
-              case _ => fail()
+          case Success(messages) =>
+            val has_cached_msg = messages.exists {
+              case EntityFailureMessage(_, _, _, _, true) => true
+              case _ => false
             }
-          case Failure(e) => fail()
+            assert(has_cached_msg)
+          case Failure(e) => fail(e)
         })
       }
 
@@ -356,20 +355,24 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         core.flushCache()
       }
 
-      "produce an OverallFailure Message with an empty error list when re- verified after flushing the cache." in {
+      "produce an EntityFailure message with cleared cached flag and an OverallFailure message with an non-empty error list when reverified after flushing the cache." in {
         val jid_flushed = core.verify(verificationError_file, cache_backend, verificationError_ast)
         val messages_future_flushed = ViperCoreServerUtils.getMessagesFuture(core, jid_flushed)
         while (!messages_future_flushed.isCompleted) {
           Thread.sleep(100)
         }
         messages_future_flushed.onComplete({
-          case Success(msgs) =>
-            msgs.last match {
-              case ofm: OverallFailureMessage =>
-                assert(ofm.result.errors.nonEmpty)
-              case _ => fail()
+          case Success(messages) =>
+            val has_cached_msg = messages.exists {
+              case EntityFailureMessage(_, _, _, _, true) => true
+              case _ => false
             }
-          case Failure(e) => fail()
+            val has_overall_failure = messages.last match {
+              case _: OverallFailureMessage => true
+              case _ => false
+            }
+            assert(!has_cached_msg && has_overall_failure)
+          case Failure(e) => fail(e)
         })
       }
 
