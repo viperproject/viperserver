@@ -68,12 +68,17 @@ abstract class StandardReceiver extends LanguageClientAware {
   @JsonNotification("workspace/didChangeConfiguration")
   def onDidChangeConfig(params: DidChangeConfigurationParams): Unit = {
     println("On config change")
+    Log.lowLevel("check if restart needed")
     try {
-      val b = BackendProperties(
-        "new Backend", "Silicon", null, null,
-        5000, null, 5000, null)
-      Coordinator.verifier = new ViperServerService(Array())
-      Coordinator.verifier.setReady(b)
+      if (Coordinator.verifier == null) {
+        Log.info("Change Backend: from 'No Backend' to Silicon")
+        Coordinator.backend = BackendProperties(
+                                "ViperServer Silicon", "Silicon", null, null,
+                                5000, null, 5000, null)
+        Coordinator.client.notifyBackendStarted(BackendStartedParams("Silicon"))
+      } else {
+        Log.log("No need to restart backend. It is still the same", LogLevel.Debug)
+      }
     } catch {
       case e: Throwable => Log.debug("Error handling swap backend request: " + e)
     }
@@ -207,11 +212,8 @@ class CustomReceiver extends StandardReceiver {
   def onStartBackend(backendName: String): Unit = {
     println("Starting ViperServeService")
     try {
-      val b = BackendProperties(
-        "new Backend", backendName, null, null,
-        5000, null, 5000, null)
       Coordinator.verifier = new ViperServerService(Array())
-      Coordinator.verifier.setReady(b)
+      Coordinator.verifier.setReady(Coordinator.backend)
     } catch {
       case e: Throwable => Log.debug("Error handling swap backend request: " + e)
     }
@@ -227,6 +229,18 @@ class CustomReceiver extends StandardReceiver {
     } catch {
       case e: Throwable => Log.debug("Error handling swap backend request: " + e)
     }
+  }
+
+  @JsonRequest(C2S_Commands.RequestBackendNames)
+  def onGetNames(backendName: String): CFuture[Array[String]] = {
+    CFuture.completedFuture(Array("Silicon", "Carbon"))
+  }
+
+
+  @JsonNotification(C2S_Commands.StopBackend)
+  def onBackendStop(backendName: String): Unit= {
+    Coordinator.verifier.setStopping()
+    Coordinator.verifier.setStopped()
   }
 
   @JsonNotification(C2S_Commands.Verify)

@@ -20,32 +20,18 @@ object Coordinator {
   var url: String = _
   var client: IdeLanguageClient = _
 
-//  var tempDirectory: String = pathHelper.join(os.tmpdir(), ".vscode") = _
-//  var backendOutputDirectory: String = os.tmpdir() = _
-//  var executedStages: ArrayBuffer[Stage] = _
-  var documents: TextDocumentItem = new TextDocumentItem()
   var files = mutable.Map.empty[String, FileManager]
-
-  var startingOrRestarting: Boolean = false
-  var backend: BackendProperties = _
-  var verifier: ViperServerService = _
+  var backend: BackendProperties = null
+  var verifier: ViperServerService = null
 
   def getAddress: String = url + ":" + port
-
-//  def stage: Option[Stage] = {
-//    if (executedStages != null && this.executedStages.nonEmpty) {
-//      Some(executedStages(executedStages.length - 1))
-//    } else {
-//      None
-//    }
-//  }
 
   def canVerificationBeStarted(uri: String, manuallyTriggered: Boolean): Boolean = {
     //check if there is already a verification task for that file
     if(files.get(uri).isEmpty){
       Log.debug("No verification task found for file: " + uri)
       false
-    } else if (!verifier.isReady) {
+    } else if (!verifier.is_ready) {
       if (manuallyTriggered) {
         Log.hint("The verification backend is not ready yet")
       }
@@ -78,9 +64,5 @@ object Coordinator {
 //  def sendStepsAsDecorationOptions(decorations: StepsAsDecorationOptionsResult) = {
 //    Log.log("Update the decoration options (" + decorations.decorationOptions.length + ")", LogLevel.Debug)
 //    client.stepsAsDecorationOptions(decorations)
-//  }
-//
-//  def sendStartBackendMessage(backend: String, forceRestart: Boolean, isViperServer: Boolean) {
-//    client.sendNotification(Commands.StartBackend, {backend: backend, forceRestart: forceRestart, isViperServer: isViperServer })
 //  }
 }

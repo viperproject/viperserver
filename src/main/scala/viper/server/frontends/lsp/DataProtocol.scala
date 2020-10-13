@@ -207,7 +207,12 @@ case class BackendOutput(
 //              members: Array[Member] = null,  //for Definitions
               definitions: Array[Definition] = null)
 
-case class BackendReadyParams (
+case class BackendReadyParams(
   name: String,  //name of the backend ready to use
   restarted: Boolean,  //should the open file be reverified
   isViperServer: Boolean)
+
+case class BackendStartedParams(
+              name: String,
+              forceRestart: Boolean = false,
+              isViperServer: Boolean = true)

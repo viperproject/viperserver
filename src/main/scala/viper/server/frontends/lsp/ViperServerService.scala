@@ -15,6 +15,7 @@ import akka.pattern.ask
 import akka.util.Timeout
 import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, SiliconConfig}
 import viper.server.core.{ViperCache, ViperCoreServer}
+import viper.server.frontends.lsp.VerificationState.Stopped
 import viper.server.utility.AstGenerator
 import viper.server.vsi.VerificationProtocol.Stop
 import viper.server.vsi.{JobID, VerificationProtocol, VerificationServer}
@@ -29,38 +30,47 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) with
 
   protected var timeout: Int = _
 
-  def isReady: Boolean = isRunning
+  def isRunningServer: Boolean = isRunning
+
+  var is_ready = false
 
   def setReady(backend: BackendProperties): Unit = {
     Coordinator.backend = backend
     start()
-    Coordinator.startingOrRestarting = true
+    is_ready = true
     val param = BackendReadyParams("Silicon", false, true)
     Coordinator.client.notifyBackendReady(param)
     Log.info("The backend is ready for verification")
   }
 
   def swapBackend(newBackend: BackendProperties): Unit = {
+    is_ready = true
     Coordinator.backend = newBackend
-    Coordinator.startingOrRestarting = false
     val param = BackendReadyParams("Silicon", false, true)
     Coordinator.client.notifyBackendReady(param)
     Log.info("The backend has been swapped and is now ready for verification")
   }
 
-//  def setStopping(): Unit = {
-//    Log.debug("Set Stopping... ")
-//    isRunning = false
-//    Coordinator.startingOrRestarting = false
-//    Coordinator.sendStateChangeNotification(StateChangeParams(Stopping.id), None)
-//  }
-//
-//  def setStopped(): Unit = {
-//    Log.debug("Set Stopped. ")
-//    isRunning = false
-//    Coordinator.startingOrRestarting = false
-//    Coordinator.sendStateChangeNotification(StateChangeParams(Stopped.id), None)
-//  }
+  def setStopping(): Unit = {
+    Log.debug("Set Stopping... ")
+    if(isRunning){
+      isRunning = false
+      val params = StateChangeParams(Stopped.id)
+      Coordinator.sendStateChangeNotification(params, None)
+    } else {
+      Log.debug("Server stopped")
+    }
+  }
+  def setStopped(): Unit = {
+    Log.debug("Set Stopped. ")
+    if(isRunning){
+      isRunning = false
+      val params = StateChangeParams(Stopped.id)
+      Coordinator.sendStateChangeNotification(params, None)
+    } else {
+      Log.debug("Server stopped")
+    }
+  }
 
   private def getArgListFromArgString(arg_str: String): List[String] = {
     val possibly_quoted_string = raw"""[^\s"']+|"[^"]*"|'[^']*'""".r

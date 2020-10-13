@@ -32,7 +32,7 @@ trait IdeLanguageClient extends LanguageClient {
   def notifyBackendReady(param: BackendReadyParams): Unit
 
   @JsonNotification(C2S_Commands.StartBackend)
-  def notifyBackendStarted(name: String, forceRestart: Boolean, isViperServer: Boolean): Unit
+  def notifyBackendStarted(params: BackendStartedParams): Unit
 
   @JsonNotification(S2C_Commands.BackendChange)
   def notifyBackendChanged(name: String): Unit
