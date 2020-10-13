@@ -1,4 +1,12 @@
-package viper.server
+/**
+  * This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+  *
+  * Copyright (c) 2011-2020 ETH Zurich.
+  */
+
+package viper.server.frontends.lsp
 
 import java.net.URI
 import java.nio.file.{Path, Paths}
@@ -6,8 +14,9 @@ import java.util.concurrent.{CompletableFuture => CFuture}
 
 import akka.actor.{Actor, Props}
 import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, Location, Position, PublishDiagnosticsParams, Range, SymbolInformation, SymbolKind}
-import viper.server.VerificationState._
-import viper.server.VerificationSuccess._
+import viper.server.frontends.lsp
+import viper.server.frontends.lsp.VerificationState._
+import viper.server.frontends.lsp.VerificationSuccess._
 import viper.silver.ast.{Domain, Field, Function, Method, Predicate, SourcePosition}
 import viper.silver.reporter._
 
@@ -40,7 +49,7 @@ class FileManager(file_uri: String) {
   var progress: Progress = _
 //  var shownExecutionTrace: Array[ExecutionTrace] = _
   var symbolInformation: ArrayBuffer[SymbolInformation] = ArrayBuffer()
-  var definitions: ArrayBuffer[Definition] = ArrayBuffer()
+  var definitions: ArrayBuffer[lsp.Definition] = ArrayBuffer()
 
   //working variables
   private var lines: Array[String] = Array()
@@ -204,7 +213,7 @@ class FileManager(file_uri: String) {
           }
           val sourcePos = d.location.asInstanceOf[viper.silver.ast.SourcePosition]
           val location: Position = new Position(sourcePos.start.line, sourcePos.start.column)
-          val definition: Definition = Definition(d.typ, d.name, location, range)
+          val definition: lsp.Definition = lsp.Definition(d.typ, d.name, location, range)
           definitions.append(definition)
         })
     case StatisticsReport(m, f, p, _, _) =>

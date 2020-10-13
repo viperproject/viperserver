@@ -5,6 +5,7 @@ import java.net.Socket
 
 import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.eclipse.lsp4j.services.LanguageClient
+import viper.server.frontends.lsp.{Coordinator, CustomReceiver, IdeLanguageClient}
 
 object ViperServerRunner {
 

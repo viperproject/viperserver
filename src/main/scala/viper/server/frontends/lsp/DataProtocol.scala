@@ -1,4 +1,12 @@
-package viper.server
+/**
+  * This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+  *
+  * Copyright (c) 2011-2020 ETH Zurich.
+  */
+
+package viper.server.frontends.lsp
 
 import org.eclipse.lsp4j.{Diagnostic, Position, Range}
 
@@ -11,7 +19,7 @@ object VerificationSuccess extends Enumeration {
   val Error = Value               // Caused by veification taking too long
   val Timeout = Value
 }
-import viper.server.VerificationSuccess._
+import viper.server.frontends.lsp.VerificationSuccess._
 
 object VerificationState extends Enumeration {
   type VerificationState = Value
@@ -23,14 +31,13 @@ object VerificationState extends Enumeration {
   val Stopping = Value
   val Stage = Value
 }
-import viper.server.VerificationState._
 
 object SettingsErrorType extends Enumeration {
   type SettingsErrorType = Value
 
   val Error, Warning = Value
 }
-import viper.server.SettingsErrorType._
+import viper.server.frontends.lsp.SettingsErrorType._
 
 object LogLevel extends Enumeration {
   type LogLevel = Value

@@ -1,15 +1,24 @@
-package viper.server
+/**
+  * This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+  *
+  * Copyright (c) 2011-2020 ETH Zurich.
+  */
+
+package viper.server.frontends.lsp
 
 import java.util.concurrent.{CompletableFuture => CFuture}
 
 import org.eclipse.lsp4j.jsonrpc.services.{JsonNotification, JsonRequest}
 import org.eclipse.lsp4j.services.{LanguageClient, LanguageClientAware}
-import org.eclipse.lsp4j.{CompletionItem, CompletionItemKind, CompletionList, CompletionParams, DidChangeConfigurationParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentSymbolParams, InitializeParams, InitializeResult, Location, Range, ServerCapabilities, SymbolInformation, TextDocumentPositionParams, TextDocumentSyncKind}
-import viper.server.LogLevel._
-import viper.server.VerificationState._
+import org.eclipse.lsp4j.{DidChangeConfigurationParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentSymbolParams, InitializeParams, InitializeResult, InitializedParams, Location, Range, ServerCapabilities, SymbolInformation, TextDocumentPositionParams, TextDocumentSyncKind}
+import viper.server.frontends.lsp.LogLevel._
+import viper.server.frontends.lsp.VerificationState._
 
-import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
+
+
 
 abstract class StandardReceiver extends LanguageClientAware {
   var received_shutdown = false
@@ -29,6 +38,10 @@ abstract class StandardReceiver extends LanguageClientAware {
     capabilities.setDefinitionProvider(true)
     capabilities.setDocumentSymbolProvider(true)
     CFuture.completedFuture(new InitializeResult(capabilities))
+  }
+  @JsonNotification("initialized")
+  def initialize(params: InitializedParams): Unit = {
+    println("initialized")
   }
 
   @JsonNotification("textDocument/didOpen")
