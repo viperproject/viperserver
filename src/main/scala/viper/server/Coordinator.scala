@@ -14,7 +14,7 @@ object Coordinator {
 
 //  var tempDirectory: String = pathHelper.join(os.tmpdir(), ".vscode") = _
 //  var backendOutputDirectory: String = os.tmpdir() = _
-  var executedStages: ArrayBuffer[Stage] = _
+//  var executedStages: ArrayBuffer[Stage] = _
   var documents: TextDocumentItem = new TextDocumentItem()
   var files = mutable.Map.empty[String, FileManager]
 
@@ -24,13 +24,13 @@ object Coordinator {
 
   def getAddress: String = url + ":" + port
 
-  def stage: Option[Stage] = {
-    if (executedStages != null && this.executedStages.nonEmpty) {
-      Some(executedStages(executedStages.length - 1))
-    } else {
-      None
-    }
-  }
+//  def stage: Option[Stage] = {
+//    if (executedStages != null && this.executedStages.nonEmpty) {
+//      Some(executedStages(executedStages.length - 1))
+//    } else {
+//      None
+//    }
+//  }
 
   def canVerificationBeStarted(uri: String, manuallyTriggered: Boolean): Boolean = {
     //check if there is already a verification task for that file

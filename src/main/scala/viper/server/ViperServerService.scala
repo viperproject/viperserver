@@ -7,7 +7,7 @@ import akka.pattern.ask
 import akka.util.Timeout
 import viper.server.VerificationState._
 import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, SiliconConfig}
-import viper.server.core.{VerificationJobHandler, ViperCoreServer}
+import viper.server.core.{VerificationJobHandler, ViperCache, ViperCoreServer}
 import viper.server.protocol.ViperServerProtocol.Stop
 import viper.server.utility.AstGenerator
 import viper.silver.ast.Program
@@ -39,19 +39,19 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) {
     Log.info("The backend has been swapped and is now ready for verification")
   }
 
-  def setStopping(): Unit = {
-    Log.debug("Set Stopping... ")
-    isRunning = false
-    Coordinator.startingOrRestarting = false
-    Coordinator.sendStateChangeNotification(StateChangeParams(Stopping.id), None)
-  }
-
-  def setStopped(): Unit = {
-    Log.debug("Set Stopped. ")
-    isRunning = false
-    Coordinator.startingOrRestarting = false
-    Coordinator.sendStateChangeNotification(StateChangeParams(Stopped.id), None)
-  }
+//  def setStopping(): Unit = {
+//    Log.debug("Set Stopping... ")
+//    isRunning = false
+//    Coordinator.startingOrRestarting = false
+//    Coordinator.sendStateChangeNotification(StateChangeParams(Stopping.id), None)
+//  }
+//
+//  def setStopped(): Unit = {
+//    Log.debug("Set Stopped. ")
+//    isRunning = false
+//    Coordinator.startingOrRestarting = false
+//    Coordinator.sendStateChangeNotification(StateChangeParams(Stopped.id), None)
+//  }
 
   private def getArgListFromArgString(arg_str: String): List[String] = {
     val possibly_quoted_string = raw"""[^\s"']+|"[^"]*"|'[^']*'""".r
@@ -127,61 +127,22 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) {
     }
   }
 
-//  def flushCache(filePath?: String): CFuture[String] = {
-//    return new Promise((resolve, reject) => {
-//    val url = this._url + ':' + this._port + '/cache/flush'
-//    if (filePath) {
-//    Log.log(`Requesting ViperServer to flush the cache for (` + filePath + `)...`, LogLevel.Info)
-//
-//    val options = {
-//    url: url,
-//    headers: {'content-type': 'application/json'},
-//    body: JSON.stringify({ backend: Coordinator.backend.name, file: filePath })
-//  }
-//
-//    request.post(options).on('error', (error) => {
-//    Log.log(`error while requesting ViperServer to flush the cache for (` + filePath + `).` +
-//    ` Request URL: ${url}\n` +
-//    ` Error message: ${error}`, LogLevel.Default)
-//    reject(error)
-//
-//  }).on('data', (data) => {
-//    val response = JSON.parse(data.toString())
-//    if ( !response.msg ) {
-//    Log.log(`ViperServer did not complain about the way we requested it to flush the cache for (` + filePath + `).` +
-//    ` However, it also did not provide the expected bye-bye message.` +
-//    ` It said: ${data.toString}`, LogLevel.Debug)
-//    resolve(response)
-//  } else {
-//    Log.log(`ViperServer has confirmed that the cache for (` + filePath + `) has been flushed.`, LogLevel.Debug)
-//    resolve(response.msg)
-//  }
-//  })
-//
-//  } else {
-//    Log.log(`Requesting ViperServer to flush the entire cache...`, LogLevel.Info)
-//
-//    request.get(url).on('error', (error) => {
-//    Log.log(`error while requesting ViperServer to flush the entire cache.` +
-//    ` Request URL: ${url}\n` +
-//    ` Error message: ${error}`, LogLevel.Default)
-//    reject(error)
-//
-//  }).on('data', (data) => {
-//    val response = JSON.parse(data.toString())
-//    if ( !response.msg ) {
-//    Log.log(`ViperServer did not complain about the way we requested it to flush the entire cache.` +
-//    ` However, it also did not provide the expected bye-bye message.` +
-//    ` It said: ${data.toString}`, LogLevel.Debug)
-//    resolve(response)
-//  } else {
-//    Log.log(`ViperServer has confirmed that the entire cache has been flushed.`, LogLevel.Debug)
-//    resolve(response.msg)
-//  }
-//  })
-//  }
-//  })
-//  }
+  def flushCache(filePath: Option[String]): Unit = {
+    filePath match {
+      case Some(file) =>
+        Log.info(s"Requesting ViperServer to flush the cache for $file...")
+        val flushed_file_opt = ViperCache.forgetFile("silicon", file)
+
+        if (flushed_file_opt.isDefined) {
+          Log.debug(s"ViperServer has confirmed that the cache for $file has been flushed.")
+        } else {
+          Log.debug(s"Error while requesting ViperServer to flush the cache for $file: File not found.")
+        }
+      case None =>
+        Log.info("Flush entire cache...")
+        super.flushCache()
+    }
+  }
 
   def isSupportedType(t: String): Boolean = {
     if (t == null) {
