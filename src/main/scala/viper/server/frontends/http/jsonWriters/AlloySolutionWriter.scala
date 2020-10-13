@@ -1,4 +1,4 @@
-package viper.server.writer
+package viper.server.frontends.http.jsonWriters
 
 import edu.mit.csail.sdg.ast.Sig.Field
 import edu.mit.csail.sdg.ast.{ExprVar, Sig}

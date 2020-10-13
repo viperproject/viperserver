@@ -1,4 +1,4 @@
-package viper.server.protocol
+package viper.server.frontends.http.jsonWriters
 
 import akka.NotUsed
 import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSupport}
@@ -6,7 +6,6 @@ import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import edu.mit.csail.sdg.translator.A4Solution
 import spray.json.DefaultJsonProtocol
-import viper.server.writer.{AlloySolutionWriter, SymbExLogReportWriter, TermWriter}
 import viper.silicon.SymbLog
 import viper.silicon.state.terms.Term
 import viper.silver.reporter._

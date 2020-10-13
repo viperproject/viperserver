@@ -1,4 +1,4 @@
-package viper.server.writer
+package viper.server.frontends.http.jsonWriters
 
 import spray.json.{JsArray, JsNull, JsObject, JsString, JsValue}
 import viper.silicon.state.Identifier

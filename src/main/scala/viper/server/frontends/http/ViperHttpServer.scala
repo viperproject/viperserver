@@ -6,7 +6,7 @@
   * Copyright (c) 2011-2019 ETH Zurich.
   */
 
-package viper.server
+package viper.server.frontends.http
 
 import akka.NotUsed
 import akka.actor.PoisonPill
@@ -20,7 +20,7 @@ import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
 import viper.server.ViperRequests.{AlloyGenerationRequest, CacheResetRequest, VerificationRequest}
 import viper.server.core.{VerificationJobHandler, ViperCache, ViperCoreServer}
-import viper.server.protocol.ViperIDEProtocol._
+import viper.server.frontends.http.jsonWriters.ViperIDEProtocol._
 import viper.server.protocol.ViperServerProtocol
 import viper.server.protocol.ViperServerProtocol._
 import viper.server.utility.AstGenerator
