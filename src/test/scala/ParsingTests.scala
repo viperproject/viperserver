@@ -1,3 +1,8 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) 2011-2020 ETH Zurich.
 
 import java.nio.file.NoSuchFileException
 
@@ -9,7 +14,6 @@ import viper.silver.logger.ViperStdOutLogger
 
 
 class ParsingTests extends WordSpec with Matchers with ScalatestRouteTest {
-  import scala.language.postfixOps
 
   private val verifiableFile = "src/test/resources/viper/let.vpr"
   private val emptyFile = "src/test/resources/viper/empty.vpr"
@@ -27,16 +31,14 @@ class ParsingTests extends WordSpec with Matchers with ScalatestRouteTest {
     }
 
     var test_ast: Option[Program] = null
-    s"be able to execute 'generateViperAst()' for the file 'sum_method.vpr'" in {
-      test_ast = ast_gen.generateViperAst(sumFile)
-    }
-
     s"have 'generateViperAst()' return an defined option for the file 'sum_method.vpr'" in {
+      test_ast = ast_gen.generateViperAst(sumFile)
       assert(test_ast.isDefined)
     }
 
-    s"be able to re-execute 'generateViperAst()' for a different file" in {
+    s"have 'generateViperAst()' return an defined option for the file 'let.vpr'" in {
       test_ast = ast_gen.generateViperAst(verifiableFile)
+      assert(test_ast.isDefined)
     }
 
     s"have 'generateViperAst()' return an defined option for the file 'empty.vpr'" in {

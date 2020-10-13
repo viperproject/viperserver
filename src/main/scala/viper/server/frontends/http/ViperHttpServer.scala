@@ -1,186 +1,135 @@
-/**
-  * This Source Code Form is subject to the terms of the Mozilla Public
-  * License, v. 2.0. If a copy of the MPL was not distributed with this
-  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
-  *
-  * Copyright (c) 2011-2019 ETH Zurich.
-  */
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) 2011-2020 ETH Zurich.
 
 package viper.server.frontends.http
 
 import akka.NotUsed
-import akka.actor.PoisonPill
+import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
+import akka.http.scaladsl.marshalling.ToResponseMarshallable
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
-import akka.pattern.ask
 import akka.stream.scaladsl.Source
-import akka.util.Timeout
 import edu.mit.csail.sdg.alloy4.A4Reporter
 import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
-import viper.server.ViperRequests.{AlloyGenerationRequest, CacheResetRequest, VerificationRequest}
-import viper.server.core.{VerificationJobHandler, ViperCache, ViperCoreServer}
-import viper.server.frontends.http.jsonWriters.ViperIDEProtocol._
-import viper.server.protocol.ViperServerProtocol
-import viper.server.protocol.ViperServerProtocol._
+import spray.json.DefaultJsonProtocol
+import viper.server.ViperConfig
+import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, SiliconConfig}
+import viper.server.core.{ViperCache, ViperCoreServer}
+import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
 import viper.server.utility.AstGenerator
+import viper.server.vsi.Requests.CacheResetRequest
+import viper.server.vsi._
+import viper.silver.ast.Program
 import viper.silver.logger.ViperLogger
-import viper.silver.reporter._
+import viper.silver.reporter.Message
 
-import scala.concurrent.Future
-import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
-
-class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(_args) {
+class ViperHttpServer(_args: Array[String])
+  extends ViperCoreServer(_args) with VerificationServerHTTP {
 
   override def start(): Unit = {
-    init(Some(routes))
+    _config = new ViperConfig(_args)
+    config.verify()
+
+    _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
+    println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
+
+    ViperCache.initialize(logger.get, config.backendSpecificCache())
+
+    port = config.port()
+    super.start(config.maximumActiveJobs())
+    println(s"ViperServer online at http://localhost:${config.port()}")
   }
- 
-  def routes(logger: ViperLogger): Route = {
-    
-    /**
-      * Send GET request to "/exit".
-      *
-      * This will do the following:
-      * 1. Map all existing jobs from [[_jobHandles]] to a list of futures based on the responses of instances of
-      *    [[MainActor]] from [[ViperServerProtocol.Stop]] messages (with a 5 second timeout)
-      * 2. Merge the list into an overall future
-      * 3. Wait for the overall future to complete or timeout
-      * 4. Send [[Terminator.Exit]] message to the [[Terminator]] actor
-      * 5. Complete the request with an appropriate message
-      *
-      * Some use cases:
-      * - The IDE is being shut down
-      * - ViperServer receives a deadly signal and needs to kill the running verification jobs
-      */
-    path("exit") {
-      get {
-        onComplete(getInterruptFutureList()) { err: Try[List[String]] =>
-          err match {
-            case Success(_) =>
-              _termActor ! Terminator.Exit
-              complete( ServerStopConfirmed("shutting down...") )
-            case Failure(err_msg) =>
-              println(s"Interrupting one of the verification threads timed out: $err_msg")
-              _termActor ! Terminator.Exit
-              complete( ServerStopConfirmed("forcibly shutting down...") )
-          }
-        }
-      }
-    }
-  } ~ path("verify") {
-    /**
-      * Send POST request to "/verify".
-      *
-      * This will do the following:
-      * 1. If the limit for allowed active verification jobs has been reached, complete with an appropriate reject message
-      * 2. Otherwise, create an actor with a fresh ID and pass the arguments provided by the client
-      * 3. Send [[ViperServerProtocol.Verify]] message to the newly created instance of [[MainActor]]
-      *   ([[bookNewJob]] will add the actor as an entry to the [[_jobHandles]] collection under a fresh ID;
-      *
-      *    @see [[bookNewJob]])
-      * 4. Complete request with accepting message with the ID of the new verification job
-      *
-      * Use case:
-      * - Send a request to verify a specific Viper file from the IDE
-      * - Send a request to verify a specific Viper file from any other Viper client implementation,
-      *   such as <a href="<a href="https://github.com/viperproject/viper_client">viper_client</a>">viper_client</a> (written in Python)
-      */
-    post {
-        entity(as[VerificationRequest]) { r =>
-          val arg_list = getArgListFromArgString(r.arg)
 
-          val file: String = arg_list.last
-          val astGen = new AstGenerator(logger)
+  def setRoutes(): Route = {
+    addRoute(routes(), AdditionalViperServerRoute())
+  }
 
-          astGen.generateViperAst(file) match {
-            case Some(prog) =>
-              val jobHandler: VerificationJobHandler = createJobHandle(arg_list, prog)
-              complete( VerificationRequestAccept(jobHandler.id) )
-            case None =>
-              complete( VerificationRequestReject(s"the maximum number of active verification jobs are currently running ($MAX_ACTIVE_JOBS)."))
-          }
-      }
+  override def serverStopConfirmation(interrupt: Try[List[String]]): ToResponseMarshallable = {
+    interrupt match {
+      case Success(_) =>
+        println("shutting down...")
+        ServerStopConfirmed("shutting down...")
+      case Failure(err_msg) =>
+        logger.get.error(s"Interrupting one of the verification threads timed out: $err_msg")
+        println("forcibly shutting down...")
+        ServerStopConfirmed("forcibly shutting down...")
     }
-  } ~ path("verify" / IntNumber) { jid =>
-    /**
-      * Send GET request to "/verify/<jid>" where <jid> is a non-negative integer.
-      * <jid> must be an ID of an existing verification job.
-      *
-      * This will do the following:
-      * 1. If no job handle future with ID equal to <jid> exists in [[_jobHandles]], complete with an appropriate reject message
-      * 2. Otherwise, once the job handle future is complete:
-      *   - If the future completed with a failure, complete with an appropriate reject message
-      *   - If the future completed successfully:
-      *     - Create a [[Source]] <src> full of [[viper.silver.reporter.Message]]s
-      *     - Send [[Terminator.WatchJob]] message to the [[Terminator]] actor, awaiting
-      *       [[SourceQueueWithComplete.watchCompletion]] future before removing current job handle from [[_jobHandles]]
-      *     - Complete request with <src>
-      *
-      * Use case:
-      * - Ask ViperServer to begin streaming the results corresponding to the verification job with provided <jid>
-      */
-    get {
-      lookupJob(jid) match {
-        case Some(handle_future) =>
-          // Found a job with this jid.
-          onComplete(handle_future) {
-            case Success(handle) =>
-              // As soon as messages start being consumed, the terminator actor is triggered.
-              // See Terminator.receive for more information
-              val src: Source[Message, NotUsed] = Source.fromPublisher(handle.publisher)
-              _termActor ! Terminator.WatchJobQueue(jid, handle)
-              complete(src)
-            case Failure(error) =>
-              complete( VerificationRequestReject(s"The verification job #$jid resulted in a terrible error: $error") )
-          }
-        case _ =>
-          // Did not find a job with this jid.
-          complete( VerificationRequestReject(s"The verification job #$jid does not exist.") )
-      }
-    }
-  } ~ path("discard" / IntNumber) { jid =>
+  }
 
-    /**
-      * Send GET request to "/discard/<jid>" where <jid> is a non-negative integer.
-      * <jid> must be an ID of an existing verification job.
-      *
-      * This will do the following:
-      * 1. If no job handle with ID equal to <jid> exists in [[_jobHandles]], complete with an appropriate reject message
-      * 2. Otherwise, once the job handle future is complete:
-      *   - If the future completed with a failure, complete with an appropriate reject message
-      *   - If the future completed successfully:
-      *     - Create a new future based on response from a the current instance of [[MainActor]] to a
-      *       [[ViperServerProtocol.Stop]] message (with a 5 second timeout)
-      *     - Send a [[PoisonPill]] message to the current instance of [[MainActor]]
-      *     - Complete request with accepting message
-      *
-      *  Use case:
-      *  - Client decided to kill a verification job they no longer care about
-      */
-    get {
-      lookupJob(jid) match {
-        case Some(handle_future) =>
-          onComplete(handle_future) {
-            case Success(handle) =>
-              implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-              val interrupt_done: Future[String] = (handle.controller_actor ? Stop(true)).mapTo[String]
-              onSuccess(interrupt_done) { msg =>
-                handle.controller_actor ! PoisonPill // the actor played its part.
-                complete( JobDiscardAccept(msg) )
-              }
-            case Failure(error) =>
-              complete( JobDiscardReject(s"The verification job #$jid does not exist.") )
-          }
+  override def onVerifyPost(vr: Requests.VerificationRequest): ToResponseMarshallable = {
+    // Extract file name from args list
+    val arg_list = getArgListFromArgString(vr.arg)
+    val file: String = arg_list.last
+    val arg_list_partial = arg_list.dropRight(1)
 
-        case _ =>
-          // Did not find a job with this jid.
-          complete( JobDiscardReject(s"The verification job #$jid does not exist.") )
-      }
+    // Parse file
+    val astGen = new AstGenerator(_logger)
+    var ast_option: Option[Program] = None
+    try {
+      ast_option = astGen.generateViperAst(file)
+    } catch {
+      case _: java.nio.file.NoSuchFileException =>
+        return VerificationRequestReject("The file for which verification has been requested was not found.")
     }
-  } ~ path("cache" /  "flush") {
+    val ast = ast_option.getOrElse(return VerificationRequestReject("The file for which verification has been requested contained syntax errors."))
+
+    // prepare backend config
+    val backend = arg_list_partial match {
+      case "silicon" :: args => SiliconConfig(args)
+      case "carbon" :: args => CarbonConfig(args)
+      case "custom" :: args => CustomConfig(args)
+      case args =>
+        logger.get.error(s"Invalid arguments: ${args.toString} " +
+          s"You need to specify the verification backend, e.g., `silicon [args]`")
+        return VerificationRequestReject("Invalid arguments for backend.")
+    }
+
+    val jid: JobID = verify(file, backend, ast)
+
+    if (jid.id >= 0) {
+      logger.get.info(s"Verification process #${jid.id} has successfully started.")
+      VerificationRequestAccept(jid.id)
+    } else {
+      logger.get.error(s"Could not start verification process. " +
+        s"The maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
+      VerificationRequestReject(s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
+    }
+  }
+
+  override def unpackMessages(s: Source[Envelope, NotUsed]): ToResponseMarshallable = {
+    import viper.server.frontends.http.jsonWriters.ViperIDEProtocol._
+    val src_message: Source[Message, NotUsed] = s.map(e => unpack(e))
+    src_message
+  }
+
+  override def verificationRequestRejection(jid: Int, e: Throwable): ToResponseMarshallable = {
+    e match {
+      case JobNotFoundException() =>
+        logger.get.error(s"The verification job #$jid does not exist.")
+        VerificationRequestReject(s"The verification job #$jid does not exist.")
+      case _ =>
+        logger.get.error(s"The verification job #$jid resulted in a terrible error: $e")
+        VerificationRequestReject(s"The verification job #$jid resulted in a terrible error: $e")
+    }
+  }
+
+  override def discardJobConfirmation(jid: Int, msg: String): ToResponseMarshallable = {
+    _logger.get.info(s"The verification job #$jid was successfully stopped.")
+    JobDiscardAccept(msg)
+  }
+
+  override def discardJobRejection(jid: Int): ToResponseMarshallable = {
+    _logger.get.error(s"The verification job #$jid does not exist.")
+    JobDiscardReject(s"The verification job #$jid does not exist.")
+  }
+
+  def AdditionalViperServerRoute(): Route = path("cache" /  "flush") {
     /**
       * Send GET request to "/cache/flush".
       *
@@ -192,64 +141,75 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
     get {
       flushCache()
       complete( CacheFlushAccept(s"The cache has been flushed successfully.") )
-    }
-  } ~ path("cache" /  "flush") {
-    /**
-      * Send POST request to "/cache/flush".
-      *
-      * This will invalidate the cache for the tool and file specified.
-      *
-      *  Use case:
-      *  - Client decided to re-verify the entire file from scratch.
-      */
-    post {
-      entity(as[CacheResetRequest]) {
-        r =>
-          ViperCache.forgetFile(r.backend, r.file) match {
-            case Some(_) =>
-              complete( CacheFlushAccept(s"The cache for tool (${r.backend}) for file (${r.file}) has been flushed successfully.") )
-            case None =>
-              complete( CacheFlushReject(s"The cache does not exist for tool (${r.backend}) for file (${r.file}).") )
-          }
+    }~ path("cache" /  "flush") {
+      /**
+        * Send POST request to "/cache/flush".
+        *
+        * This will invalidate the cache for the tool and file specified.
+        *
+        *  Use case:
+        *  - Client decided to re-verify the entire file from scratch.
+        */
+      post {
+        entity(as[CacheResetRequest]) {
+          r =>
+            ViperCache.forgetFile(r.backend, r.file) match {
+              case Some(_) =>
+                _logger.get.info(s"The cache for tool (${r.backend}) for file (${r.file}) has been flushed successfully.")
+                complete( CacheFlushAccept(s"The cache for tool (${r.backend}) for file (${r.file}) has been flushed successfully.") )
+              case None =>
+                _logger.get.error(s"The cache does not exist for tool (${r.backend}) for file (${r.file}).")
+                complete( CacheFlushReject(s"The cache does not exist for tool (${r.backend}) for file (${r.file}).") )
+            }
+        }
       }
-    }
-  } ~ path("alloy") {
-    /**
-      * Send POST request to "/alloy".
-      *
-      * This will generate an instance of the given model.
-      */
-    post {
-      entity(as[AlloyGenerationRequest]) { r =>
-        try {
-          val reporter: A4Reporter = new A4Reporter()
+    } ~ path("alloy") {
+      /**
+        * Send POST request to "/alloy".
+        *
+        * This will generate an instance of the given model.
+        */
+      post {
+        object AlloyRequest extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
+          case class AlloyGenerationRequest(arg: String, solver: String)
+          implicit val generateStuff = jsonFormat2(AlloyGenerationRequest.apply)
+        }
 
-          val world = CompUtil.parseEverything_fromString(reporter, r.arg)
+        entity(as[AlloyRequest.AlloyGenerationRequest]) { r =>
+          try {
+            val reporter: A4Reporter = new A4Reporter()
 
-          val options: A4Options = new A4Options()
-          options.solver = A4Options.SatSolver.parse(r.solver)
-          options.skolemDepth = 1
-          options.noOverflow = true
-          options.unrolls = -1
+            val world = CompUtil.parseEverything_fromString(reporter, r.arg)
 
-          val commands = world.getAllCommands
-          if (commands.size() != 1) {
-            complete( AlloyGenerationRequestReject(s"Expected only one command, but got ${commands.size()}") )
+            val options: A4Options = new A4Options()
+            options.solver = A4Options.SatSolver.parse(r.solver)
+            options.skolemDepth = 1
+            options.noOverflow = true
+            options.unrolls = -1
+
+            val commands = world.getAllCommands
+            if (commands.size() != 1) {
+              _logger.get.error(s"Expected only one command, but got ${commands.size()}")
+              complete( AlloyGenerationRequestReject(s"Expected only one command, but got ${commands.size()}") )
+            }
+            val command = commands.get(0)
+            val solution = TranslateAlloyToKodkod.execute_command(reporter, world.getAllReachableSigs, command, options)
+            if (solution.satisfiable()) {
+              _logger.get.info("Model is satisfiable")
+              complete( AlloyGenerationRequestComplete(solution) )
+            } else {
+              _logger.get.info(s"Model could not be satisfied.")
+              complete( AlloyGenerationRequestReject(s"Model could not be satisfied.") )
+            }
+          } catch {
+            case e: Throwable =>
+              _logger.get.error(s"An exception occurred during model-generation:\n${e.toString}")
+              complete( AlloyGenerationRequestReject(s"An exception occurred during model-generation:\n${e.toString}") )
           }
-          val command = commands.get(0)
-          val solution = TranslateAlloyToKodkod.execute_command(reporter, world.getAllReachableSigs, command, options)
-          if (solution.satisfiable()) {
-            complete( AlloyGenerationRequestComplete(solution) )
-          } else {
-            complete( AlloyGenerationRequestReject(s"Model could not be satisfied.") )
-          }
-        } catch {
-          case e: Throwable => complete( AlloyGenerationRequestReject(s"An exception occurred during model-generation:\n${e.toString}") )
         }
       }
     }
   }
-
 
   private def getArgListFromArgString(arg_str: String): List[String] = {
     val possibly_quoted_string = raw"""[^\s"']+|"[^"]*"|'[^']*'""".r
@@ -259,5 +219,4 @@ class ViperHttpServer(private val _args: Array[String]) extends ViperCoreServer(
       case a => a
     }
   }
-
 }

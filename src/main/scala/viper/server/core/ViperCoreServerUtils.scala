@@ -1,13 +1,20 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) 2011-2020 ETH Zurich.
+
 package viper.server.core
 
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
-import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessage, OverallSuccessMessage}
+import viper.server.vsi.{JobID, JobNotFoundException}
+import viper.silver.reporter.{EntityFailureMessage, Message}
 import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.concurrent.{ExecutionContext, Future}
 
 object ViperCoreServerUtils {
   implicit private val executionContext = ExecutionContext.global
@@ -20,25 +27,12 @@ object ViperCoreServerUtils {
   class SeqActor() extends Actor {
 
     var messages: List[Message] = List()
-    var messages_promise: Promise[List[Message]] = Promise[List[Message]]()
 
     override def receive: PartialFunction[Any, Unit] = {
       case m: Message =>
         messages = messages :+ m
-        m match {
-          //Messages reporting the overall state are last to arrive and indicate that the promise can be finalized with success.
-          case _: OverallSuccessMessage =>
-            messages_promise success messages
-          case _: OverallFailureMessage =>
-            messages_promise success messages
-          case _ =>
-        }
       case SeqActor.Result =>
-        messages_promise.future
-        sender() ! messages_promise
-      case e: Throwable =>
-        //receiving an error means the promise can be finalized with failure.
-        messages_promise failure e
+        sender() ! messages
     }
   }
 
@@ -47,19 +41,22 @@ object ViperCoreServerUtils {
     * This is a utility function and not part of ViperCoreServer. Therefore, an instance of ViperCoreServer as well as
     * an instance of an actor system must be provided.
     *
-    * Deletes the jobhandle on completion.
+    * Deletes the jobHandle on completion.
     */
-  def getMessagesFuture(core: ViperCoreServer, jid: Int)(implicit actor_system: ActorSystem): Future[List[Message]] = {
+  def getMessagesFuture(core: ViperCoreServer, jid: JobID)(implicit actor_system: ActorSystem): Future[List[Message]] = {
     import scala.language.postfixOps
 
     val actor = actor_system.actorOf(SeqActor.props())
-    core.streamMessages(jid, actor)
-    implicit val askTimeout: Timeout = Timeout(core.config.actorCommunicationTimeout() milliseconds)
-    val answer: Future[Any] = actor ? SeqActor.Result
-    val messages_future: Future[List[Message]] = answer.flatMap({
-      case res: Future[List[Message]] => res
+    val complete_future = core.streamMessages(jid, actor).getOrElse(return Future.failed(JobNotFoundException()))
+    val res: Future[List[Message]] = complete_future.flatMap(_ => {
+      implicit val askTimeout: Timeout = Timeout(core.config.actorCommunicationTimeout() milliseconds)
+      val answer: Future[Any] = actor ? SeqActor.Result
+      //recover result type from "Any"
+      answer.map({
+        case res: List[Message] => res
+      })
     })
-    messages_future
+    res
   }
 
   /** Get a Future containing only verification results.
@@ -67,9 +64,9 @@ object ViperCoreServerUtils {
     * This is a utility function and not part of ViperCoreServer. Therefore, an instance of ViperCoreServer as well as
     * an instance of an actor system must be provided.
     *
-    * Deletes the jobhandle on completion.
+    * Deletes the jobHandle on completion.
     */
-  def getResultsFuture(core: ViperCoreServer, jid: Int)(implicit actor_system: ActorSystem): Future[VerificationResult] = {
+  def getResultsFuture(core: ViperCoreServer, jid: JobID)(implicit actor_system: ActorSystem): Future[VerificationResult] = {
     val messages_future = getMessagesFuture(core, jid)
     val result_future: Future[VerificationResult] = messages_future.map(msgs => {
 

@@ -62,8 +62,8 @@ abstract class Cache {
     * hit the cache.
     * */
   def retrieve(
-                file_key: String,
-                input_prog: Ast): (Ast, List[CacheEntry]) = {
+        file_key: String,
+        input_prog: Ast): (Ast, List[CacheEntry]) = {
 
     val cache_entries: ListBuffer[CacheEntry] = ListBuffer()
     val concerningsToCache: ListBuffer[CacheableMember] = ListBuffer()

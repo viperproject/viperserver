@@ -1,3 +1,9 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) 2011-2020 ETH Zurich.
+
 package viper.server.utility
 
 import java.nio.file.Paths
@@ -10,10 +16,9 @@ import viper.silver.parser.PProgram
 import viper.silver.reporter.StdIOReporter
 
 class AstGenerator (private val _logger: ViperLogger){
-  private var ver_backend: SilFrontend = create_backend()
+  private val ver_backend: SilFrontend = create_backend()
 
-  /** Creates a backend to work with the file.
-    *
+  /** Creates a backend that reads and parses the file
     */
   private def create_backend() : SilFrontend = {
     _logger.get.info(s"Creating new verification backend.")
@@ -22,6 +27,7 @@ class AstGenerator (private val _logger: ViperLogger){
 
   /** Parses and translates a Viper file into a Viper AST.
     *
+    * Throws an exception when passed an inexistent file!
     */
   def generateViperAst(vpr_file_path: String): Option[Program] = {
     val args: Array[String] = Array(vpr_file_path)
@@ -35,21 +41,19 @@ class AstGenerator (private val _logger: ViperLogger){
   }
 
   /** Parses a Viper file
-    *
     */
   private def parse(): Option[PProgram] = {
     ver_backend.parsing()
-    if(ver_backend.errors.isEmpty){
+    if(ver_backend.errors.isEmpty) {
       _logger.get.info("There was no error while parsing!")
       Some(ver_backend.parsingResult)
-    } else{
-      _logger.get.error("There was some error while parsing!")
+    } else {
+      _logger.get.error(s"There was some error while parsing: ${ver_backend.errors}")
       None
     }
   }
 
   /** Translates a Parsed Viper file into a Viper AST
-    *
     */
   private def translate(parse_ast : Option[PProgram]) : Option[Program] = {
     if(parse_ast.isDefined){
@@ -62,7 +66,7 @@ class AstGenerator (private val _logger: ViperLogger){
         ver_backend.verifier.stop()
         return Some(ver_backend.translationResult)
       } else {
-        _logger.get.error ("There was some error while translating!")
+        _logger.get.error (s"There was some error while translating ${ver_backend.errors}")
       }
     }
     ver_backend.verifier.stop()

@@ -49,7 +49,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   implicit val position_writer: RootJsonFormat[Position] = lift(new RootJsonWriter[Position] {
     override def write(obj: Position): JsValue = JsObject(
       "file" -> (if (obj.file != null) {
-        //FIXME this hack is needed due to the following bug in Silver: https://bitbucket.org/viperproject/silver/issues/232
+        //FIXME this hack is needed due to the following bug in Silver: https://github.com/viperproject/silver/issues/253
         obj.file.toJson
       } else {
         JsString("<undefined>")
@@ -241,8 +241,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
 
   implicit val exceptionReport_writer: RootJsonFormat[ExceptionReport] = lift(new RootJsonWriter[ExceptionReport] {
     override def write(obj: ExceptionReport) = JsObject(
-        "message" -> JsString(obj.e.toString),
-        "stacktrace" -> JsArray(obj.e.getStackTrace.map(_.toJson).toVector))
+      "message" -> JsString(obj.e.toString),
+      "stacktrace" -> JsArray(obj.e.getStackTrace.map(_.toJson).toVector))
   })
 
   implicit val invalidArgumentsReport_writer: RootJsonFormat[InvalidArgumentsReport] = lift(new RootJsonWriter[InvalidArgumentsReport] {
