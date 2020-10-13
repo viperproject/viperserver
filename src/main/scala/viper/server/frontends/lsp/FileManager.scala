@@ -17,6 +17,7 @@ import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, Location, Position, Pu
 import viper.server.frontends.lsp
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
+import viper.server.vsi.JobID
 import viper.silver.ast.{Domain, Field, Function, Method, Predicate, SourcePosition}
 import viper.silver.reporter._
 
@@ -92,7 +93,7 @@ class FileManager(file_uri: String) {
     }
     Log.info("Aborting running verification.")
     is_aborting = true
-    Coordinator.verifier.stopVerification(jid).thenAccept(_ => {
+    Coordinator.verifier.stopVerification(JobID(jid)).thenAccept(_ => {
       is_verifying = false
       lastSuccess = Aborted
     }).exceptionally(e => {
@@ -158,13 +159,15 @@ class FileManager(file_uri: String) {
 
 //    val command = startStageProcess(stage, path).getOrElse(return false)
     val command = startStageProcess(path.toString).getOrElse(return false)
-    println(s"Successfully generated command: $command")
-    jid = Coordinator.verifier.verify(command)
-    println(s"Successfully started verifying with id: $jid")
-    Log.debug(s"ViperServer started new job with ID ${jid}")
-    Coordinator.verifier.startStreaming(jid, RelayActor.props(this))
-    Log.debug(s"Requesting ViperServer to stream results of verification job #${jid}...")
-    true
+    Log.info(s"Successfully generated command: $command")
+    val handle = Coordinator.verifier.verify(command)
+    jid = handle.id
+    if (jid >= 0) {
+      Coordinator.verifier.startStreaming(handle, RelayActor.props(this))
+      true
+    } else {
+      false
+    }
   }
 
   object RelayActor {

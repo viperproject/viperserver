@@ -27,7 +27,11 @@ case class JobNotFoundException() extends VerificationServerException
 case class JobID(id: Int)
 case class JobHandle(job_actor: ActorRef,
                      queue: SourceQueueWithComplete[Envelope],
-                     publisher: Publisher[Envelope])
+                     publisher: Publisher[Envelope]) {
+
+  object controller_actor
+
+}
 
 /** This class manages the verification jobs the server receives.
   */

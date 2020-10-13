@@ -14,16 +14,18 @@ import akka.actor.{PoisonPill, Props}
 import akka.pattern.ask
 import akka.util.Timeout
 import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, SiliconConfig}
-import viper.server.core.{VerificationJobHandler, ViperCache, ViperCoreServer}
-import viper.server.protocol.ViperServerProtocol.Stop
+import viper.server.core.{ViperCache, ViperCoreServer}
 import viper.server.utility.AstGenerator
+import viper.server.vsi.VerificationProtocol.Stop
+import viper.server.vsi.{JobID, VerificationProtocol, VerificationServer}
 import viper.silver.ast.Program
+import viper.silver.reporter.PongMessage
 
 import scala.compat.java8.FutureConverters._
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
-class ViperServerService(args: Array[String]) extends ViperCoreServer(args) {
+class ViperServerService(args: Array[String]) extends ViperCoreServer(args) with VerificationServer {
 
   protected var timeout: Int = _
 
@@ -69,7 +71,7 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) {
     }
   }
 
-  def verify(command: String): Int = {
+  def verify(command: String): JobID = {
     Log.debug("Requesting ViperServer to start new job...")
 
     val arg_list = getArgListFromArgString(command)
@@ -84,11 +86,11 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) {
     } catch {
       case _: java.nio.file.NoSuchFileException =>
         Log.debug("The file for which verification has been requested was not found.")
-        return -1
+        return JobID(-1)
     }
     val ast = ast_option.getOrElse({
       Log.debug("The file for which verification has been requested contained syntax errors.")
-      return -1
+      return JobID(-1)
     })
 
     // prepare backend config
@@ -98,31 +100,29 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) {
       case "custom" :: args => CustomConfig(args)
     }
 
-    val jid: VerificationJobHandler = verify(file, backend, ast)
-
+    val jid: JobID = verify(file, backend, ast)
     if (jid.id >= 0) {
-      logger.get.info(s"Verification process #${jid.id} has successfully started.")
+      Log.info(s"Verification process #${jid.id} has successfully started.")
     } else {
-      logger.get.error(s"Could not start verification process. " +
-        s"The maximum number of active verification jobs are currently running (${MAX_ACTIVE_JOBS}).")
-      Log.debug(s"the maximum number of active verification jobs are currently running (${MAX_ACTIVE_JOBS}).")
+      Log.debug(s"Could not start verification process. " +
+        s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
     }
-    jid.id
+    jid
   }
 
-  def startStreaming(jid: Int, relayActor_props: Props): Unit = {
+  def startStreaming(jid: JobID, relayActor_props: Props): Unit = {
     Log.debug("Sending verification request to ViperServer...")
     val relay_actor = system.actorOf(relayActor_props)
     streamMessages(jid, relay_actor)
   }
 
-  def stopVerification(jid: Int): CFuture[Boolean] = {
-    lookupJob(jid) match {
+  def stopVerification(jid: JobID): CFuture[Boolean] = {
+    jobs.lookupJob(jid) match {
       case Some(handle_future) =>
         handle_future.flatMap(handle => {
           implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-          val interrupt: Future[String] = (handle.controller_actor ? Stop(true)).mapTo[String]
-          handle.controller_actor ! PoisonPill // the actor played its part.
+          val interrupt: Future[String] = (handle.job_actor ? Stop()).mapTo[String]
+          handle.job_actor ! PoisonPill // the actor played its part.
           interrupt
         }).toJava.toCompletableFuture.thenApply(msg => {
           Log.info(msg)
