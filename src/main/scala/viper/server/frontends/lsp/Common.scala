@@ -12,7 +12,8 @@ import java.net.URI
 import java.nio.file.{Path, Paths}
 import java.util.concurrent.CompletableFuture
 
-import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.{Position, Range}
+
 
 object Common {
   //TODO Get this from client programatically
@@ -25,10 +26,6 @@ object Common {
   def uriToPath(uri: URI): Path = {
     Path.of(uri)
   }
-
-//  def pathToUri(path: String): String = {
-//    Paths.get(path).toUri.toString
-//  }
 
   def filenameFromUri(uri: String): String = {
     Paths.get(uri).getFileName.toString

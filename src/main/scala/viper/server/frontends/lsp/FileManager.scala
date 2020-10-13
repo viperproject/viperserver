@@ -182,8 +182,8 @@ class FileManager(file_uri: String) {
         members.foreach(m => {
           val member_start = m.pos.asInstanceOf[SourcePosition].start
           val member_end = m.pos.asInstanceOf[SourcePosition].end.getOrElse(member_start)
-          val range_start = new Position(member_start.line, member_start.column)
-          val range_end = new Position(member_end.line, member_end.column)
+          val range_start = new Position(member_start.line - 1, member_start.column - 1)
+          val range_end = new Position(member_end.line - 1, member_end.column - 1)
           val range = new Range(range_start, range_end)
           val location: Location = new Location(file_uri, range)
 
@@ -202,11 +202,11 @@ class FileManager(file_uri: String) {
         definitions = ArrayBuffer()
         defs.foreach(d => {
           val start = d.scope match {
-            case Some(s) => new Position(s.start.line, s.start.column)
+            case Some(s) => new Position(s.start.line - 1, s.start.column - 1)
             case None => null
           }
           val end = d.scope match {
-            case Some(s) if s.end.isDefined => new Position(s.end.get.line, s.end.get.column)
+            case Some(s) if s.end.isDefined => new Position(s.end.get.line - 1, s.end.get.column - 1)
             case None => null
           }
           val range: Range = if(start != null && end != null) {
@@ -215,7 +215,7 @@ class FileManager(file_uri: String) {
             null
           }
           val sourcePos = d.location.asInstanceOf[viper.silver.ast.SourcePosition]
-          val location: Position = new Position(sourcePos.start.line, sourcePos.start.column)
+          val location: Position = new Position(sourcePos.start.line - 1, sourcePos.start.column - 1)
           val definition: lsp.Definition = lsp.Definition(d.typ, d.name, location, range)
           definitions.append(definition)
         })
@@ -245,9 +245,9 @@ class FileManager(file_uri: String) {
         }
         val err_start = err.pos.asInstanceOf[SourcePosition].start
         val err_end = err.pos.asInstanceOf[SourcePosition].end
-        val start_pos = new Position(err_start.line, err_start.column)
+        val start_pos = new Position(err_start.line - 1, err_start.column - 1)
         val end_pos = if(err_end.isDefined) {
-          new Position(err_end.get.line, err_end.get.column)
+          new Position(err_end.get.line - 1, err_end.get.column - 1)
         } else {
           null
         }
