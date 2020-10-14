@@ -20,12 +20,16 @@ object Coordinator {
   var url: String = _
   var client: IdeLanguageClient = _
 
-  var files = mutable.Map.empty[String, FileManager]
-  var backend: BackendProperties = null
-  var verifier: ViperServerService = null
+  var files = mutable.Map.empty[String, FileManager]    //Each file is managed individually.
+  var verifier: ViperServerService = null   // verification enginge. Set once on start.
+  var backend: BackendProperties = null     // Backend the engine uses. Can be swapped throughout
 
   def getAddress: String = url + ":" + port
 
+  /** Checks if verification can be started for a given file.
+    *
+    * Informs client differently depending on whether or not verification attempt was triggered manually
+    * */
   def canVerificationBeStarted(uri: String, manuallyTriggered: Boolean): Boolean = {
     //check if there is already a verification task for that file
     if(files.get(uri).isEmpty){
@@ -42,6 +46,11 @@ object Coordinator {
     }
   }
 
+  /** Stops all running verifications.
+    *
+    * Returns a CF that is successfully completed if all running verifications were stopped
+    * successfully. Otherwise, a failed CF is returned
+    * */
   def stopAllRunningVerifications(): CompletableFuture[Void] = {
     if (files.nonEmpty) {
       val promises = files.values.map(task => task.abortVerification()).toSeq
@@ -51,9 +60,12 @@ object Coordinator {
     }
   }
 
-  //Communication requests and notifications sent to language client
+  /** Notifies the client about a state change
+    *
+    * If state change is related to a particular file, its manager's state is also updated.
+    * */
   def sendStateChangeNotification(params: StateChangeParams, task: Option[FileManager]): Unit = {
-    if (task.isDefined) task.get.state = VerificationState.apply(params.newState.toInt)
+    if (task.isDefined) task.get.state = VerificationState.apply(params.newState)
     try {
       client.notifyStateChanged(params)
     } catch {

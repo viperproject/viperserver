@@ -68,14 +68,13 @@ abstract class StandardReceiver extends LanguageClientAware {
   @JsonNotification("workspace/didChangeConfiguration")
   def onDidChangeConfig(params: DidChangeConfigurationParams): Unit = {
     println("On config change")
-    Log.lowLevel("check if restart needed")
     try {
+      Log.lowLevel("check if restart needed")
       if (Coordinator.verifier == null) {
         Log.info("Change Backend: from 'No Backend' to Silicon")
-        Coordinator.backend = BackendProperties(
-                                "ViperServer Silicon", "Silicon", null, null,
-                                5000, null, 5000, null)
-        Coordinator.client.notifyBackendStarted(BackendStartedParams("Silicon"))
+        val backend = "Silicon"
+        Coordinator.backend = BackendProperties(name = s"Viper$backend", backend_type = backend)
+        Coordinator.client.notifyBackendStarted(BackendStartedParams(backend))
       } else {
         Log.log("No need to restart backend. It is still the same", LogLevel.Debug)
       }
@@ -157,31 +156,6 @@ abstract class StandardReceiver extends LanguageClientAware {
     Coordinator.verifier.stop()
     if(received_shutdown) sys.exit(0) else sys.exit(1)
   }
-
-//  @JsonRequest("textDocument/completion")
-//  def completion(params: CompletionParams): CFuture[CompletionList] = {
-//    val tsItem = new CompletionItem("Do the completion for Viper!!")
-//    tsItem.setKind(CompletionItemKind.Text)
-//    tsItem.setData(1)
-//    val completions = new CompletionList(List(tsItem).asJava)
-//    CFuture.completedFuture(completions)
-//  }
-//
-//  @JsonRequest("completionItem/resolve")
-//  def completionItemResolve(item: CompletionItem): CFuture[CompletionItem] = {
-//    val data: Object = item.getData
-//    data match {
-//      case n: JsonPrimitive if n.getAsInt == 1 =>
-//        item.setDetail("TypeScript details")
-//        item.setDocumentation("TypeScript documentation")
-//      case n: JsonPrimitive if n.getAsInt == 2 =>
-//        item.setDetail("JavaScript details")
-//        item.setDocumentation("JavaScript documentation")
-//      case _ =>
-//        item.setDetail(s"${data.toString} is instance of ${data.getClass}")
-//    }
-//    CFuture.completedFuture(item)
-//  }
 }
 
 class CustomReceiver extends StandardReceiver {
@@ -209,9 +183,14 @@ class CustomReceiver extends StandardReceiver {
   }
 
   @JsonNotification(C2S_Commands.StartBackend)
-  def onStartBackend(backendName: String): Unit = {
+  def onStartBackend(backend: String): Unit = {
     println("Starting ViperServeService")
     try {
+      if(backend == "Silicon" || backend == "Carbon") {
+          Coordinator.backend = BackendProperties(name = s"Viper$backend", backend_type = backend)
+      } else {
+        throw new Throwable("Unexpected Backend")
+      }
       Coordinator.verifier = new ViperServerService(Array())
       Coordinator.verifier.setReady(Coordinator.backend)
     } catch {
@@ -220,12 +199,17 @@ class CustomReceiver extends StandardReceiver {
   }
 
   @JsonNotification(C2S_Commands.SwapBackend)
-  def onSwapBackend(backendName: String): Unit = {
+  def onSwapBackend(backend: String): Unit = {
     try {
-      val b = BackendProperties(
-              "new Backend", backendName, null, null,
-                      5000, null, 5000, null)
-      Coordinator.verifier.swapBackend(b)
+      if(backend == "Silicon" || backend == "Carbon") {
+        Coordinator.backend = BackendProperties(name = s"Viper$backend", backend_type = backend)
+      } else {
+        throw new Throwable("Unexpected Backend")
+      }
+      Coordinator.verifier.is_ready = true
+      val param = BackendReadyParams(backend, false, true)
+      Coordinator.client.notifyBackendReady(param)
+      Log.info("The backend has been swapped and is now ready for verification")
     } catch {
       case e: Throwable => Log.debug("Error handling swap backend request: " + e)
     }
@@ -235,7 +219,6 @@ class CustomReceiver extends StandardReceiver {
   def onGetNames(backendName: String): CFuture[Array[String]] = {
     CFuture.completedFuture(Array("Silicon", "Carbon"))
   }
-
 
   @JsonNotification(C2S_Commands.StopBackend)
   def onBackendStop(backendName: String): Unit= {

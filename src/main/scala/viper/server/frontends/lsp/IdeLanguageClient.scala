@@ -31,7 +31,7 @@ trait IdeLanguageClient extends LanguageClient {
   @JsonNotification(S2C_Commands.BackendReady)
   def notifyBackendReady(param: BackendReadyParams): Unit
 
-  @JsonNotification(C2S_Commands.StartBackend)
+  @JsonNotification(S2C_Commands.BackendStarted)
   def notifyBackendStarted(params: BackendStartedParams): Unit
 
   @JsonNotification(S2C_Commands.BackendChange)

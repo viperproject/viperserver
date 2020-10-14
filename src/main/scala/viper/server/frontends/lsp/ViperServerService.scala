@@ -43,14 +43,6 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) with
     Log.info("The backend is ready for verification")
   }
 
-  def swapBackend(newBackend: BackendProperties): Unit = {
-    is_ready = true
-    Coordinator.backend = newBackend
-    val param = BackendReadyParams("Silicon", false, true)
-    Coordinator.client.notifyBackendReady(param)
-    Log.info("The backend has been swapped and is now ready for verification")
-  }
-
   def setStopping(): Unit = {
     Log.debug("Set Stopping... ")
     if(isRunning){

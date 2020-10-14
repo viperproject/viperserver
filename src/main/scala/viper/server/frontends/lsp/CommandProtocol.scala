@@ -24,6 +24,7 @@ object C2S_Commands {
   final val ViperUpdateComplete = "ViperUpdateComplete"
   final val FlushCache = "FlushCache"
   final val GetIdentifier = "GetIdentifier"
+
 }
 
 object S2C_Commands {
@@ -45,4 +46,5 @@ object S2C_Commands {
   final val StepsAsDecorationOptions = "StepsAsDecorationOptions"   //StepsAsDecorationOptionsResult
   final val HeapGraph = "HeapGraph"   //HeapGraph
   final val UnhandledViperServerMessageType = "UnhandledViperServerMessageType"
+  final val BackendStarted = "BackendStarted"
 }

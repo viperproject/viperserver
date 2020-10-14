@@ -106,8 +106,7 @@ class FileManager(file_uri: String) {
 //  def startStageProcess(stage: Stage, fileToVerify: String): Option[String] = {
     try {
       Log.lowLevel("Start Stage Process")
-//      Some(getStageCommand(fileToVerify, stage))
-      Some("silicon " + fileToVerify)
+      Some(getStageCommand(fileToVerify, null))
     } catch {
       case e: Throwable =>
         Log.debug("Error starting stage process: " + e)
@@ -116,18 +115,17 @@ class FileManager(file_uri: String) {
   }
 
   def getStageCommand(fileToVerify: String, stage: Stage): String = {
-    val args: String = getViperBackendClassName(stage) + " " + stage.customArguments
+    val args: String = getViperBackendClassName(stage) + s" $fileToVerify"
 //    val command = Settings.expandCustomArguments(args, stage, fileToVerify, Coordinator.backend)
-    val command = ""
-    Log.debug(command)
-    command
+    Log.debug(args)
+    args
   }
 
   def getViperBackendClassName(stage: Stage): String = {
     Coordinator.backend.backend_type match {
-      case "silicon" => "silicon"
-      case "carbon" => "carbon"
-      case "other" => stage.mainMethod
+      case "Silicon" => "silicon"
+      case "Carbon" => "carbon"
+//      case "other" => stage.mainMethod
       case _ => throw new Error(s"Invalid verification backend value. " +
         s"Possible values are [silicon | carbon | other] " +
         s"but found ${Coordinator.backend}")
@@ -149,8 +147,8 @@ class FileManager(file_uri: String) {
 //    val stage = Coordinator.backend.stages.head
 
 //    Coordinator.executedStages.append(stage)
-    Log.info("verify " + filename)
-    Log.info(Coordinator.backend.name + " verification started")
+    Log.info(s"verify $filename")
+    Log.info(s"${Coordinator.backend.name} verification started")
 
     val params = StateChangeParams(VerificationRunning.id, filename = filename)
     println("state change params created")
