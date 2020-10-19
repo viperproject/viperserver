@@ -160,7 +160,6 @@ case class StateChangeParams(
 //////              SETTINGS                                                                 ///////
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-//TODO Care that serverJars can take other types. These must be translated to a String.
 case class ViperServerSettings(
                                 serverJars: Array[String],     // Locator to the ViperServer jars
                                 customArguments: String,       // custom commandLine arguments

@@ -18,9 +18,8 @@ import viper.server.core.{ViperCache, ViperCoreServer}
 import viper.server.frontends.lsp.VerificationState.Stopped
 import viper.server.utility.AstGenerator
 import viper.server.vsi.VerificationProtocol.Stop
-import viper.server.vsi.{JobID, VerificationProtocol, VerificationServer}
+import viper.server.vsi.{JobID, VerificationServer}
 import viper.silver.ast.Program
-import viper.silver.reporter.PongMessage
 
 import scala.compat.java8.FutureConverters._
 import scala.concurrent.Future

@@ -10,21 +10,9 @@ import java.io.IOException
 import java.net.Socket
 
 import org.eclipse.lsp4j.jsonrpc.Launcher
-import org.eclipse.lsp4j.services.LanguageClient
-import viper.server.frontends.http.ViperHttpServer
 import viper.server.frontends.lsp.{Coordinator, CustomReceiver, IdeLanguageClient}
 
 object ViperServerRunner {
-
-  var viperServerHTTP: ViperHttpServer = _
-
-  /** Start VCS in HTTP mode.
-    * */
-  def startHttpServer(args: Array[String]): Unit = {
-
-    viperServerHTTP = new ViperHttpServer(args)
-    viperServerHTTP.start()
-  }
 
   def main(args: Array[String]): Unit = {
     try {
@@ -38,7 +26,6 @@ object ViperServerRunner {
       case _: NumberFormatException => {
         println("Invalid port number")
         sys.exit(1)
-        return
       }
     }
   }

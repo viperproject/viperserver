@@ -24,15 +24,9 @@ abstract class StandardReceiver extends LanguageClientAware {
   var received_shutdown = false
 
   @JsonRequest("initialize")
-  def initialize(params: InitializeParams): CFuture[InitializeResult] = {
+  def onInitialize(params: InitializeParams): CFuture[InitializeResult] = {
     println("initialize")
     val capabilities = new ServerCapabilities()
-    //    OG
-    //    always send full text document for each notification:
-    //    capabilities.setCompletionProvider(new CompletionOptions(true, null))
-
-    //    val Coordinator.verifier = new ViperServerService(Array())
-    //    Coordinator.verifier.setReady(Option.empty)
 
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Full)
     capabilities.setDefinitionProvider(true)
@@ -40,7 +34,7 @@ abstract class StandardReceiver extends LanguageClientAware {
     CFuture.completedFuture(new InitializeResult(capabilities))
   }
   @JsonNotification("initialized")
-  def initialize(params: InitializedParams): Unit = {
+  def onInitialized(params: InitializedParams): Unit = {
     println("initialized")
   }
 
@@ -228,13 +222,10 @@ class CustomReceiver extends StandardReceiver {
 
   @JsonNotification(C2S_Commands.Verify)
   def onVerify(data: VerifyRequest): Unit = {
-    //it does not make sense to reverify if no changes were made and the verification is already running
     if (Coordinator.canVerificationBeStarted(data.uri, data.manuallyTriggered)) {
-//      Settings.workspace = data.workspace
       //stop all other verifications because the backend crashes if multiple verifications are run in parallel
       Coordinator.stopAllRunningVerifications().thenAccept(_ => {
         println("Verifications stopped successfully")
-//        Coordinator.executedStages = ArrayBuffer()
         Log.log("start or restart verification", LogLevel.Info)
 
         val manager = Coordinator.files.getOrElse(data.uri, return)
