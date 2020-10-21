@@ -25,7 +25,7 @@ abstract class StandardReceiver extends LanguageClientAware {
 
   @JsonRequest("initialize")
   def onInitialize(params: InitializeParams): CFuture[InitializeResult] = {
-    println("initialize")
+    Log.info("initialize")
     val capabilities = new ServerCapabilities()
 
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Full)
@@ -33,14 +33,15 @@ abstract class StandardReceiver extends LanguageClientAware {
     capabilities.setDocumentSymbolProvider(true)
     CFuture.completedFuture(new InitializeResult(capabilities))
   }
+
   @JsonNotification("initialized")
   def onInitialized(params: InitializedParams): Unit = {
-    println("initialized")
+    Log.info("initialized")
   }
 
   @JsonNotification("textDocument/didOpen")
   def onDidOpenDocument(params: DidOpenTextDocumentParams): Unit = {
-    println("On opening document")
+    Log.info("On opening document")
     try {
       val uri: String = params.getTextDocument.getUri
       Common.isViperSourceFile(uri).thenAccept(isViperFile => {
@@ -61,7 +62,7 @@ abstract class StandardReceiver extends LanguageClientAware {
 
   @JsonNotification("workspace/didChangeConfiguration")
   def onDidChangeConfig(params: DidChangeConfigurationParams): Unit = {
-    println("On config change")
+    Log.info("On config change")
     try {
       Log.lowLevel("check if restart needed")
       if (Coordinator.verifier == null) {
@@ -79,7 +80,7 @@ abstract class StandardReceiver extends LanguageClientAware {
 
   @JsonNotification("textDocument/didChange")
   def onDidChangeDocument(params: DidChangeTextDocumentParams): Unit = {
-    println("On changing document")
+    Log.info("On changing document")
     val manager_opt = Coordinator.files.get(params.getTextDocument.getUri)
     val manager: FileManager = manager_opt.getOrElse(return)
     manager.symbolInformation = ArrayBuffer()
@@ -88,6 +89,7 @@ abstract class StandardReceiver extends LanguageClientAware {
 
   @JsonRequest("textDocument/documentSymbol")
   def onGetDocumentSymbol(params: DocumentSymbolParams): CFuture[Array[SymbolInformation]] = {
+    Log.info("On getting document symbol")
     var symbolInfo_list: Array[SymbolInformation] = Array()
     val manager_opt = Coordinator.files.get(params.getTextDocument.getUri)
     val manager = manager_opt.getOrElse(return CFuture.completedFuture(symbolInfo_list))
@@ -126,7 +128,7 @@ abstract class StandardReceiver extends LanguageClientAware {
 
   @JsonNotification("textDocument/didClose")
   def onDidCloseDocument(params: DidCloseTextDocumentParams): Unit = {
-    println("On closing document")
+    Log.info("On closing document")
     try {
       val uri = params.getTextDocument.getUri
       Common.isViperSourceFile(uri).thenAccept(isViperFile => {
@@ -139,14 +141,14 @@ abstract class StandardReceiver extends LanguageClientAware {
 
   @JsonRequest(value = "shutdown")
   def onShutdown(): CFuture[AnyRef] = {
-    println("shutdown")
+    Log.debug("shutdown")
     received_shutdown = true
     CFuture.completedFuture(null)
   }
 
   @JsonNotification(value = "exit")
   def onExit(): Unit = {
-    println("exit")
+    Log.debug("exit")
     Coordinator.verifier.stop()
     if(received_shutdown) sys.exit(0) else sys.exit(1)
   }
@@ -156,7 +158,7 @@ class CustomReceiver extends StandardReceiver {
 
   @JsonNotification(S2C_Commands.FileClosed)
   def onFileClosed(uri: String): Unit = {
-    println("On closing file")
+    Log.debug("On closing file")
     val manager_opt = Coordinator.files.get(uri)
     val manager = manager_opt.getOrElse(return)
     manager.resetDiagnostics()
@@ -165,6 +167,7 @@ class CustomReceiver extends StandardReceiver {
 
   @JsonRequest(C2S_Commands.RemoveDiagnostics)
   def onRemoveDiagnostics(uri: String): CFuture[Boolean] = {
+    Log.debug("On removing diagnostics")
     val manager_opt = Coordinator.files.get(uri)
     val manager = manager_opt.getOrElse(return CFuture.completedFuture(false))
     manager.resetDiagnostics()
@@ -173,12 +176,13 @@ class CustomReceiver extends StandardReceiver {
 
   @JsonRequest("GetLanguageServerUrl")
   def onGetServerUrl(): CFuture[String] = {
+    Log.debug("On getting server URL")
     CFuture.completedFuture(Coordinator.getAddress)
   }
 
   @JsonNotification(C2S_Commands.StartBackend)
   def onStartBackend(backend: String): Unit = {
-    println("Starting ViperServeService")
+    Log.debug("On starting ViperServeService")
     try {
       if(backend == "Silicon" || backend == "Carbon") {
           Coordinator.backend = BackendProperties(name = s"Viper$backend", backend_type = backend)
@@ -194,6 +198,7 @@ class CustomReceiver extends StandardReceiver {
 
   @JsonNotification(C2S_Commands.SwapBackend)
   def onSwapBackend(backend: String): Unit = {
+    Log.debug("on swapping backend")
     try {
       if(backend == "Silicon" || backend == "Carbon") {
         Coordinator.backend = BackendProperties(name = s"Viper$backend", backend_type = backend)
@@ -211,21 +216,23 @@ class CustomReceiver extends StandardReceiver {
 
   @JsonRequest(C2S_Commands.RequestBackendNames)
   def onGetNames(backendName: String): CFuture[Array[String]] = {
+    Log.debug("on getting backend names")
     CFuture.completedFuture(Array("Silicon", "Carbon"))
   }
 
   @JsonNotification(C2S_Commands.StopBackend)
   def onBackendStop(backendName: String): Unit= {
+    Log.debug("on stopping backend")
     Coordinator.verifier.setStopping()
     Coordinator.verifier.setStopped()
   }
 
   @JsonNotification(C2S_Commands.Verify)
   def onVerify(data: VerifyRequest): Unit = {
+    Log.debug("On verifying")
     if (Coordinator.canVerificationBeStarted(data.uri, data.manuallyTriggered)) {
       //stop all other verifications because the backend crashes if multiple verifications are run in parallel
       Coordinator.stopAllRunningVerifications().thenAccept(_ => {
-        println("Verifications stopped successfully")
         Log.log("start or restart verification", LogLevel.Info)
 
         val manager = Coordinator.files.getOrElse(data.uri, return)
@@ -248,14 +255,14 @@ class CustomReceiver extends StandardReceiver {
 
   @JsonNotification(C2S_Commands.FlushCache)
   def onFlushCache(file: String): Unit = {
-    println("flushing cache...")
+    Log.debug("flushing cache...")
     val file_arg: Option[String] = if(file == null) Option.empty else Some(file)
     Coordinator.verifier.flushCache(file_arg)
   }
 
   @JsonNotification(C2S_Commands.StopVerification)
   def onStopVerification(uri: String): CFuture[Boolean] = {
-    println("on stopping verification")
+    Log.debug("on stopping verification")
     try {
       val manager = Coordinator.files.getOrElse(uri, return CFuture.completedFuture(false))
         manager.abortVerification().thenApply((success) => {
@@ -271,7 +278,7 @@ class CustomReceiver extends StandardReceiver {
   }
 
   override def connect(client: LanguageClient): Unit = {
-    println("Connecting plugin client.")
+    Log.debug("Connecting plugin client.")
     val c = client.asInstanceOf[IdeLanguageClient]
     Coordinator.client = c
   }

@@ -9,13 +9,13 @@
 import viper.server.frontends.http.ViperHttpServer
 
 object HttpServerRunner {
-  var viperServerHTTP: ViperHttpServer = _
+  var viperServerHttp: ViperHttpServer = _
 
   /** Start VCS in HTTP mode.
     * */
   def startHttpServer(args: Array[String]): Unit = {
-    viperServerHTTP = new ViperHttpServer(args)
-    viperServerHTTP.start()
+    viperServerHttp = new ViperHttpServer(args)
+    viperServerHttp.start()
   }
 
   def main(args: Array[String]): Unit = {

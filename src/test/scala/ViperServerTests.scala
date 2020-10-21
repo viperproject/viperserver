@@ -26,7 +26,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
 
   HttpServerRunner.main(Array())
 
-  private val _routsUnderTest = HttpServerRunner.viperServerHTTP.routes()
+  private val _routsUnderTest = HttpServerRunner.viperServerHttp.routes()
 
   def printRequestResponsePair(req: String, res: String): Unit = {
     println(s">>> ViperServer test request `$req` response in the following response: $res")

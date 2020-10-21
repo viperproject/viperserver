@@ -69,12 +69,7 @@ object Coordinator {
     try {
       client.notifyStateChanged(params)
     } catch {
-      case e: Throwable => println(e)
+      case e: Throwable => Log.debug("Error while changing state: ", e)
     }
   }
-
-//  def sendStepsAsDecorationOptions(decorations: StepsAsDecorationOptionsResult) = {
-//    Log.log("Update the decoration options (" + decorations.decorationOptions.length + ")", LogLevel.Debug)
-//    client.stepsAsDecorationOptions(decorations)
-//  }
 }

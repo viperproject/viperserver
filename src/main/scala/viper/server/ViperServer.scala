@@ -40,7 +40,6 @@ object ViperServerRunner {
       Coordinator.port = port
       Coordinator.url = localAddress
 
-
       val server: CustomReceiver = new CustomReceiver()
       val launcher = Launcher.createLauncher(server, classOf[IdeLanguageClient], socket.getInputStream, socket.getOutputStream)
       server.connect(launcher.getRemoteProxy)

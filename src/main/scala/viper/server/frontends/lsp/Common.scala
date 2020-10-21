@@ -16,8 +16,7 @@ import org.eclipse.lsp4j.{Position, Range}
 
 
 object Common {
-  //TODO Get this from client programatically
-  var viperFileEndings: Array[String] = Array("vpr", ".sil")
+  var viperFileEndings: Array[String] = Array("vpr", "sil")
 
   def uriFromString(uri: String): URI = {
     URI.create(uri)

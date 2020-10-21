@@ -11,6 +11,7 @@ package viper.server.frontends.lsp
 import viper.server.frontends.lsp.LogLevel._
 
 object Log {
+
   def log(message: String, logLevel: LogLevel) = {
     require(message != null && logLevel != null)
     Coordinator.client.notifyLog(message, logLevel.id)
@@ -48,16 +49,6 @@ object Log {
       log(msg_with_origin, logLevel)
     }
   }
-
-// -> ??
-//  def logOutput(process: child_process.ChildProcess, label: String) = {
-//    process.stdout.on('data', (data: String) => {
-//      Log.logWithOrigin(label, data, LogLevel.LowLevelDebug)
-//    })
-//    process.stdout.on('data', (data: String) => {
-//      Log.logWithOrigin(label + " error", data, LogLevel.LowLevelDebug)
-//    })
-//  }
 
   def hint(message: String, showSettingsButton: Boolean = false, showViperToolsUpdateButton: Boolean = false) = {
     Coordinator.client.notifyHint(S2C_Commands.Hint, Hint(message, showSettingsButton, showViperToolsUpdateButton ))

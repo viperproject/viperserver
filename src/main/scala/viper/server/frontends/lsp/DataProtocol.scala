@@ -16,7 +16,7 @@ object VerificationSuccess extends Enumeration {
   val NA, Success, ParsingFailed, TypecheckingFailed = Value
   val VerificationFailed = Value  // Manually aborted verification
   val Aborted = Value             // Caused by internal error
-  val Error = Value               // Caused by veification taking too long
+  val Error = Value               // Caused by verification taking too long
   val Timeout = Value
 }
 import viper.server.frontends.lsp.VerificationSuccess._
@@ -42,13 +42,13 @@ import viper.server.frontends.lsp.SettingsErrorType._
 object LogLevel extends Enumeration {
   type LogLevel = Value
 
-  val None = Value      // No output
-  val Default = Value   // Only verification specific output
-  val Info = Value      // Some info about internal state, critical errors
-  val Verbose = Value   // More info about internal state
-  val Debug = Value     // Detailed information about internal state, non critical errors
-  val LowLevelDebug = Value   // all output of used tools is written to logFile,
-}                             // some of it also to the console
+  val None = Value // No output
+  val Default = Value // Only verification specific output
+  val Info = Value // Some info about internal state, critical errors
+  val Verbose = Value // More info about internal state
+  val Debug = Value // Detailed information about internal state, non critical errors
+  val LowLevelDebug = Value // all output of used tools is written to logFile, some of it also to the console
+}
 
 object BackendOutputType {
   val Start = "Start"
@@ -120,8 +120,7 @@ case class BackendOutput(
               nofFunctions: Int = -1,  //for End
               time: Long = -1,  //for Error
               file: String = null,
-              errors: Array[Error] = null,  //for Outlin
-//              members: Array[Member] = null,  //for Definitions
+              errors: Array[Error] = null,  //for Outline
               definitions: Array[Definition] = null)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
