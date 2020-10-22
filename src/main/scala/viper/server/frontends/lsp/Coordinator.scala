@@ -10,10 +10,7 @@ package viper.server.frontends.lsp
 
 import java.util.concurrent.CompletableFuture
 
-import org.eclipse.lsp4j.TextDocumentItem
-
 import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 
 object Coordinator {
   var port: Int = _

@@ -8,16 +8,22 @@
 
 package viper.server.frontends.lsp
 
+/** This file contains custom LSP commands.
+  *
+  * There exists a similar file in the Viper IDE client, called 'ViperProtocol.ts', that should
+  * contain the same set of commands. The set of commands in both files should be kept in sync.
+  * */
+
 object C2S_Commands {
-  final val RequestBackendNames = "RequestBackendNames" //void
-  final val Dispose = "Dispose" //void
-  final val Verify = "Verify" //VerifyParams
-  final val StopVerification = "StopVerification"//filePath:String
-  final val ShowHeap = "ShowHeap"//ShowHeapParams
-  final val StartBackend = "StartBackend"//backendName:String
-  final val StopBackend = "StopBackend"//void
-  final val SwapBackend = "SwapBackend"//backendName:String
-  final val GetExecutionTrace = "GetExecutionTrace"//GetExecutionTraceParams -> trace:ExecutionTrace[]
+  final val RequestBackendNames = "RequestBackendNames"
+  final val Dispose = "Dispose"
+  final val Verify = "Verify"
+  final val StopVerification = "StopVerification"
+  final val ShowHeap = "ShowHeap"
+  final val StartBackend = "StartBackend"
+  final val StopBackend = "StopBackend"
+  final val SwapBackend = "SwapBackend"
+  final val GetExecutionTrace = "GetExecutionTrace"
   final val RemoveDiagnostics = "RemoveDiagnostics"
   final val UpdateViperTools = "UpdateViperTools"
   final val GetViperFileEndings = "GetViperFileEndings"
@@ -30,21 +36,21 @@ object C2S_Commands {
 object S2C_Commands {
   final val BackendChange = "BackendChange"
   final val CheckIfSettingsVersionsSpecified = "CheckIfSettingsVersionsSpecified"
-  final val SettingsChecked = "SettingsChecked"   //SettingsCheckedParams
-  final val RequestRequiredVersion = "RequestRequiredVersion"   //void -> requiredVersions: Versions
-  final val StateChange = "StateChange"   //StateChangeParams
-  final val Log = "Log"   //LogParams
-  final val Error = "Error"   //LogParams
-  final val ToLogFile = "ToLogFile"   //LogParams
-  final val Hint = "Hint"   //message: String
-  final val Progress = "Progress"   //message: {domain:String, curr:number, total:number}
-  final val FileOpened = "FileOpened"   //uri: String
-  final val FileClosed = "FileClosed"   //uri: String
-  final val VerificationNotStarted = "VerificationNotStarted"   //uri: String
-  final val StopDebugging = "StopDebugging"   //void
-  final val BackendReady = "BackendReady"   //BackendReadyParams
-  final val StepsAsDecorationOptions = "StepsAsDecorationOptions"   //StepsAsDecorationOptionsResult
-  final val HeapGraph = "HeapGraph"   //HeapGraph
+  final val SettingsChecked = "SettingsChecked"
+  final val RequestRequiredVersion = "RequestRequiredVersion"
+  final val StateChange = "StateChange"
+  final val Log = "Log"
+  final val Error = "Error"
+  final val ToLogFile = "ToLogFile"
+  final val Hint = "Hint"
+  final val Progress = "Progress"
+  final val FileOpened = "FileOpened"
+  final val FileClosed = "FileClosed"
+  final val VerificationNotStarted = "VerificationNotStarted"
+  final val StopDebugging = "StopDebugging"
+  final val BackendReady = "BackendReady"
+  final val StepsAsDecorationOptions = "StepsAsDecorationOptions"
+  final val HeapGraph = "HeapGraph"
   final val UnhandledViperServerMessageType = "UnhandledViperServerMessageType"
   final val BackendStarted = "BackendStarted"
 }

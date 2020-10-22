@@ -278,7 +278,6 @@ class CustomReceiver extends StandardReceiver {
   }
 
   override def connect(client: LanguageClient): Unit = {
-    Log.debug("Connecting plugin client.")
     val c = client.asInstanceOf[IdeLanguageClient]
     Coordinator.client = c
   }
