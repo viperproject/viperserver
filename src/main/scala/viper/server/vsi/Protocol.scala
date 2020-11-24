@@ -16,15 +16,33 @@ object TaskProtocol {
   case class FinalBackendReport(success: Boolean)
 }
 
-// Protocol to start/stop verification process.
 object VerificationProtocol {
 
-  // Request Job Actor to execute verification task
-  case class Verify(task: Thread, queue: SourceQueueWithComplete[Envelope], publisher: Publisher[Envelope])
+  sealed trait StartProcessRequest {
+    val task: Thread
+    val queue: SourceQueueWithComplete[Envelope]
+    val publisher: Publisher[Envelope]
+  }
 
-  // Verification interrupt request to Terminator Actor
-  case class Stop()
+  // Request Job Actor to execute an AST construction task
+  case class ConstructAst(task: Thread,
+                          queue: SourceQueueWithComplete[Envelope],
+                          publisher: Publisher[Envelope]) extends StartProcessRequest
+
+  // Request Job Actor to execute a verification task
+  case class Verify(task: Thread,
+                    queue: SourceQueueWithComplete[Envelope],
+                    publisher: Publisher[Envelope]) extends StartProcessRequest
+
+  sealed trait StopProcessRequest
+
+  // Request Job Actor to stop its verification task
+  case object StopAstConstruction extends StopProcessRequest
+
+  // Request Job Actor to stop its verification task
+  case object StopVerification extends StopProcessRequest
 }
+
 
 object Requests extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
 

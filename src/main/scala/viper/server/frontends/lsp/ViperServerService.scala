@@ -18,10 +18,9 @@ import viper.server.core.{ViperCache, ViperCoreServer}
 import viper.server.frontends.lsp.VerificationState.Stopped
 import viper.server.utility.AstGenerator
 import viper.server.utility.Helpers.getArgListFromArgString
-import viper.server.vsi.VerificationProtocol.Stop
+import viper.server.vsi.VerificationProtocol.StopVerification
 import viper.server.vsi.{VerJobId, VerificationServer}
 import viper.silver.ast.Program
-import viper.silver.reporter.{Message, Reporter}
 
 import scala.compat.java8.FutureConverters._
 import scala.concurrent.Future
@@ -99,7 +98,7 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) with
       Log.info(s"Verification process #${jid.id} has successfully started.")
     } else {
       Log.debug(s"Could not start verification process. " +
-        s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
+        s"the maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
     }
     jid
   }
@@ -111,11 +110,11 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) with
   }
 
   def stopVerification(jid: VerJobId): CFuture[Boolean] = {
-    jobs.lookupJob(jid) match {
+    ver_jobs.lookupJob(jid) match {
       case Some(handle_future) =>
         handle_future.flatMap(handle => {
           implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-          val interrupt: Future[String] = (handle.job_actor ? Stop()).mapTo[String]
+          val interrupt: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
           handle.job_actor ! PoisonPill // the actor played its part.
           interrupt
         }).toJava.toCompletableFuture.thenApply(msg => {

@@ -46,6 +46,28 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
     println(s"ViperCoreServer started.")
   }
 
+
+
+
+//  def requestAst(input: String): AstJobId = {
+//    require(config != null)
+//
+//    if (!ast_jobs.newJobsAllowed) {
+//      logger.get.error(s"Could not start AST construction process. " +
+//        s"The maximum number of active jobs are currently running (${ast_jobs.MAX_ACTIVE_JOBS}).")
+//      return AstJobId(-1)
+//    }
+//
+//    val task_backend = new AstWorker(input, logger.get)
+//    val ast_id = initializeAstConstruction(Future.successful(task_backend))
+//    ast_jobs.run_job(ast_id)
+//
+//    if (ast_id.id >= 0) {
+//      logger.get.info(s"AST construction of $ast_id has successfully started.")
+//    }
+//    ast_id
+//  }
+
   /** Verifies a Viper AST using the specified backend.
     *
     * Expects a non-null backend config and Viper AST.
@@ -64,7 +86,7 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
       logger.get.info(s"Verification process #${jid.id} has successfully started.")
     } else {
       logger.get.error(s"Could not start verification process. " +
-        s"The maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
+        s"The maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
     }
     jid
   }

@@ -16,7 +16,7 @@ import akka.http.scaladsl.server.Route
 import akka.pattern.ask
 import akka.stream.scaladsl.Source
 import akka.util.Timeout
-import viper.server.vsi.VerificationProtocol.Stop
+import viper.server.vsi.VerificationProtocol.StopVerification
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -63,9 +63,10 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
   var bindingFuture: Future[Http.ServerBinding] = _
 
   override def start(active_jobs: Int): Unit = {
-    jobs = new JobPool[VerJobId, VerHandle](active_jobs)
-    bindingFuture = Http().bindAndHandle(setRoutes, "localhost", port)
-    _termActor = system.actorOf(Terminator.props(jobs, Some(bindingFuture)), "terminator")
+    ast_jobs = new JobPool("AST-pool", active_jobs)
+    ver_jobs = new JobPool("Verification-pool", active_jobs)
+    bindingFuture = Http().bindAndHandle(setRoutes(), "localhost", port)
+    _termActor = system.actorOf(Terminator.props(ast_jobs, ver_jobs, Some(bindingFuture)), "terminator")
     isRunning = true
   }
 
@@ -113,23 +114,43 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
         complete(onVerifyPost(r))
       }
     }
+  } ~ path("ast" / IntNumber) { jid =>
+
+    get {
+      ast_jobs.lookupJob(AstJobId(jid)) match {
+        case Some(handle_future) =>
+          onComplete(handle_future) {
+            case Success(handle) =>
+              val s = Source.fromPublisher(handle.publisher)
+              _termActor ! Terminator.WatchJobQueue(VerJobId(jid), handle)
+              complete(unpackMessages(s))
+            case Failure(error) =>
+              // TODO use AST-specific response
+              complete(verificationRequestRejection(jid, error))
+          }
+        case None =>
+          // TODO use AST-specific response
+          complete(verificationRequestRejection(jid, JobNotFoundException()))
+      }
+    }
+
   } ~ path("verify" / IntNumber) { jid =>
     /** Send GET request to "/verify/<jid>" where <jid> is a non-negative integer.
       * <jid> must be an ID of an existing verification job.
       */
     get {
-      jobs.lookupJob(VerJobId(jid)) match {
+      ver_jobs.lookupJob(VerJobId(jid)) match {
         case Some(handle_future) =>
           // Found a job with this jid.
           onComplete(handle_future) {
             case Success(handle) =>
-              val s: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
+              val s: Source[Envelope, NotUsed] = Source.fromPublisher(handle.publisher)
               _termActor ! Terminator.WatchJobQueue(VerJobId(jid), handle)
               complete(unpackMessages(s))
             case Failure(error) =>
               complete(verificationRequestRejection(jid, error))
           }
-        case _ =>
+        case None =>
           complete(verificationRequestRejection(jid, JobNotFoundException()))
       }
     }
@@ -138,12 +159,12 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
       * <jid> must be an ID of an existing verification job.
       */
     get {
-      jobs.lookupJob(VerJobId(jid)) match {
+      ver_jobs.lookupJob(VerJobId(jid)) match {
         case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>
               implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-              val interrupt_done: Future[String] = (handle.job_actor ? Stop).mapTo[String]
+              val interrupt_done: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
               onSuccess(interrupt_done) { msg =>
                 handle.job_actor ! PoisonPill // the actor played its part.
                 complete(discardJobConfirmation(jid, msg))

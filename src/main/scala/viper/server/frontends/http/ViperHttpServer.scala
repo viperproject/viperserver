@@ -26,7 +26,7 @@ import viper.server.vsi.Requests.CacheResetRequest
 import viper.server.vsi._
 import viper.silver.ast.Program
 import viper.silver.logger.ViperLogger
-import viper.silver.reporter.{Message, Reporter}
+import viper.silver.reporter.Message
 
 import scala.util.{Failure, Success, Try}
 
@@ -98,8 +98,8 @@ class ViperHttpServer(_args: Array[String])
       VerificationRequestAccept(jid.id)
     } else {
       logger.get.error(s"Could not start verification process. " +
-        s"The maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
-      VerificationRequestReject(s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
+        s"The maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
+      VerificationRequestReject(s"the maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
     }
   }
 

@@ -13,8 +13,12 @@ sealed trait JobId {
   override def toString: String = s"${tag}_id_${id}"
 }
 
+case class AstJobId(id: Int) extends JobId {
+  def tag = "AST"
+}
+
 case class VerJobId(id: Int) extends JobId {
-  def tag = "ver"
+  def tag = "VER"
 }
 
 sealed trait JobHandle {
@@ -24,13 +28,19 @@ sealed trait JobHandle {
   val publisher: Publisher[Envelope]
 }
 
+case class AstHandle(job_actor: ActorRef,
+                     queue: SourceQueueWithComplete[Envelope],
+                     publisher: Publisher[Envelope]) extends JobHandle {
+  def tag = "AST"
+}
+
 case class VerHandle(job_actor: ActorRef,
                      queue: SourceQueueWithComplete[Envelope],
                      publisher: Publisher[Envelope]) extends JobHandle {
   def tag = "VER"
 }
 
-class JobPool[S <: JobId, T <: JobHandle](val MAX_ACTIVE_JOBS: Int = 3)
+class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: Int = 3)
                                          (implicit val jid_fact: Int => S) {
 
   private val _jobHandles: mutable.Map[S, Promise[T]] = mutable.Map()
