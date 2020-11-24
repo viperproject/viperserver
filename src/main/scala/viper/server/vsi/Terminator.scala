@@ -14,16 +14,16 @@ object Terminator {
   case object Exit
   case class WatchJobQueue(jid: JobId, handle: JobHandle)
 
-  def props(ast_jobs: JobPool[AstJobId, AstHandle],
-            ver_jobs: JobPool[VerJobId, VerHandle],
-            bindingFuture: Option[Future[Http.ServerBinding]] = None)
+  def props[R](ast_jobs: JobPool[AstJobId, AstHandle[R]],
+               ver_jobs: JobPool[VerJobId, VerHandle],
+               bindingFuture: Option[Future[Http.ServerBinding]] = None)
             (implicit ctx: ExecutionContext, sys: ActorSystem): Props
   = Props(new Terminator(ast_jobs, ver_jobs, bindingFuture)(ctx, sys))
 }
 
-class Terminator(ast_jobs: JobPool[AstJobId, AstHandle],
-                 ver_jobs: JobPool[VerJobId, VerHandle],
-                 bindingFuture: Option[Future[Http.ServerBinding]])
+class Terminator[R](ast_jobs: JobPool[AstJobId, AstHandle[R]],
+                    ver_jobs: JobPool[VerJobId, VerHandle],
+                    bindingFuture: Option[Future[Http.ServerBinding]])
                 (implicit val ctx: ExecutionContext,
                  implicit val sys: ActorSystem) extends Actor {
 

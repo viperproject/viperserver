@@ -58,7 +58,7 @@ class JobActor[T](private val id: JobId) extends Actor {
           resetAstConstructionTask()
           _astConstructionTask = req.task
           _astConstructionTask.start()
-          sender ! AstHandle(self, req.queue, req.publisher/*, _astConstructionTask.getArtifact*/)
+          sender ! AstHandle(self, req.queue, req.publisher, _astConstructionTask.getArtifact)
 
         case _: Verify[T] =>
           println(">>> JobActor received request Verify")

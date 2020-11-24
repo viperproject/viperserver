@@ -50,7 +50,7 @@ trait VerificationServer extends Post {
   implicit val ast_id_fact: Int => AstJobId = AstJobId.apply
   implicit val ver_id_fact: Int => VerJobId = VerJobId.apply
 
-  protected var ast_jobs: JobPool[AstJobId, AstHandle] = _
+  protected var ast_jobs: JobPool[AstJobId, AstHandle[AST]] = _
   protected var ver_jobs: JobPool[VerJobId, VerHandle] = _
 
   var isRunning: Boolean = false

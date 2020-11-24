@@ -28,9 +28,10 @@ sealed trait JobHandle {
   val publisher: Publisher[Envelope]
 }
 
-case class AstHandle(job_actor: ActorRef,
-                     queue: SourceQueueWithComplete[Envelope],
-                     publisher: Publisher[Envelope]) extends JobHandle {
+case class AstHandle[R](job_actor: ActorRef,
+                        queue: SourceQueueWithComplete[Envelope],
+                        publisher: Publisher[Envelope],
+                        artifact: Future[R]) extends JobHandle {
   def tag = "AST"
 }
 
