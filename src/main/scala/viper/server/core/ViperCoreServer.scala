@@ -9,15 +9,14 @@ package viper.server.core
 import akka.actor.ActorRef
 import viper.server.ViperConfig
 import viper.server.core.ViperBackendConfigs._
-import viper.server.vsi.{Envelope, VerJobId, VerificationServer}
+import viper.server.vsi.{VerJobId, VerificationServer}
 import viper.silver.ast.Program
 import viper.silver.logger.ViperLogger
-import viper.silver.reporter.Message
 
 import scala.concurrent.Future
 import scala.language.postfixOps
 
-class ViperCoreServer(val _args: Array[String]) extends VerificationServer {
+class ViperCoreServer(val _args: Array[String]) extends VerificationServer with ViperPost {
 
   override type AST = Program
 
@@ -88,10 +87,5 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer {
     super.stop()
   }
 
-  override type A = Message
-  override def unpack(e: Envelope): A = {
-    e match {
-      case SilverEnvelope(m) => m
-    }
-  }
+
 }

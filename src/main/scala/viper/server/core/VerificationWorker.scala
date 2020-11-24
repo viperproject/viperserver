@@ -9,7 +9,7 @@ package viper.server.core
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperConfig
-import viper.server.vsi.{Envelope, MessageStreamingTask}
+import viper.server.vsi.Envelope
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
 import viper.silver.frontend.{DefaultStates, SilFrontend}
@@ -28,12 +28,12 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
   override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be found."
 }
 
-case class SilverEnvelope(m: Message) extends Envelope
+case class ViperEnvelope(m: Message) extends Envelope
 
 class VerificationWorker(private val viper_config: ViperConfig,
                          private val logger: Logger,
                          private val command: List[String],
-                         private val program: Program)(implicit val ec: ExecutionContext) extends MessageStreamingTask[Program] {
+                         private val program: Program)(implicit val ec: ExecutionContext) extends MessageReportingTask {
 
   override def artifact: Future[Program] = Future.successful(program)
   private var backend: ViperBackend = _
@@ -54,15 +54,6 @@ class VerificationWorker(private val viper_config: ViperConfig,
         throw ViperServerWrongTypeException(instance.getClass.getName)
       case _ =>
         throw ViperServerBackendNotFoundException(clazzName)
-    }
-  }
-
-  // Implementation of the Reporter interface used by the backend.
-  class ActorReporter(val tag: String) extends Reporter {
-    val name = s"ViperServer_$tag"
-
-    def report(msg: Message): Unit = {
-      enqueueMessages(msg)
     }
   }
 
@@ -89,7 +80,7 @@ class VerificationWorker(private val viper_config: ViperConfig,
       case _: InterruptedException =>
       case _: java.nio.channels.ClosedByInterruptException =>
       case e: Throwable =>
-        enqueueMessages(ExceptionReport(e))
+        enqueueMessage(ExceptionReport(e))
         logger.trace(s"Creation/Execution of the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
     } finally {
       try {
@@ -111,7 +102,7 @@ class VerificationWorker(private val viper_config: ViperConfig,
   override type A = Message
 
   override def pack(m: A): Envelope = {
-    SilverEnvelope(m)
+    ViperEnvelope(m)
   }
 }
 

@@ -17,9 +17,11 @@ import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, Silico
 import viper.server.core.{ViperCache, ViperCoreServer}
 import viper.server.frontends.lsp.VerificationState.Stopped
 import viper.server.utility.AstGenerator
+import viper.server.utility.Helpers.getArgListFromArgString
 import viper.server.vsi.VerificationProtocol.Stop
 import viper.server.vsi.{VerJobId, VerificationServer}
 import viper.silver.ast.Program
+import viper.silver.reporter.{Message, Reporter}
 
 import scala.compat.java8.FutureConverters._
 import scala.concurrent.Future
@@ -63,15 +65,6 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) with
     }
   }
 
-  private def getArgListFromArgString(arg_str: String): List[String] = {
-    val possibly_quoted_string = raw"""[^\s"']+|"[^"]*"|'[^']*'""".r
-    val quoted_string = """^["'](.*)["']$""".r
-    possibly_quoted_string.findAllIn(arg_str).toList.map {
-      case quoted_string(noqt_a) => noqt_a
-      case a => a
-    }
-  }
-
   def verify(command: String): VerJobId = {
     Log.debug("Requesting ViperServer to start new job...")
 
@@ -80,7 +73,7 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) with
     val arg_list_partial = arg_list.dropRight(1)
 
     // Parse file
-    val astGen = new AstGenerator(logger)
+    val astGen = new AstGenerator(_logger.get)
     var ast_option: Option[Program] = None
     try {
       ast_option = astGen.generateViperAst(file)

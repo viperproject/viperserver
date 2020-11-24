@@ -27,7 +27,7 @@ class ParsingTests extends WordSpec with Matchers with ScalatestRouteTest {
   "AstGenerator" should {
     var ast_gen: AstGenerator = null
     s"should be instantiated without errors" in {
-      ast_gen = new AstGenerator(console_logger)
+      ast_gen = new AstGenerator(console_logger.get)
     }
 
     var test_ast: Option[Program] = null

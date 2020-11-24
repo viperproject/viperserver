@@ -36,7 +36,7 @@ case class JobNotFoundException() extends VerificationServerException
   *  between a VerificationTask's backend and the server. The Terminator Actor is in charge of
   *  terminating both individual processes and the server.
   */
-trait VerificationServer extends Unpacker {
+trait VerificationServer extends Post {
 
   type AST
 

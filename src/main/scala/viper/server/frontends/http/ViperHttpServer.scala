@@ -21,11 +21,12 @@ import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, Silico
 import viper.server.core.{ViperCache, ViperCoreServer}
 import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
 import viper.server.utility.AstGenerator
+import viper.server.utility.Helpers.getArgListFromArgString
 import viper.server.vsi.Requests.CacheResetRequest
 import viper.server.vsi._
 import viper.silver.ast.Program
 import viper.silver.logger.ViperLogger
-import viper.silver.reporter.Message
+import viper.silver.reporter.{Message, Reporter}
 
 import scala.util.{Failure, Success, Try}
 
@@ -69,7 +70,7 @@ class ViperHttpServer(_args: Array[String])
     val arg_list_partial = arg_list.dropRight(1)
 
     // Parse file
-    val astGen = new AstGenerator(_logger)
+    val astGen = new AstGenerator(_logger.get)
     var ast_option: Option[Program] = None
     try {
       ast_option = astGen.generateViperAst(file)
@@ -208,15 +209,6 @@ class ViperHttpServer(_args: Array[String])
           }
         }
       }
-    }
-  }
-
-  private def getArgListFromArgString(arg_str: String): List[String] = {
-    val possibly_quoted_string = raw"""[^\s"']+|"[^"]*"|'[^']*'""".r
-    val quoted_string = """^["'](.*)["']$""".r
-    possibly_quoted_string.findAllIn(arg_str).toList.map {
-      case quoted_string(noqt_a) => noqt_a
-      case a => a
     }
   }
 }

@@ -20,7 +20,7 @@ import scala.concurrent.duration._
   *  The first serves the purpose of running the process concurrently. The second allows to
   *  communicate from the verification process to the server.
   * */
-abstract class MessageStreamingTask[T]()(implicit val executionContext: ExecutionContext) extends Runnable with Packer {
+abstract class MessageStreamingTask[T]()(implicit val executionContext: ExecutionContext) extends Runnable with Post {
 
   def artifact: Future[T]
 
@@ -36,11 +36,11 @@ abstract class MessageStreamingTask[T]()(implicit val executionContext: Executio
     * which  will eventually indicate whether or not the offer was successful. This method is
     * blocking, as it waits for the successful completion of such an offer.
     * */
-  protected def enqueueMessages(msg: A): Unit = {
+  protected def enqueueMessage(msg: Envelope): Unit = {
     implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
 
     var current_offer: Future[QueueOfferResult] = null
-    val answer = q_actor ? TaskProtocol.BackendReport(pack(msg))
+    val answer = q_actor ? TaskProtocol.BackendReport(msg)
     current_offer = answer.flatMap({
       case res: Future[QueueOfferResult] => res
     })
