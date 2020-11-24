@@ -108,9 +108,9 @@ trait VerificationServer extends Post {
 
         (job_actor ? (new_jid match {
           case _: AstJobId =>
-            VerificationProtocol.ConstructAst(new Thread(task), queue, publisher)
+            VerificationProtocol.ConstructAst(new TaskThread(task), queue, publisher)
           case _: VerJobId =>
-            VerificationProtocol.Verify(new Thread(task), queue, publisher)
+            VerificationProtocol.Verify(new TaskThread(task), queue, publisher)
         })).mapTo[T]
       }).flatten
     })

@@ -2,20 +2,29 @@ package viper.server.vsi
 
 import akka.actor.{Actor, Props}
 
+import scala.concurrent.Future
+
+
+class TaskThread[T](private val _task: MessageStreamingTask[T]) extends Thread(_task) {
+  def getArtifact: Future[T] = _task.artifact
+}
+
 // --- Actor: JobActor ---
 
 object JobActor {
-  def props(id: JobId): Props = Props(new JobActor(id))
+  def props[T](id: JobId): Props = Props(new JobActor[T](id))
 }
 
-class JobActor(private val id: JobId) extends Actor {
+class JobActor[T](private val id: JobId) extends Actor {
 
   import VerificationProtocol._
 
-  private var _astConstructionTask: Thread = _
-  private var _verificationTask: Thread = _
 
-  private def interrupt(task: Thread): Boolean = {
+
+  private var _astConstructionTask: TaskThread[T] = _
+  private var _verificationTask: TaskThread[T] = _
+
+  private def interrupt(task: TaskThread[T]): Boolean = {
     if (task != null && task.isAlive) {
       task.interrupt()
       task.join()
@@ -24,7 +33,7 @@ class JobActor(private val id: JobId) extends Actor {
     false
   }
 
-  private def resetTask(task: Thread): Unit = {
+  private def resetTask(task: TaskThread[T]): Unit = {
     if (task != null && task.isAlive) {
       task.interrupt()
       task.join()
@@ -42,15 +51,16 @@ class JobActor(private val id: JobId) extends Actor {
   }
 
   override def receive: PartialFunction[Any, Unit] = {
-    case req: StartProcessRequest =>
+    case req: StartProcessRequest[T] =>
       req match {
-        case _: ConstructAst =>
+        case _: ConstructAst[T] =>
           println(">>> JobActor received request ConstructAst")
           resetAstConstructionTask()
           _astConstructionTask = req.task
           _astConstructionTask.start()
-          sender ! AstHandle(self, req.queue, req.publisher)
-        case _: Verify =>
+          sender ! AstHandle(self, req.queue, req.publisher/*, _astConstructionTask.getArtifact*/)
+
+        case _: Verify[T] =>
           println(">>> JobActor received request Verify")
           resetVerificationTask()
           _verificationTask = req.task
