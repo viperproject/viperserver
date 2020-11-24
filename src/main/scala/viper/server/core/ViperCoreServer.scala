@@ -9,7 +9,7 @@ package viper.server.core
 import akka.actor.ActorRef
 import viper.server.ViperConfig
 import viper.server.core.ViperBackendConfigs._
-import viper.server.vsi.{Envelope, JobID, VerificationServer}
+import viper.server.vsi.{Envelope, VerJobId, VerificationServer}
 import viper.silver.ast.Program
 import viper.silver.logger.ViperLogger
 import viper.silver.reporter.Message
@@ -49,7 +49,7 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer {
     *
     * Expects a non-null backend config and Viper AST.
     * */
-  def verify(programID: String, backend_config: ViperBackendConfig, program: Program): JobID = {
+  def verify(programID: String, backend_config: ViperBackendConfig, program: Program): VerJobId = {
     require(program != null && backend_config != null)
 
     val args: List[String] = backend_config match {
@@ -68,7 +68,7 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer {
     jid
   }
 
-  override def streamMessages(jid: JobID, clientActor: ActorRef): Option[Future[Unit]] = {
+  override def streamMessages(jid: VerJobId, clientActor: ActorRef): Option[Future[Unit]] = {
     logger.get.info(s"Streaming results for job #${jid.id}.")
     super.streamMessages(jid, clientActor)
   }

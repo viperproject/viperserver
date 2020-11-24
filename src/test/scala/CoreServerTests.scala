@@ -72,7 +72,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         core.start()
       }
 
-      var jid: JobID = null
+      var jid: VerJobId = null
       "be able to execute 'verify()' without exceptions" in {
         jid = core.verify(verificationError_file, noCache_backend, verificationError_ast)
         assert(jid != null)
@@ -116,7 +116,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         core.start()
       }
 
-      var jid: JobID = null
+      var jid: VerJobId = null
       "be able to execute 'verify()' without exceptions" in {
         jid = core.verify(sum_file, cache_backend, sum_ast)
         assert(jid != null)
@@ -143,7 +143,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       }
 
       "see the future returned by 'getMessagesFuture()' eventually complete unsuccessfully for an inexistent job" in {
-        val wrong_jid = JobID(42)
+        val wrong_jid = VerJobId(42)
         messages_future = ViperCoreServerUtils.getMessagesFuture(core, wrong_jid)
         while (!messages_future.isCompleted) {
           Thread.sleep(100)
@@ -173,7 +173,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       core.start()
 
       val filesAndProgs: List[(String, Program)] = files.zip(programs)
-      var handlers: List[JobID] = null
+      var handlers: List[VerJobId] = null
       "be able to have 'verify()' executed repeatedly without exceptions" in {
         handlers = filesAndProgs map { case (f, p) => core.verify(f, noCache_backend, p) }
       }
@@ -220,7 +220,7 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
       core.start()
 
       val filesAndProgs: List[(String, Program)] = files.zip(programs)
-      var handlers: List[JobID] = null
+      var handlers: List[VerJobId] = null
       "be able to have 'verify()' executed repeatedly without exceptions" in {
         handlers = filesAndProgs map { case (f, p) => core.verify(f, noCache_backend, p) }
       }

@@ -7,10 +7,10 @@ import org.reactivestreams.Publisher
 // --- Actor: JobActor ---
 
 object JobActor {
-  def props(id: Int): Props = Props(new JobActor(id))
+  def props(id: VerJobId): Props = Props(new JobActor(id))
 }
 
-class JobActor(private val id: Int) extends Actor {
+class JobActor(private val id: VerJobId) extends Actor {
 
   private var _verificationTask: Thread = _
 
@@ -46,9 +46,9 @@ class JobActor(private val id: Int) extends Actor {
       throw new Exception("Main Actor: unexpected message received: " + msg)
   }
 
-  private def startJob(task: Thread, queue: SourceQueueWithComplete[Envelope], publisher: Publisher[Envelope]): JobHandle = {
+  private def startJob(task: Thread, queue: SourceQueueWithComplete[Envelope], publisher: Publisher[Envelope]): VerHandle = {
     _verificationTask = task
     _verificationTask.start()
-    JobHandle(self, queue, publisher)
+    VerHandle(self, queue, publisher)
   }
 }

@@ -9,7 +9,7 @@ package viper.server.core
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
-import viper.server.vsi.{JobID, JobNotFoundException}
+import viper.server.vsi.{VerJobId, JobNotFoundException}
 import viper.silver.reporter.{EntityFailureMessage, Message}
 import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 
@@ -43,7 +43,7 @@ object ViperCoreServerUtils {
     *
     * Deletes the jobHandle on completion.
     */
-  def getMessagesFuture(core: ViperCoreServer, jid: JobID)(implicit actor_system: ActorSystem): Future[List[Message]] = {
+  def getMessagesFuture(core: ViperCoreServer, jid: VerJobId)(implicit actor_system: ActorSystem): Future[List[Message]] = {
     import scala.language.postfixOps
 
     val actor = actor_system.actorOf(SeqActor.props())
@@ -66,7 +66,7 @@ object ViperCoreServerUtils {
     *
     * Deletes the jobHandle on completion.
     */
-  def getResultsFuture(core: ViperCoreServer, jid: JobID)(implicit actor_system: ActorSystem): Future[VerificationResult] = {
+  def getResultsFuture(core: ViperCoreServer, jid: VerJobId)(implicit actor_system: ActorSystem): Future[VerificationResult] = {
     val messages_future = getMessagesFuture(core, jid)
     val result_future: Future[VerificationResult] = messages_future.map(msgs => {
 

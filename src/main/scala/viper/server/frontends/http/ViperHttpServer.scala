@@ -90,7 +90,7 @@ class ViperHttpServer(_args: Array[String])
         return VerificationRequestReject("Invalid arguments for backend.")
     }
 
-    val jid: JobID = verify(file, backend, ast)
+    val jid: VerJobId = verify(file, backend, ast)
 
     if (jid.id >= 0) {
       logger.get.info(s"Verification process #${jid.id} has successfully started.")

@@ -17,7 +17,7 @@ import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, Location, Position, Pu
 import viper.server.frontends.lsp
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
-import viper.server.vsi.JobID
+import viper.server.vsi.VerJobId
 import viper.silver.ast.{Domain, Field, Function, Method, Predicate, SourcePosition}
 import viper.silver.reporter._
 
@@ -89,7 +89,7 @@ class FileManager(file_uri: String) {
     }
     Log.info("Aborting running verification.")
     is_aborting = true
-    Coordinator.verifier.stopVerification(JobID(jid)).thenAccept(_ => {
+    Coordinator.verifier.stopVerification(VerJobId(jid)).thenAccept(_ => {
       is_verifying = false
       lastSuccess = Aborted
     }).exceptionally(e => {

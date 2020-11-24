@@ -12,14 +12,14 @@ import scala.util.{Failure, Success}
 
 object Terminator {
   case object Exit
-  case class WatchJobQueue(jid: JobID, handle: JobHandle)
+  case class WatchJobQueue(jid: VerJobId, handle: VerHandle)
 
-  def props(jobs: JobPool,
+  def props(jobs: JobPool[VerJobId, VerHandle],
             bindingFuture: Option[Future[Http.ServerBinding]] = None)
             (implicit ctx: ExecutionContext, sys: ActorSystem): Props = Props(new Terminator(jobs, bindingFuture)(ctx, sys))
 }
 
-class Terminator(jobs: JobPool,
+class Terminator(jobs: JobPool[VerJobId, VerHandle],
                  bindingFuture: Option[Future[Http.ServerBinding]])
                 (implicit val ctx: ExecutionContext,
                  implicit val sys: ActorSystem) extends Actor {

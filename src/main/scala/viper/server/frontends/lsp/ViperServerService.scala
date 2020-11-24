@@ -18,7 +18,7 @@ import viper.server.core.{ViperCache, ViperCoreServer}
 import viper.server.frontends.lsp.VerificationState.Stopped
 import viper.server.utility.AstGenerator
 import viper.server.vsi.VerificationProtocol.Stop
-import viper.server.vsi.{JobID, VerificationServer}
+import viper.server.vsi.{VerJobId, VerificationServer}
 import viper.silver.ast.Program
 
 import scala.compat.java8.FutureConverters._
@@ -72,7 +72,7 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) with
     }
   }
 
-  def verify(command: String): JobID = {
+  def verify(command: String): VerJobId = {
     Log.debug("Requesting ViperServer to start new job...")
 
     val arg_list = getArgListFromArgString(command)
@@ -87,11 +87,11 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) with
     } catch {
       case _: java.nio.file.NoSuchFileException =>
         Log.debug("The file for which verification has been requested was not found.")
-        return JobID(-1)
+        return VerJobId(-1)
     }
     val ast = ast_option.getOrElse({
       Log.debug("The file for which verification has been requested contained syntax errors.")
-      return JobID(-1)
+      return VerJobId(-1)
     })
 
     // prepare backend config
@@ -101,7 +101,7 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) with
       case "custom" :: args => CustomConfig(args)
     }
 
-    val jid: JobID = verify(file, backend, ast)
+    val jid: VerJobId = verify(file, backend, ast)
     if (jid.id >= 0) {
       Log.info(s"Verification process #${jid.id} has successfully started.")
     } else {
@@ -111,13 +111,13 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) with
     jid
   }
 
-  def startStreaming(jid: JobID, relayActor_props: Props): Unit = {
+  def startStreaming(jid: VerJobId, relayActor_props: Props): Unit = {
     Log.debug("Sending verification request to ViperServer...")
     val relay_actor = system.actorOf(relayActor_props)
     streamMessages(jid, relay_actor)
   }
 
-  def stopVerification(jid: JobID): CFuture[Boolean] = {
+  def stopVerification(jid: VerJobId): CFuture[Boolean] = {
     jobs.lookupJob(jid) match {
       case Some(handle_future) =>
         handle_future.flatMap(handle => {

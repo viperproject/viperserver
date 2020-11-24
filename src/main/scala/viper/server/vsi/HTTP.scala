@@ -63,7 +63,7 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
   var bindingFuture: Future[Http.ServerBinding] = _
 
   override def start(active_jobs: Int): Unit = {
-    jobs = new JobPool(active_jobs)
+    jobs = new JobPool[VerJobId, VerHandle](active_jobs)
     bindingFuture = Http().bindAndHandle(setRoutes, "localhost", port)
     _termActor = system.actorOf(Terminator.props(jobs, Some(bindingFuture)), "terminator")
     isRunning = true
@@ -118,13 +118,13 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
       * <jid> must be an ID of an existing verification job.
       */
     get {
-      jobs.lookupJob(JobID(jid)) match {
+      jobs.lookupJob(VerJobId(jid)) match {
         case Some(handle_future) =>
           // Found a job with this jid.
           onComplete(handle_future) {
             case Success(handle) =>
               val s: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
-              _termActor ! Terminator.WatchJobQueue(JobID(jid), handle)
+              _termActor ! Terminator.WatchJobQueue(VerJobId(jid), handle)
               complete(unpackMessages(s))
             case Failure(error) =>
               complete(verificationRequestRejection(jid, error))
@@ -138,7 +138,7 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
       * <jid> must be an ID of an existing verification job.
       */
     get {
-      jobs.lookupJob(JobID(jid)) match {
+      jobs.lookupJob(VerJobId(jid)) match {
         case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>

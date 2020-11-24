@@ -6,11 +6,11 @@ import akka.stream.scaladsl.SourceQueueWithComplete
 // --- Actor: MessageActor ---
 
 object QueueActor {
-  def props(jid: Int, queue: SourceQueueWithComplete[Envelope]): Props =
+  def props(jid: VerJobId, queue: SourceQueueWithComplete[Envelope]): Props =
     Props(new QueueActor(jid, queue))
 }
 
-class QueueActor(jid: Int, queue: SourceQueueWithComplete[Envelope]) extends Actor {
+class QueueActor(jid: VerJobId, queue: SourceQueueWithComplete[Envelope]) extends Actor {
 
   override def receive: PartialFunction[Any, Unit] = {
     case TaskProtocol.BackendReport(msg) =>

@@ -43,10 +43,11 @@ trait VerificationServer extends Unpacker {
   implicit val materializer: ActorMaterializer = ActorMaterializer()
   protected var _termActor: ActorRef = _
 
-  protected var jobs: JobPool = _
+  implicit val jid_fact: Int => VerJobId = VerJobId.apply
+  protected var jobs: JobPool[VerJobId, VerHandle] = _
   var isRunning: Boolean = false
 
-  /** Configures an instance of ViperCoreServer.
+  /** Configures an instance of VerificationServer.
     *
     * This function must be called before any other. Calling any other function before this one
     * will result in an IllegalStateException.
@@ -61,13 +62,13 @@ trait VerificationServer extends Unpacker {
     *
     * As such, it accepts an instance of a VerificationTask, which it will pass to the JobActor.
     */
-  protected def initializeVerificationProcess(task:VerificationTask): JobID = {
+  protected def initializeVerificationProcess(task:VerificationTask): VerJobId = {
     if(!isRunning) {
-      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
+      throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
 
     if (jobs.newJobsAllowed) {
-      def createJob(new_jid: Int): Future[JobHandle] = {
+      def createJob(new_jid: VerJobId): Future[VerHandle] = {
 
         implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
         val job_actor = system.actorOf(JobActor.props(new_jid), s"job_actor_$new_jid")
@@ -78,13 +79,13 @@ trait VerificationServer extends Unpacker {
         task.setQueueActor(message_actor)
         val task_with_actor = new Thread(task)
         val answer = job_actor ? VerificationProtocol.Verify(task_with_actor, queue, publisher)
-        val new_job_handle: Future[JobHandle] = answer.mapTo[JobHandle]
+        val new_job_handle: Future[VerHandle] = answer.mapTo[VerHandle]
         new_job_handle
       }
-      val (id, _) = jobs.bookNewJob(createJob)
-      JobID(id)
+      val id = jobs.bookNewJob(createJob)
+      id
     } else {
-      JobID(-1) // Process Management running  at max capacity.
+      VerJobId(-1) // Process Management running  at max capacity.
     }
   }
 
@@ -92,14 +93,14 @@ trait VerificationServer extends Unpacker {
     *
     * Deletes the JobHandle on completion.
     */
-  protected def streamMessages(jid: JobID, clientActor: ActorRef): Option[Future[Unit]] = {
+  protected def streamMessages(jid: VerJobId, clientActor: ActorRef): Option[Future[Unit]] = {
     if(!isRunning) {
-      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
+      throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
 
     jobs.lookupJob(jid) match {
       case Some(handle_future) =>
-        def mapHandle(handle: JobHandle): Future[Unit] = {
+        def mapHandle(handle: VerHandle): Future[Unit] = {
           val src_envelope: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
           val src_msg: Source[A , NotUsed] = src_envelope.map(e => unpack(e))
           src_msg.runWith(Sink.actorRef(clientActor, Success))
@@ -111,14 +112,14 @@ trait VerificationServer extends Unpacker {
     }
   }
 
-  /** Stops an instance of ViperCoreServer from running.
+  /** Stops an instance of VerificationServer from running.
     *
     * As such it should be the last method called. Calling any other function after stop will
     * result in an IllegalStateException.
     * */
   def stop(): Unit = {
     if(!isRunning) {
-      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
+      throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
     isRunning = false
 
@@ -137,7 +138,7 @@ trait VerificationServer extends Unpacker {
   protected def getInterruptFutureList(): Future[List[String]] = {
     val interrupt_future_list: List[Future[String]] = jobs.jobHandles map { case (jid, handle_future) =>
       handle_future.flatMap {
-        case JobHandle(actor, _, _) =>
+        case VerHandle(actor, _, _) =>
           implicit val askTimeout: Timeout = Timeout(1000 milliseconds)
           (actor ? VerificationProtocol.Stop).mapTo[String]
       }

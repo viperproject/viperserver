@@ -5,41 +5,62 @@ import akka.stream.scaladsl.SourceQueueWithComplete
 import org.reactivestreams.Publisher
 
 import scala.collection.mutable
-import scala.concurrent.Future
+import scala.concurrent.{Future, Promise}
 
-case class JobID(id: Int)
-case class JobHandle(job_actor: ActorRef,
+sealed trait JobId {
+  val id: Int
+  def tag: String
+  override def toString: String = s"${tag}_id_${id}"
+}
+
+case class VerJobId(id: Int) extends JobId {
+  def tag = "ver"
+}
+
+sealed trait JobHandle {
+  def tag: String  // identify the kind of job this is
+  val job_actor: ActorRef
+  val queue: SourceQueueWithComplete[Envelope]
+  val publisher: Publisher[Envelope]
+}
+
+case class VerHandle(job_actor: ActorRef,
                      queue: SourceQueueWithComplete[Envelope],
-                     publisher: Publisher[Envelope])
+                     publisher: Publisher[Envelope]) extends JobHandle {
+  def tag = "VER"
+}
 
-/** This class manages the verification jobs the server receives.
-  */
-class JobPool(val MAX_ACTIVE_JOBS: Int = 3) {
-  var jobHandles: mutable.Map[Int, Future[JobHandle]] = mutable.Map[Int, Future[JobHandle]]()
+class JobPool[S <: JobId, T <: JobHandle](val MAX_ACTIVE_JOBS: Int = 3)
+                                         (implicit val jid_fact: Int => S) {
+
+  private val _jobHandles: mutable.Map[S, Promise[T]] = mutable.Map()
+  private val _jobExecutors: mutable.Map[S, () => Future[T]] = mutable.Map()
+  def jobHandles: Map[S, Future[T]] = _jobHandles.map{ case (id, hand) => (id, hand.future) }.toMap
+
   private var _nextJobId: Int = 0
 
-  def newJobsAllowed = jobHandles.size < MAX_ACTIVE_JOBS
+  def newJobsAllowed: Boolean = jobHandles.size < MAX_ACTIVE_JOBS
 
-  /** Creates a Future of a JobHandle.
-    *
-    * For the next available job ID the function job_executor will set up a JobActor. That actor
-    * will start a verification process and produce a Future JobHandle. The Future will
-    * successfully complete as soon as the verification process was started successfully.
-    * */
-  def bookNewJob(job_executor: Int => Future[JobHandle]): (Int, Future[JobHandle]) = {
-    val new_jid = _nextJobId
-    jobHandles(new_jid) = job_executor(new_jid)
+  def bookNewJob(job_executor: S => Future[T]): S = {
+    require(newJobsAllowed)
+
+    val new_jid: S = jid_fact(_nextJobId)
+
+    _jobHandles(new_jid) = Promise()
+    _jobExecutors(new_jid) = () => job_executor(new_jid)
+
     _nextJobId = _nextJobId + 1
-    (new_jid, jobHandles(new_jid))
+    new_jid
   }
 
-  /** Discards the JobHandle for the given JobID
-    * */
-  def discardJob(jid: JobID): mutable.Map[Int, Future[JobHandle]] = {
-    jobHandles -= jid.id
+  def discardJob(jid: S): Unit = {
+    _jobHandles -= jid
   }
 
-  def lookupJob(jid: JobID): Option[ Future[JobHandle] ] = {
-    jobHandles.get(jid.id)
+  def lookupJob(jid: S): Option[Future[T]] = {
+    _jobHandles.get(jid).map((promise: Promise[T]) => {
+      promise.completeWith(_jobExecutors(jid)())
+      promise.future
+    })
   }
 }
