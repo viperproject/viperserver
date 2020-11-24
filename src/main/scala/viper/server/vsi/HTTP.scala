@@ -65,7 +65,7 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
   override def start(active_jobs: Int): Unit = {
     jobs = new JobPool(active_jobs)
     bindingFuture = Http().bindAndHandle(setRoutes, "localhost", port)
-    _termActor = system.actorOf(Terminator.props(bindingFuture), "terminator")
+    _termActor = system.actorOf(Terminator.props(jobs, Some(bindingFuture)), "terminator")
     isRunning = true
   }
 
