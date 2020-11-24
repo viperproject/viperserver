@@ -68,7 +68,11 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     descr = ("Specifies the port on which ViperServer will be started."
       + s"The port must be an integer in range [${Socket.MIN_PORT_NUMBER}-${ibm.Socket.MAX_PORT_NUMBER}]"
       + "If the option is omitted, an available port will be selected automatically."),
-    default = Some(ibm.Socket.findFreePort),
+    default = {
+      val p = ibm.Socket.findFreePort
+      println(s"Automatically selecting port $p ...")
+      Some(p)
+    },
     validate = p => try {
       ibm.Socket.available(p)
     } catch {

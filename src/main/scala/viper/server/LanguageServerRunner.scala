@@ -11,24 +11,19 @@ import java.io.IOException
 import java.net.Socket
 
 import org.eclipse.lsp4j.jsonrpc.Launcher
+import viper.server.ViperConfig
 import viper.server.frontends.lsp.{Coordinator, CustomReceiver, IdeLanguageClient}
+
 
 object LanguageServerRunner {
 
+  private var _config: ViperConfig = _
+
   def main(args: Array[String]): Unit = {
-    try {
-      val port = Integer.parseInt(args.head)
-      runServer(port)
-    } catch {
-      case _: NoSuchElementException => {
-        println("No port number provided")
-        sys.exit(1)
-      }
-      case _: NumberFormatException => {
-        println("Invalid port number")
-        sys.exit(1)
-      }
-    }
+    _config = new ViperConfig(args)
+    _config.verify()
+    val port = _config.port()
+    runServer(port)
   }
 
   def runServer(port: Int): Unit = {
