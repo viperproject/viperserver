@@ -20,7 +20,9 @@ import scala.concurrent.duration._
   *  The first serves the purpose of running the process concurrently. The second allows to
   *  communicate from the verification process to the server.
   * */
-abstract class VerificationTask()(implicit val executionContext: ExecutionContext) extends Runnable with Packer {
+abstract class MessageStreamingTask[T]()(implicit val executionContext: ExecutionContext) extends Runnable with Packer {
+
+  def artifact: Future[T]
 
   private var q_actor: ActorRef = _
 

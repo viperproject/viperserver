@@ -38,6 +38,8 @@ case class JobNotFoundException() extends VerificationServerException
   */
 trait VerificationServer extends Unpacker {
 
+  type AST
+
   implicit val system: ActorSystem = ActorSystem("Main")
   implicit val executionContext: ExecutionContextExecutor = ExecutionContext.global
   implicit val materializer: ActorMaterializer = ActorMaterializer()
@@ -62,7 +64,7 @@ trait VerificationServer extends Unpacker {
     *
     * As such, it accepts an instance of a VerificationTask, which it will pass to the JobActor.
     */
-  protected def initializeVerificationProcess(task:VerificationTask): VerJobId = {
+  protected def initializeVerificationProcess(task: MessageStreamingTask[AST]): VerJobId = {
     if(!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }

@@ -19,6 +19,8 @@ import scala.language.postfixOps
 
 class ViperCoreServer(val _args: Array[String]) extends VerificationServer {
 
+  override type AST = Program
+
   // --- VCS : Configuration ---
   protected var _config: ViperConfig = _
   final def config: ViperConfig = _config

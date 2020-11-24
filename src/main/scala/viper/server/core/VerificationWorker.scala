@@ -9,7 +9,7 @@ package viper.server.core
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.ViperConfig
-import viper.server.vsi.{Envelope, VerificationTask}
+import viper.server.vsi.{Envelope, MessageStreamingTask}
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
 import viper.silver.frontend.{DefaultStates, SilFrontend}
@@ -17,7 +17,7 @@ import viper.silver.reporter.{Reporter, _}
 import viper.silver.verifier.{AbstractVerificationError, VerificationResult, _}
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 import scala.language.postfixOps
 
 class ViperServerException extends Exception
@@ -33,8 +33,9 @@ case class SilverEnvelope(m: Message) extends Envelope
 class VerificationWorker(private val viper_config: ViperConfig,
                          private val logger: Logger,
                          private val command: List[String],
-                         private val program: Program)(implicit val ec: ExecutionContext) extends VerificationTask {
+                         private val program: Program)(implicit val ec: ExecutionContext) extends MessageStreamingTask[Program] {
 
+  override def artifact: Future[Program] = Future.successful(program)
   private var backend: ViperBackend = _
 
   private def resolveCustomBackend(clazzName: String, rep: Reporter): Option[SilFrontend] = {
@@ -268,7 +269,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     _frontend.verifier.stop()
   }
 
-  private def doCachedVerification(real_program: Program) = {
+  private def doCachedVerification(real_program: Program): Unit = {
     /** Top level branch is here for the same reason as in
       * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
 
