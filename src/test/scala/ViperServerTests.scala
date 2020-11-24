@@ -12,7 +12,6 @@ import akka.http.scaladsl.model.{StatusCodes, _}
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
 import akka.testkit.TestDuration
 import org.scalatest.{Matchers, WordSpec}
-
 import viper.server.ViperServerRunner
 import viper.server.vsi.Requests._
 
@@ -26,7 +25,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
 
   ViperServerRunner.main(Array())
 
-  private val _routsUnderTest = ViperServerRunner.viperServerHTTP.routes()
+  private val _routsUnderTest = ViperServerRunner.viperServerHttp.routes()
 
   def printRequestResponsePair(req: String, res: String): Unit = {
     println(s">>> ViperServer test request `$req` response in the following response: $res")

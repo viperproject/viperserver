@@ -56,7 +56,7 @@ sealed trait CustomizableHttp extends BasicHttp {
   * server. In particular, this means providing a protocol that returns the VerificationServer's
   * responses as type [[ToResponseMarshallable]].
   * */
-trait VerificationServerHTTP extends VerificationServer with CustomizableHttp {
+trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
 
   def setRoutes(): Route
 

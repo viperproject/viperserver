@@ -30,7 +30,7 @@ import viper.silver.reporter.Message
 import scala.util.{Failure, Success, Try}
 
 class ViperHttpServer(_args: Array[String])
-  extends ViperCoreServer(_args) with VerificationServerHTTP {
+  extends ViperCoreServer(_args) with VerificationServerHttp {
 
   override def start(): Unit = {
     _config = new ViperConfig(_args)

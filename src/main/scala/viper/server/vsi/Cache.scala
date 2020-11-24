@@ -214,8 +214,8 @@ trait CacheContent
   * */
 trait Member {
 
- /** Must be implemented to return a hash String for this Member.
-   * */
+  /** Must be implemented to return a hash String for this Member.
+    * */
   def hash(): String
 }
 
