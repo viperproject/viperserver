@@ -131,7 +131,7 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) with
         })
       case _ =>
         // Did not find a job with this jid.
-        CFuture.failedFuture(new Throwable(s"The verification job #$jid does not exist."))
+        CFuture.completedFuture({throw new Throwable(s"The verification job #$jid does not exist.")})
     }
   }
 

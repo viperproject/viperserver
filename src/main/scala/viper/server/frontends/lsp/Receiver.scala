@@ -122,7 +122,7 @@ abstract class StandardReceiver extends LanguageClientAware {
         // No definition found - maybe it's a keyword.
         val e = s"Verification task not found for URI ${document.getUri}"
         Log.debug(e)
-        CFuture.failedFuture(new Throwable(e)) // needs to return some CF.
+        CFuture.completedFuture({throw new Throwable(e)}) // needs to return some CF.
     }
   }
 

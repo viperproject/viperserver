@@ -12,7 +12,7 @@ import java.net.URI
 import java.nio.file.{Path, Paths}
 import java.util.concurrent.CompletableFuture
 
-import org.eclipse.lsp4j.{Position, Range}
+import org.eclipse.lsp4j.Position
 
 
 object Common {
@@ -23,7 +23,7 @@ object Common {
   }
 
   def uriToPath(uri: URI): Path = {
-    Path.of(uri)
+    Paths.get(uri)
   }
 
   def filenameFromUri(uri: String): String = {
