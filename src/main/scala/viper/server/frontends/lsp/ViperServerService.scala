@@ -13,8 +13,7 @@ import java.util.concurrent.{CompletableFuture => CFuture}
 import akka.actor.{PoisonPill, Props}
 import akka.pattern.ask
 import akka.util.Timeout
-import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, SiliconConfig}
-import viper.server.core.{ViperCache, ViperCoreServer}
+import viper.server.core.{ViperBackendConfig, ViperCache, ViperCoreServer}
 import viper.server.frontends.lsp.VerificationState.Stopped
 import viper.server.utility.AstGenerator
 import viper.server.utility.Helpers.getArgListFromArgString
@@ -87,10 +86,13 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) with
     })
 
     // prepare backend config
-    val backend = arg_list_partial match {
-      case "silicon" :: args => SiliconConfig(args)
-      case "carbon" :: args => CarbonConfig(args)
-      case "custom" :: args => CustomConfig(args)
+    val backend = try {
+      ViperBackendConfig(arg_list_partial)
+    } catch {
+      case _: IllegalArgumentException =>
+        logger.get.error(s"Invalid arguments: ${command} " +
+          s"You need to specify the verification backend, e.g., `silicon [args]`")
+        return VerJobId(-1)
     }
 
     val jid: VerJobId = verify(file, backend, ast)

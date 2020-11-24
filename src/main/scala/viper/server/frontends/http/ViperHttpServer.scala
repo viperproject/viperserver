@@ -17,8 +17,7 @@ import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
 import spray.json.DefaultJsonProtocol
 import viper.server.ViperConfig
-import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, SiliconConfig}
-import viper.server.core.{ViperCache, ViperCoreServer}
+import viper.server.core.{ViperBackendConfig, ViperCache, ViperCoreServer}
 import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
 import viper.server.utility.AstGenerator
 import viper.server.utility.Helpers.getArgListFromArgString
@@ -67,7 +66,7 @@ class ViperHttpServer(_args: Array[String])
     // Extract file name from args list
     val arg_list = getArgListFromArgString(vr.arg)
     val file: String = arg_list.last
-    val arg_list_partial = arg_list.dropRight(1)
+    val arg_list_partial: List[String] = arg_list.dropRight(1)
 
     // Parse file
     val astGen = new AstGenerator(_logger.get)
@@ -81,12 +80,11 @@ class ViperHttpServer(_args: Array[String])
     val ast = ast_option.getOrElse(return VerificationRequestReject("The file for which verification has been requested contained syntax errors."))
 
     // prepare backend config
-    val backend = arg_list_partial match {
-      case "silicon" :: args => SiliconConfig(args)
-      case "carbon" :: args => CarbonConfig(args)
-      case "custom" :: args => CustomConfig(args)
-      case args =>
-        logger.get.error(s"Invalid arguments: ${args.toString} " +
+    val backend = try {
+      ViperBackendConfig(arg_list_partial)
+    } catch {
+      case _: IllegalArgumentException =>
+        logger.get.error(s"Invalid arguments: ${vr.arg} " +
           s"You need to specify the verification backend, e.g., `silicon [args]`")
         return VerificationRequestReject("Invalid arguments for backend.")
     }

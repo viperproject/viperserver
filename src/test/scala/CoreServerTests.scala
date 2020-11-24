@@ -9,7 +9,6 @@ package viper.server.core
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.{Matchers, WordSpec}
-import viper.server.core.ViperBackendConfigs.SiliconConfig
 import viper.server.vsi._
 import viper.server.utility.AstGenerator
 import viper.silver.ast.Program

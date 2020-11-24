@@ -8,7 +8,6 @@ package viper.server.core
 
 import akka.actor.ActorRef
 import viper.server.ViperConfig
-import viper.server.core.ViperBackendConfigs._
 import viper.server.vsi.{VerJobId, VerificationServer}
 import viper.silver.ast.Program
 import viper.silver.logger.ViperLogger
@@ -72,16 +71,12 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
     *
     * Expects a non-null backend config and Viper AST.
     * */
-  def verify(programID: String, backend_config: ViperBackendConfig, program: Program): VerJobId = {
+  def verify(programId: String, backend_config: ViperBackendConfig, program: Program): VerJobId = {
     require(program != null && backend_config != null)
 
-    val args: List[String] = backend_config match {
-      case _ : SiliconConfig => "silicon" :: backend_config.partialCommandLine
-      case _ : CarbonConfig => "carbon" :: backend_config.partialCommandLine
-      case _ : CustomConfig => "custom" :: backend_config.partialCommandLine
-    }
-    val task_backend = new VerificationWorker(_config, logger.get, args :+ programID, program)
-    val jid = initializeVerificationProcess(task_backend)
+    val args: List[String] = backend_config.toList
+    val task_backend = new VerificationWorker(_config, logger.get, args :+ programId, program)
+    val jid = initializeVerificationProcess(Future.successful(task_backend))
     if(jid.id >= 0) {
       logger.get.info(s"Verification process #${jid.id} has successfully started.")
     } else {

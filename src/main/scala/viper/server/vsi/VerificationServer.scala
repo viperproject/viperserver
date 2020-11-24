@@ -120,13 +120,13 @@ trait VerificationServer extends Post {
     *
     * As such, it accepts an instance of a VerificationTask, which it will pass to the JobActor.
     */
-  protected def initializeVerificationProcess(task: MessageStreamingTask[AST]): VerJobId = {
+  protected def initializeVerificationProcess(task_fut: Future[MessageStreamingTask[AST]]): VerJobId = {
     if (!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
 
     if (ver_jobs.newJobsAllowed) {
-      initializeProcess(ver_jobs, Future.successful(task), None)
+      initializeProcess(ver_jobs, task_fut, None)
     } else {
       VerJobId(-1) // Process Management running  at max capacity.
     }
