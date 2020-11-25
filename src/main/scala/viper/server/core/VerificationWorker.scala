@@ -8,7 +8,6 @@ package viper.server.core
 
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
-import viper.server.ViperConfig
 import viper.server.vsi.Envelope
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
@@ -30,8 +29,7 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
 
 case class ViperEnvelope(m: Message) extends Envelope
 
-class VerificationWorker(private val viper_config: ViperConfig,
-                         private val logger: Logger,
+class VerificationWorker(private val logger: Logger,
                          private val command: List[String],
                          private val program: Program)(implicit val ec: ExecutionContext) extends MessageReportingTask {
 
@@ -81,7 +79,8 @@ class VerificationWorker(private val viper_config: ViperConfig,
       case _: java.nio.channels.ClosedByInterruptException =>
       case e: Throwable =>
         enqueueMessage(ExceptionReport(e))
-        logger.trace(s"Creation/Execution of the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
+        logger.trace(s"Creation/Execution of the verification backend " +
+          s"${if (backend == null) "<null>" else backend.toString} resulted in an exception.", e)
     } finally {
       try {
         backend.stop()
@@ -97,12 +96,6 @@ class VerificationWorker(private val viper_config: ViperConfig,
       logger.error(s"The command `${command.mkString(" ")}` did not result in initialization of verification backend.")
       registerTaskEnd(false)
     }
-  }
-
-  override type A = Message
-
-  override def pack(m: A): Envelope = {
-    ViperEnvelope(m)
   }
 }
 

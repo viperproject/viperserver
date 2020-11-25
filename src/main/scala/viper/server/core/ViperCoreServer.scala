@@ -8,7 +8,7 @@ package viper.server.core
 
 import akka.actor.ActorRef
 import viper.server.ViperConfig
-import viper.server.vsi.{VerJobId, VerificationServer}
+import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
 import viper.silver.ast.Program
 import viper.silver.logger.ViperLogger
 
@@ -45,27 +45,51 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
     println(s"ViperCoreServer started.")
   }
 
+  def requestAst(input: String): AstJobId = {
+    require(config != null)
 
+    val task_backend = new AstWorker(input, logger.get)
+    val ast_id = initializeAstConstruction(task_backend)
 
+    if (ast_id.id >= 0) {
+      logger.get.info(s"Verification process #${ast_id.id} has successfully started.")
+    } else {
+      logger.get.error(s"Could not start verification process. " +
+        s"The maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
+    }
+    ast_id
+  }
 
-//  def requestAst(input: String): AstJobId = {
-//    require(config != null)
-//
-//    if (!ast_jobs.newJobsAllowed) {
-//      logger.get.error(s"Could not start AST construction process. " +
-//        s"The maximum number of active jobs are currently running (${ast_jobs.MAX_ACTIVE_JOBS}).")
-//      return AstJobId(-1)
-//    }
-//
-//    val task_backend = new AstWorker(input, logger.get)
-//    val ast_id = initializeAstConstruction(Future.successful(task_backend))
-//    ast_jobs.run_job(ast_id)
-//
-//    if (ast_id.id >= 0) {
-//      logger.get.info(s"AST construction of $ast_id has successfully started.")
-//    }
-//    ast_id
-//  }
+  def verify(ast_id: AstJobId, backend_config: ViperBackendConfig): VerJobId = {
+
+    if (!isRunning) throw new IllegalStateException("Instance of VerificationServer already stopped")
+    require(backend_config != null)
+
+    val programId = s"ViperAst#${ast_id.id}"
+    val args: List[String] = backend_config.toList
+
+    ast_jobs.lookupJob(ast_id) match {
+      case Some(handle_future) =>
+        val task_backend_fut =
+          handle_future.map((handle: AstHandle[Program]) => {
+            val art = handle.artifact
+            art.map(program => {
+              new VerificationWorker(logger.get, args :+ programId, program)
+            }).recover({
+              case e: Throwable =>
+                println(s"### As exception has occurred while constructing Viper AST: $e")
+                throw e
+            })
+
+          }).flatten
+
+        initializeVerificationProcess(task_backend_fut)
+
+      case None =>
+        logger.get.error(s"Could not start verification process for non-existent $ast_id")
+        VerJobId(-1)
+    }
+  }
 
   /** Verifies a Viper AST using the specified backend.
     *
@@ -75,15 +99,16 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
     require(program != null && backend_config != null)
 
     val args: List[String] = backend_config.toList
-    val task_backend = new VerificationWorker(_config, logger.get, args :+ programId, program)
-    val jid = initializeVerificationProcess(Future.successful(task_backend))
-    if(jid.id >= 0) {
-      logger.get.info(s"Verification process #${jid.id} has successfully started.")
+    val task_backend = new VerificationWorker(logger.get, args :+ programId, program)
+    val ver_id = initializeVerificationProcess(Future.successful(task_backend))
+
+    if (ver_id.id >= 0) {
+      logger.get.info(s"Verification process #${ver_id.id} has successfully started.")
     } else {
       logger.get.error(s"Could not start verification process. " +
         s"The maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
     }
-    jid
+    ver_id
   }
 
   override def streamMessages(jid: VerJobId, clientActor: ActorRef): Option[Future[Unit]] = {

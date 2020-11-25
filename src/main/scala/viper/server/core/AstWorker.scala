@@ -5,10 +5,12 @@ import ch.qos.logback.classic.Logger
 import viper.server.utility.AstGenerator
 import viper.server.utility.Helpers.getArgListFromArgString
 import viper.silver.ast.Program
+import viper.silver.reporter.ExceptionReport
 
 
 abstract class AstConstructionException extends Exception
 object ViperFileNotFoundException extends AstConstructionException
+object AstConstructionInterrupted extends AstConstructionException
 object InvalidArgumentsException extends AstConstructionException
 object AstConstructionFailureException extends AstConstructionException
 object OutOfResourcesException extends AstConstructionException
@@ -32,23 +34,41 @@ class AstWorker(val input: String,
     val arg_list = getArgListFromArgString(input)
     val file: String = arg_list.last
 
-    val astGen = new AstGenerator(logger, new ActorReporter("AstGenerationReporter"))
-    var ast_option: Option[Program] = None
-    try {
-      ast_option = astGen.generateViperAst(file)
+    val reporter = new ActorReporter("AstGenerationReporter")
+    val astGen = new AstGenerator(logger, reporter)
+
+    val ast_option: Option[Program] = try {
+      astGen.generateViperAst(file)
     } catch {
       case _: java.nio.file.NoSuchFileException =>
         println("The file for which verification has been requested was not found.")
+        registerTaskEnd(false)
         throw ViperFileNotFoundException
+      case e: InterruptedException =>
+        logger.info(s"AstWorker has been interrupted: $e")
+        registerTaskEnd(false)
+        throw AstConstructionInterrupted
+      case e: java.nio.channels.ClosedByInterruptException =>
+        logger.info(s"AstWorker has been interrupted: $e")
+        registerTaskEnd(false)
+        throw AstConstructionInterrupted
+      case e: Throwable =>
+        reporter report ExceptionReport(e)
+        logger.trace(s"Creation/Execution of an AstGenerator instance resulted in an exception.", e)
+        registerTaskEnd(false)
+        throw ServerCrashException(e)
     }
-    val ast = ast_option match {
-      case Some(a) =>
-        a
-      case _ =>
-        println("The file for which verification has been requested contained syntax errors.")
+
+    ast_option match {
+      case Some(ast) =>
+        registerTaskEnd(true)
+        ast
+      case None =>
+        logger.info("The file for which verification has been requested contained syntax errors, type errors, " +
+          "or is simply inconsistent.")
+        registerTaskEnd(false)
         throw AstConstructionFailureException
     }
-    ast
   }
 
   override def run(): Unit = {

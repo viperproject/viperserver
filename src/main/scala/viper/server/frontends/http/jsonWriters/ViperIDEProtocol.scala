@@ -6,6 +6,7 @@ import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import edu.mit.csail.sdg.translator.A4Solution
 import spray.json.DefaultJsonProtocol
+import viper.server.vsi.{AstJobId, VerJobId}
 import viper.silicon.SymbLog
 import viper.silicon.state.terms.Term
 import viper.silver.reporter._
@@ -15,7 +16,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
 
   import spray.json._
 
-  final case class VerificationRequestAccept(id: Int)
+  final case class VerificationRequestAccept(ast_id: AstJobId, ver_id: VerJobId)
   final case class VerificationRequestReject(msg: String)
   final case class ServerStopConfirmed(msg: String)
   final case class JobDiscardAccept(msg: String)
@@ -26,7 +27,12 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   final case class AlloyGenerationRequestComplete(solution: A4Solution)
 
 
-  implicit val verReqAccept_format: RootJsonFormat[VerificationRequestAccept] = jsonFormat1(VerificationRequestAccept.apply)
+  implicit val verReqAccept_writer: RootJsonFormat[VerificationRequestAccept] = lift(new RootJsonWriter[VerificationRequestAccept] {
+    override def write(obj: VerificationRequestAccept): JsValue = JsObject(
+      "ast_id" -> JsNumber(obj.ast_id.id),
+      "ver_id" -> JsNumber(obj.ver_id.id)
+    )
+  })
   implicit val verReqReject_format: RootJsonFormat[VerificationRequestReject] = jsonFormat1(VerificationRequestReject.apply)
   implicit val serverStopConfirmed_format: RootJsonFormat[ServerStopConfirmed] = jsonFormat1(ServerStopConfirmed.apply)
   implicit val jobDiscardAccept_format: RootJsonFormat[JobDiscardAccept] = jsonFormat1(JobDiscardAccept.apply)
@@ -124,11 +130,36 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       "cached" -> obj.cached.toJson)
   })
 
+  implicit val astConstructionMessage_writer = lift(new RootJsonWriter[AstConstructionResultMessage] {
+    override def write(obj: AstConstructionResultMessage): JsValue = JsObject(
+      "status" -> (obj match {
+        case _: AstConstructionSuccessMessage =>
+          JsString("success")
+        case _: AstConstructionFailureMessage =>
+          JsString("failure")
+      }),
+      "details" -> (obj match {
+        case succ: AstConstructionSuccessMessage =>
+          succ.toJson
+        case fail: AstConstructionFailureMessage =>
+          fail.toJson
+      }))
+  })
+
+  implicit val astConstructionSuccess_writer: RootJsonFormat[AstConstructionSuccessMessage] = lift(new RootJsonWriter[AstConstructionSuccessMessage] {
+    override def write(obj: AstConstructionSuccessMessage): JsValue = JsObject(
+      "time" -> obj.astConstructionTime.toJson)
+  })
+
+  implicit val astConstructionFailure_writer: RootJsonFormat[AstConstructionFailureMessage] = lift(new RootJsonWriter[AstConstructionFailureMessage] {
+    override def write(obj: AstConstructionFailureMessage): JsValue = JsObject(
+      "time" -> obj.astConstructionTime.toJson,
+      "result" -> obj.result.toJson)
+  })
+
   implicit val overallSuccessMessage_writer: RootJsonFormat[OverallSuccessMessage] = lift(new RootJsonWriter[OverallSuccessMessage] {
-    override def write(obj: OverallSuccessMessage): JsObject = {
-      JsObject(
-        "time" -> obj.verificationTime.toJson)
-    }
+    override def write(obj: OverallSuccessMessage): JsObject = JsObject(
+      "time" -> obj.verificationTime.toJson)
   })
 
   implicit val overallFailureMessage_writer: RootJsonFormat[OverallFailureMessage] = lift(new RootJsonWriter[OverallFailureMessage] {
@@ -208,7 +239,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val programDefinitionsReport_writer: RootJsonFormat[ProgramDefinitionsReport] = lift(new RootJsonWriter[ProgramDefinitionsReport] {
-    override def write(obj: ProgramDefinitionsReport) = JsObject("definitions" -> JsArray(obj.definitions.map(_.toJson).toVector))
+    override def write(obj: ProgramDefinitionsReport) = JsObject(
+      "definitions" -> JsArray(obj.definitions.map(_.toJson).toVector))
   })
 
   implicit val symbExLogReport_writer: RootJsonFormat[ExecutionTraceReport] = lift(new RootJsonWriter[ExecutionTraceReport] {
@@ -282,6 +314,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: Message): JsValue = JsObject(
       "msg_type" -> JsString(obj.name),
       "msg_body" -> (obj match {
+        case p: AstConstructionResultMessage => p.toJson
         case a: VerificationResultMessage => a.toJson
         case s: StatisticsReport => s.toJson
         case o: ProgramOutlineReport => o.toJson

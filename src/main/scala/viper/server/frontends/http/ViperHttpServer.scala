@@ -19,11 +19,9 @@ import spray.json.DefaultJsonProtocol
 import viper.server.ViperConfig
 import viper.server.core.{ViperBackendConfig, ViperCache, ViperCoreServer}
 import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
-import viper.server.utility.AstGenerator
 import viper.server.utility.Helpers.getArgListFromArgString
 import viper.server.vsi.Requests.CacheResetRequest
 import viper.server.vsi._
-import viper.silver.ast.Program
 import viper.silver.logger.ViperLogger
 import viper.silver.reporter.Message
 
@@ -63,23 +61,10 @@ class ViperHttpServer(_args: Array[String])
   }
 
   override def onVerifyPost(vr: Requests.VerificationRequest): ToResponseMarshallable = {
-    // Extract file name from args list
+    val ast_id = requestAst(vr.arg)
+
     val arg_list = getArgListFromArgString(vr.arg)
-    val file: String = arg_list.last
     val arg_list_partial: List[String] = arg_list.dropRight(1)
-
-    // Parse file
-    val astGen = new AstGenerator(_logger.get)
-    var ast_option: Option[Program] = None
-    try {
-      ast_option = astGen.generateViperAst(file)
-    } catch {
-      case _: java.nio.file.NoSuchFileException =>
-        return VerificationRequestReject("The file for which verification has been requested was not found.")
-    }
-    val ast = ast_option.getOrElse(return VerificationRequestReject("The file for which verification has been requested contained syntax errors."))
-
-    // prepare backend config
     val backend = try {
       ViperBackendConfig(arg_list_partial)
     } catch {
@@ -89,16 +74,9 @@ class ViperHttpServer(_args: Array[String])
         return VerificationRequestReject("Invalid arguments for backend.")
     }
 
-    val jid: VerJobId = verify(file, backend, ast)
+    val ver_id = verify(ast_id, backend)
 
-    if (jid.id >= 0) {
-      logger.get.info(s"Verification process #${jid.id} has successfully started.")
-      VerificationRequestAccept(jid.id)
-    } else {
-      logger.get.error(s"Could not start verification process. " +
-        s"The maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
-      VerificationRequestReject(s"the maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
-    }
+    VerificationRequestAccept(ast_id, ver_id)
   }
 
   override def unpackMessages(s: Source[Envelope, NotUsed]): ToResponseMarshallable = {
