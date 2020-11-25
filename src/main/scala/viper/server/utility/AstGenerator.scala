@@ -22,7 +22,7 @@ class AstGenerator(private val _logger: Logger,
   }
   /** Parses and translates a Viper file into a Viper AST.
     *
-    * Throws an exception when passed an inexistent file!
+    * Throws an exception when passed an non-existent file!
     */
   def generateViperAst(vpr_file_path: String): Option[Program] = {
     val args: Array[String] = Array(vpr_file_path)

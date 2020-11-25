@@ -17,7 +17,7 @@ trait MessageReportingTask extends MessageStreamingTask[Program] with ViperPost 
     val name = s"ViperServer_$tag"
 
     def report(msg: Message): Unit = {
-      println(s">>> ActorReporter.report($msg)")
+      //println(s">>> ActorReporter.report($msg)")
       enqueueMessage(msg)
     }
   }

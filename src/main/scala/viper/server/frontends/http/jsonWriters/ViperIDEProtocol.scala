@@ -96,18 +96,55 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     }
   })
 
+  implicit val modelEntry_writer: RootJsonFormat[ModelEntry] = lift(new RootJsonWriter[ModelEntry] {
+    override def write(obj: ModelEntry): JsValue = obj match {
+      case SingleEntry(value: String) =>
+        JsString(value)
+      case MapEntry(options, els) =>
+        JsObject(
+          "cases" -> JsObject(options.map {
+            case (args: Seq[String], res: String) =>
+              (res, JsArray(args.map(_.toJson).toVector)) }),
+          "else" -> JsString(els)
+        )
+    }
+  })
+
+  implicit val model_writer: RootJsonFormat[Model] = lift(new RootJsonWriter[Model] {
+    override def write(obj: Model): JsValue =
+      JsObject(obj.entries.map { case (k: String, v: ModelEntry) => (k, v.toJson) })
+  })
+
+  implicit val counterexample_writer: RootJsonFormat[Counterexample] = lift(new RootJsonWriter[Counterexample] {
+    override def write(obj: Counterexample): JsValue = JsObject("model" -> obj.model.toJson)
+  })
+
   implicit val abstractError_writer: RootJsonFormat[AbstractError] = lift(new RootJsonWriter[AbstractError] {
-    override def write(obj: AbstractError) = JsObject(
-      "tag" -> JsString(obj.fullId),
-      "text" -> JsString(obj.readableMessage),
-      "position" -> (obj.pos match {
-        case src_pos: Position => src_pos.toJson
-        case no_pos => JsString(no_pos.toString)
-      }))
+    override def write(obj: AbstractError) = {
+      obj match {
+        case e: VerificationError if e.counterexample.isDefined =>
+          JsObject(
+            "tag" -> JsString(obj.fullId),
+            "text" -> JsString(obj.readableMessage),
+            "position" -> (obj.pos match {
+              case src_pos: Position => src_pos.toJson
+              case no_pos => JsString(no_pos.toString)
+            }),
+            "counterexample" -> e.counterexample.get.toJson)
+        case _ =>
+          JsObject(
+            "tag" -> JsString(obj.fullId),
+            "text" -> JsString(obj.readableMessage),
+            "position" -> (obj.pos match {
+              case src_pos: Position => src_pos.toJson
+              case no_pos => JsString(no_pos.toString)
+            }))
+      }
+    }
   })
 
   implicit val failure_writer: RootJsonFormat[Failure] = lift(new RootJsonWriter[Failure] {
-    override def write(obj: Failure) =
+    override def write(obj: Failure): JsObject =
       JsObject(
         "type" -> JsString("error"),
         "errors" -> JsArray(obj.errors.map(_.toJson).toVector))
