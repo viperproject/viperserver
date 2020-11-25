@@ -37,6 +37,7 @@ abstract class MessageStreamingTask[T]()(implicit val executionContext: Executio
     * blocking, as it waits for the successful completion of such an offer.
     * */
   protected def enqueueMessage(msg: Envelope): Unit = {
+    // FIXME ATG: this method needs a review
     implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
 
     var current_offer: Future[QueueOfferResult] = null

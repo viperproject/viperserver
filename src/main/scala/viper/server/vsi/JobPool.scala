@@ -5,7 +5,7 @@ import akka.stream.scaladsl.SourceQueueWithComplete
 import org.reactivestreams.Publisher
 
 import scala.collection.mutable
-import scala.concurrent.{Future, Promise}
+import scala.concurrent.{ExecutionContext, Future, Promise}
 
 sealed trait JobId {
   val id: Int
@@ -14,11 +14,11 @@ sealed trait JobId {
 }
 
 case class AstJobId(id: Int) extends JobId {
-  def tag = "AST"
+  def tag = "ast"
 }
 
 case class VerJobId(id: Int) extends JobId {
-  def tag = "VER"
+  def tag = "ver"
 }
 
 sealed trait JobHandle {
@@ -42,10 +42,12 @@ case class VerHandle(job_actor: ActorRef,
 }
 
 class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: Int = 3)
-                                         (implicit val jid_fact: Int => S) {
+                                         (implicit val jid_fact: Int => S,
+                                          ctx: ExecutionContext) {
 
   private val _jobHandles: mutable.Map[S, Promise[T]] = mutable.Map()
   private val _jobExecutors: mutable.Map[S, () => Future[T]] = mutable.Map()
+  private val _jobCache: mutable.Map[S, Future[T]] = mutable.Map()
   def jobHandles: Map[S, Future[T]] = _jobHandles.map{ case (id, hand) => (id, hand.future) }.toMap
 
   private var _nextJobId: Int = 0
@@ -58,7 +60,16 @@ class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: 
     val new_jid: S = jid_fact(_nextJobId)
 
     _jobHandles(new_jid) = Promise()
-    _jobExecutors(new_jid) = () => job_executor(new_jid)
+    _jobExecutors(new_jid) = () => {
+      if (_jobCache.contains(new_jid)) {
+        /** This prevents recomputing the same future multiple times. */
+        _jobCache(new_jid)
+      } else {
+        val t_fut = job_executor(new_jid)
+        _jobCache(new_jid) = t_fut
+        t_fut
+      }
+    }
 
     _nextJobId = _nextJobId + 1
     new_jid
@@ -66,6 +77,8 @@ class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: 
 
   def discardJob(jid: S): Unit = {
     _jobHandles -= jid
+    _jobExecutors -= jid
+    _jobCache -= jid
   }
 
   def lookupJob(jid: S): Option[Future[T]] = {

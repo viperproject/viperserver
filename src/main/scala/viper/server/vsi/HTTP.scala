@@ -114,52 +114,54 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
         complete(onVerifyPost(r))
       }
     }
-  } ~ path("ast" / IntNumber) { jid =>
-
+  } ~ path("ast" / IntNumber) { id =>
+    val ast_id = AstJobId(id)
     get {
-      ast_jobs.lookupJob(AstJobId(jid)) match {
+      ast_jobs.lookupJob(ast_id) match {
         case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>
-              val s = Source.fromPublisher(handle.publisher)
-              _termActor ! Terminator.WatchJobQueue(VerJobId(jid), handle)
+              val s: Source[Envelope, NotUsed] = Source.fromPublisher(handle.publisher)
+              _termActor ! Terminator.WatchJobQueue(ast_id, handle)
               complete(unpackMessages(s))
             case Failure(error) =>
               // TODO use AST-specific response
-              complete(verificationRequestRejection(jid, error))
+              complete(verificationRequestRejection(id, error))
           }
         case None =>
           // TODO use AST-specific response
-          complete(verificationRequestRejection(jid, JobNotFoundException()))
+          complete(verificationRequestRejection(id, JobNotFoundException()))
       }
     }
 
-  } ~ path("verify" / IntNumber) { jid =>
+  } ~ path("verify" / IntNumber) { id =>
     /** Send GET request to "/verify/<jid>" where <jid> is a non-negative integer.
       * <jid> must be an ID of an existing verification job.
       */
+    val ver_id = VerJobId(id)
     get {
-      ver_jobs.lookupJob(VerJobId(jid)) match {
+      ver_jobs.lookupJob(ver_id) match {
         case Some(handle_future) =>
           // Found a job with this jid.
           onComplete(handle_future) {
             case Success(handle) =>
               val s: Source[Envelope, NotUsed] = Source.fromPublisher(handle.publisher)
-              _termActor ! Terminator.WatchJobQueue(VerJobId(jid), handle)
+              _termActor ! Terminator.WatchJobQueue(ver_id, handle)
               complete(unpackMessages(s))
             case Failure(error) =>
-              complete(verificationRequestRejection(jid, error))
+              complete(verificationRequestRejection(id, error))
           }
         case None =>
-          complete(verificationRequestRejection(jid, JobNotFoundException()))
+          complete(verificationRequestRejection(id, JobNotFoundException()))
       }
     }
-  } ~ path("discard" / IntNumber) { jid =>
+  } ~ path("discard" / IntNumber) { id =>
     /** Send GET request to "/discard/<jid>" where <jid> is a non-negative integer.
       * <jid> must be an ID of an existing verification job.
       */
+    val ver_id = VerJobId(id)
     get {
-      ver_jobs.lookupJob(VerJobId(jid)) match {
+      ver_jobs.lookupJob(ver_id) match {
         case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>
@@ -167,13 +169,13 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
               val interrupt_done: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
               onSuccess(interrupt_done) { msg =>
                 handle.job_actor ! PoisonPill // the actor played its part.
-                complete(discardJobConfirmation(jid, msg))
+                complete(discardJobConfirmation(id, msg))
               }
             case Failure(_) =>
-              complete(discardJobRejection(jid))
+              complete(discardJobRejection(id))
           }
         case _ =>
-          complete(discardJobRejection(jid))
+          complete(discardJobRejection(id))
       }
     }
   }

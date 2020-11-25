@@ -99,7 +99,7 @@ trait VerificationServer extends Post {
         *        '--- Task I ----'                         |
         *                    '---------- Task II ----------'
         **/
-      val message_actor = system.actorOf(QueueActor.props(queue), s"${pool.tag}_message_actor_${new_jid}")
+      val message_actor = system.actorOf(QueueActor.props(queue), s"${pool.tag}--message_actor--${new_jid.id}")
 
       task_fut.map(task => {
         task.setQueueActor(message_actor)
@@ -114,6 +114,18 @@ trait VerificationServer extends Post {
         })).mapTo[T]
       }).flatten
     })
+  }
+
+  protected def initializeAstConstruction(task: MessageStreamingTask[AST]): AstJobId = {
+    if (!isRunning) {
+      throw new IllegalStateException("Instance of VerificationServer already stopped")
+    }
+
+    if (ast_jobs.newJobsAllowed) {
+      initializeProcess(ast_jobs, Future.successful(task), None)
+    } else {
+      AstJobId(-1) // Process Management running  at max capacity.
+    }
   }
 
   /** This method starts a verification process.

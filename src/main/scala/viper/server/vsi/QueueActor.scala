@@ -6,8 +6,7 @@ import akka.stream.scaladsl.SourceQueueWithComplete
 // --- Actor: MessageActor ---
 
 object QueueActor {
-  def props(queue: SourceQueueWithComplete[Envelope]): Props =
-    Props(new QueueActor(queue))
+  def props(queue: SourceQueueWithComplete[Envelope]): Props = Props(new QueueActor(queue))
 }
 
 class QueueActor(queue: SourceQueueWithComplete[Envelope]) extends Actor {
