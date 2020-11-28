@@ -3,9 +3,9 @@ package viper.server.vsi
 import akka.Done
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.http.scaladsl.Http
+import scala.util.{Failure, Success}
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
 
 // --- Actor: Terminator ---
 
@@ -47,8 +47,12 @@ class Terminator[R](ast_jobs: JobPool[AstJobId, AstHandle[R]],
         case Success(_) =>
           jid match {
             case ast_id: AstJobId =>
+              // TODO: Use logger
+              //println(s"Terminator: Discarding AST construction job $ast_id")
               ast_jobs.discardJob(ast_id)
             case ver_id: VerJobId =>
+              // TODO: Use logger
+              //println(s"Terminator: Discarding verification job $ver_id")
               ver_jobs.discardJob(ver_id)
           }
       }

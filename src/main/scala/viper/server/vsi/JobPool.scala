@@ -84,6 +84,9 @@ class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: 
   def lookupJob(jid: S): Option[Future[T]] = {
     _jobHandles.get(jid).map((promise: Promise[T]) => {
       promise.completeWith(_jobExecutors(jid)())
+
+      //promise.future.map(_.queue.watchCompletion().onComplete(_ => discardJob(jid)))
+
       promise.future
     })
   }

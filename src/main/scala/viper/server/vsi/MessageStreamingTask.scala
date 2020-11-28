@@ -45,7 +45,7 @@ abstract class MessageStreamingTask[T]()(implicit val executionContext: Executio
     current_offer = answer.flatMap({
       case res: Future[QueueOfferResult] => res
     })
-    while(current_offer == null || !current_offer.isCompleted){
+    while (current_offer == null || !current_offer.isCompleted) {
       Thread.sleep(10)
     }
   }
