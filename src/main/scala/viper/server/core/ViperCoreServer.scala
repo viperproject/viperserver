@@ -72,7 +72,7 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
       case Some(handle_future) =>
         val task_backend_fut =
           handle_future.map((handle: AstHandle[Program]) => {
-            val art = handle.artifact
+            val art: Future[Program] = handle.artifact
             art.map(program => {
               new VerificationWorker(logger.get, args :+ programId, program)
             }).recover({

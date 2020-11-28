@@ -15,7 +15,7 @@ import akka.stream.scaladsl.Source
 import edu.mit.csail.sdg.alloy4.A4Reporter
 import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
-import spray.json.DefaultJsonProtocol
+import spray.json.{DefaultJsonProtocol, RootJsonFormat}
 import viper.server.ViperConfig
 import viper.server.core.{ViperBackendConfig, ViperCache, ViperCoreServer}
 import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
@@ -149,7 +149,7 @@ class ViperHttpServer(_args: Array[String])
       post {
         object AlloyRequest extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
           case class AlloyGenerationRequest(arg: String, solver: String)
-          implicit val generateStuff = jsonFormat2(AlloyGenerationRequest.apply)
+          implicit val generateStuff: RootJsonFormat[AlloyRequest.AlloyGenerationRequest] = jsonFormat2(AlloyGenerationRequest.apply)
         }
 
         entity(as[AlloyRequest.AlloyGenerationRequest]) { r =>
