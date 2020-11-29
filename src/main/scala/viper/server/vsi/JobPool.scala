@@ -37,7 +37,8 @@ case class AstHandle[R](job_actor: ActorRef,
 
 case class VerHandle(job_actor: ActorRef,
                      queue: SourceQueueWithComplete[Envelope],
-                     publisher: Publisher[Envelope]) extends JobHandle {
+                     publisher: Publisher[Envelope],
+                     prev_job_id: Option[AstJobId]) extends JobHandle {
   def tag = "VER"
 }
 
@@ -65,7 +66,10 @@ class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: 
         /** This prevents recomputing the same future multiple times. */
         _jobCache(new_jid)
       } else {
+        /** Create Future[JobHandle]. */
         val t_fut = job_executor(new_jid)
+
+        /** Cache the newly created Future[JobHandle] for later reference. */
         _jobCache(new_jid) = t_fut
         t_fut
       }
@@ -83,9 +87,9 @@ class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: 
 
   def lookupJob(jid: S): Option[Future[T]] = {
     _jobHandles.get(jid).map((promise: Promise[T]) => {
+      /** 1. Execute the job and get the result's future OR get the priorly cached result's future.
+        * 2. Complete the promise with this future. */
       promise.completeWith(_jobExecutors(jid)())
-
-      //promise.future.map(_.queue.watchCompletion().onComplete(_ => discardJob(jid)))
 
       promise.future
     })

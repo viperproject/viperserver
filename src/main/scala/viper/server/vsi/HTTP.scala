@@ -122,7 +122,6 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
           onComplete(handle_future) {
             case Success(handle) =>
               val s: Source[Envelope, NotUsed] = Source.fromPublisher(handle.publisher)
-              _termActor ! Terminator.WatchJobQueue(ast_id, handle)
               complete(unpackMessages(s))
             case Failure(error) =>
               // TODO use AST-specific response
@@ -130,10 +129,9 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
           }
         case None =>
           // TODO use AST-specific response
-          complete(verificationRequestRejection(id, JobNotFoundException()))
+          complete(verificationRequestRejection(id, JobNotFoundException))
       }
     }
-
   } ~ path("verify" / IntNumber) { id =>
     /** Send GET request to "/verify/<jid>" where <jid> is a non-negative integer.
       * <jid> must be an ID of an existing verification job.
@@ -141,18 +139,46 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
     val ver_id = VerJobId(id)
     get {
       ver_jobs.lookupJob(ver_id) match {
+        case None =>
+          /** Verification job with this ID is not found. */
+          complete(verificationRequestRejection(id, JobNotFoundException))
+
         case Some(handle_future) =>
-          // Found a job with this jid.
-          onComplete(handle_future) {
-            case Success(handle) =>
-              val s: Source[Envelope, NotUsed] = Source.fromPublisher(handle.publisher)
-              _termActor ! Terminator.WatchJobQueue(ver_id, handle)
-              complete(unpackMessages(s))
+          /** Combine the future AST and the future verification results. */
+          onComplete(handle_future.flatMap((ver_handle: VerHandle) => {
+            /** If there exists a verification job, there should have existed
+              * (or should still exist) a corresponding AST construction job. */
+            val ast_id: AstJobId = ver_handle.prev_job_id.get
+
+            /** The AST construction job may have been cleaned up
+              * (if all of its messages were already consumed) */
+            ast_jobs.lookupJob(ast_id) match {
+              case Some(ast_handle_fut) =>
+                ast_handle_fut.map(ast_handle => (Some(ast_handle), ver_handle))
+              case None =>
+                Future.successful((None, ver_handle))
+            }
+          })) {
+            case Success((ast_handle_maybe, ver_handle)) =>
+              val ver_source = ver_handle match {
+                case VerHandle(null, null, null, ast_id) =>
+                  /** There were no messages produced during verification. */
+                  Source.empty[Envelope]
+                case _ =>
+                  Source.fromPublisher(ver_handle.publisher)
+              }
+              val ast_source = ast_handle_maybe match {
+                case None =>
+                  /** The AST messages were already consumed. */
+                  Source.empty[Envelope]
+                case Some(ast_handle) =>
+                  Source.fromPublisher(ast_handle.publisher)
+              }
+              val resulting_source = ver_source.prepend(ast_source)
+              complete(unpackMessages(resulting_source))
             case Failure(error) =>
               complete(verificationRequestRejection(id, error))
           }
-        case None =>
-          complete(verificationRequestRejection(id, JobNotFoundException()))
       }
     }
   } ~ path("discard" / IntNumber) { id =>

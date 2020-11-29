@@ -17,7 +17,7 @@ import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
 import spray.json.{DefaultJsonProtocol, RootJsonFormat}
 import viper.server.ViperConfig
-import viper.server.core.{ViperBackendConfig, ViperCache, ViperCoreServer}
+import viper.server.core.{AstConstructionFailureException, ViperBackendConfig, ViperCache, ViperCoreServer}
 import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
 import viper.server.utility.Helpers.getArgListFromArgString
 import viper.server.vsi.Requests.CacheResetRequest
@@ -87,9 +87,12 @@ class ViperHttpServer(_args: Array[String])
 
   override def verificationRequestRejection(jid: Int, e: Throwable): ToResponseMarshallable = {
     e match {
-      case JobNotFoundException() =>
+      case JobNotFoundException =>
         logger.get.error(s"The verification job #$jid does not exist.")
         VerificationRequestReject(s"The verification job #$jid does not exist.")
+      case AstConstructionFailureException =>
+        logger.get.error(s"The verification job #$jid could not be created since the AST is inconsistent.")
+        VerificationRequestReject(s"The verification job #$jid could not be created since the AST is inconsistent.")
       case _ =>
         logger.get.error(s"The verification job #$jid resulted in a terrible error: $e")
         VerificationRequestReject(s"The verification job #$jid resulted in a terrible error: $e")

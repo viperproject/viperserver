@@ -60,12 +60,12 @@ class JobActor[T](private val id: JobId) extends Actor {
           _astConstructionTask.start()
           sender ! AstHandle(self, req.queue, req.publisher, _astConstructionTask.getArtifact)
 
-        case _: Verify[T] =>
+        case ver_req: Verify[T] =>
           println(">>> JobActor received request Verify")
           resetVerificationTask()
-          _verificationTask = req.task
+          _verificationTask = ver_req.task
           _verificationTask.start()
-          sender ! VerHandle(self, req.queue, req.publisher)
+          sender ! VerHandle(self, ver_req.queue, ver_req.publisher, ver_req.prev_job_id)
       }
     case req: StopProcessRequest =>
       val did_I_interrupt = req match {

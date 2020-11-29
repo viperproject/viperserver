@@ -7,7 +7,7 @@
 package viper.server.vsi
 
 import akka.NotUsed
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import akka.pattern.ask
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
@@ -19,8 +19,9 @@ import scala.reflect.ClassTag
 import scala.util.{Failure, Success}
 
 
-class VerificationServerException extends Exception
-case class JobNotFoundException() extends VerificationServerException
+abstract class VerificationServerException extends Exception
+case object JobNotFoundException extends VerificationServerException
+abstract class AstConstructionException extends VerificationServerException
 
 /** This trait provides state and process management functionality for verification servers.
   *
@@ -70,7 +71,7 @@ trait VerificationServer extends Post {
   protected def initializeProcess[S <: JobId, T <: JobHandle : ClassTag]
                       (pool: JobPool[S, T],
                       task_fut: Future[MessageStreamingTask[AST]],
-                      actor_fut_maybe: Option[Future[ActorRef]] = None): S = {
+                      prev_job_id_maybe: Option[AstJobId] = None): S = {
 
     if (!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
@@ -80,7 +81,7 @@ trait VerificationServer extends Post {
 
     /** Ask the pool to book a new job using the above function
       * to construct Future[JobHandle] and Promise[AST] later on. */
-    pool.bookNewJob((new_jid: JobId) => {
+    pool.bookNewJob((new_jid: S) => task_fut.flatMap((task: MessageStreamingTask[AST]) => {
 
       /** TODO avoid hardcoded parameters */
       implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
@@ -100,20 +101,44 @@ trait VerificationServer extends Post {
         *                    '---------- Task II ----------'
         **/
       val message_actor = system.actorOf(QueueActor.props(queue), s"${pool.tag}--message_actor--${new_jid.id}")
+      task.setQueueActor(message_actor)
 
-      task_fut.map(task => {
-        task.setQueueActor(message_actor)
+      val job_actor = system.actorOf(JobActor.props(new_jid), s"${pool.tag}_job_actor_${new_jid}")
 
-        val job_actor = system.actorOf(JobActor.props(new_jid), s"${pool.tag}_job_actor_${new_jid}")
+      /** Register cleanup task. */
+      queue.watchCompletion().onComplete(_ => {
+        pool.discardJob(new_jid)
+        /** FIXME: if the job actors are meant to be reused from one phase to another (not implemented yet),
+          * FIXME: then they should be stopped only after the **last** job is completed in the pipeline. */
+        job_actor ! PoisonPill
+      })
 
-        (job_actor ? (new_jid match {
-          case _: AstJobId =>
-            VerificationProtocol.ConstructAst(new TaskThread(task), queue, publisher)
+      (job_actor ? (new_jid match {
+        case _: AstJobId =>
+          VerificationProtocol.ConstructAst(new TaskThread(task), queue, publisher)
+        case _: VerJobId =>
+          VerificationProtocol.Verify(new TaskThread(task), queue, publisher,
+            /** TODO: Use factories for specializing the messages.
+              * TODO: Clearly, there should be a clean separation between concrete job types
+              * TODO: (AST Construction, Verification) and generic types (JobHandle). */
+            prev_job_id_maybe match {
+              case Some(prev_job_id: AstJobId) =>
+                Some(prev_job_id)
+              case Some(prev_job_id) =>
+                throw new IllegalArgumentException(s"cannot map ${prev_job_id.toString} to expected type AstJobId")
+              case None =>
+                None
+            })
+      })).mapTo[T]
+
+    }).recover({
+      case e: AstConstructionException =>
+        pool.discardJob(new_jid)
+        new_jid match {
           case _: VerJobId =>
-            VerificationProtocol.Verify(new TaskThread(task), queue, publisher)
-        })).mapTo[T]
-      }).flatten
-    })
+            VerHandle(null, null, null, prev_job_id_maybe)
+        }
+    }).mapTo[T])
   }
 
   protected def initializeAstConstruction(task: MessageStreamingTask[AST]): AstJobId = {
@@ -122,7 +147,7 @@ trait VerificationServer extends Post {
     }
 
     if (ast_jobs.newJobsAllowed) {
-      initializeProcess(ast_jobs, Future.successful(task), None)
+      initializeProcess(ast_jobs, Future.successful(task))
     } else {
       AstJobId(-1) // Process Management running  at max capacity.
     }
@@ -132,15 +157,15 @@ trait VerificationServer extends Post {
     *
     * As such, it accepts an instance of a VerificationTask, which it will pass to the JobActor.
     */
-  protected def initializeVerificationProcess(task_fut: Future[MessageStreamingTask[AST]]): VerJobId = {
+  protected def initializeVerificationProcess(task_fut: Future[MessageStreamingTask[AST]], ast_job_id_maybe: Option[AstJobId]): VerJobId = {
     if (!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
 
     if (ver_jobs.newJobsAllowed) {
-      initializeProcess(ver_jobs, task_fut, None)
+      initializeProcess(ver_jobs, task_fut, ast_job_id_maybe)
     } else {
-      VerJobId(-1) // Process Management running  at max capacity.
+      VerJobId(-1)  // Process Management running  at max capacity.
     }
   }
 
@@ -159,7 +184,6 @@ trait VerificationServer extends Post {
           val src_envelope: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
           val src_msg: Source[A , NotUsed] = src_envelope.map(e => unpack(e))
           src_msg.runWith(Sink.actorRef(clientActor, Success))
-          _termActor ! Terminator.WatchJobQueue(jid, handle)
           handle.queue.watchCompletion().map(_ => ())
         }
         Some(handle_future.flatMap(mapHandle))
@@ -191,13 +215,16 @@ trait VerificationServer extends Post {
   /** This method interrupts active jobs upon termination of the server.
     */
   protected def getInterruptFutureList(): Future[List[String]] = {
-    val interrupt_future_list: List[Future[String]] = ver_jobs.jobHandles map { case (jid, handle_future) =>
-      handle_future.flatMap {
-        case VerHandle(actor, _, _) =>
-          implicit val askTimeout: Timeout = Timeout(1000 milliseconds)
-          (actor ? VerificationProtocol.StopVerification).mapTo[String]
-      }
-    } toList
+    implicit val askTimeout: Timeout = Timeout(1000 milliseconds)
+    val interrupt_future_list: List[Future[String]] = (ver_jobs.jobHandles ++ ast_jobs.jobHandles) map {
+      case (jid, handle_future) =>
+        handle_future.flatMap {
+          case AstHandle(actor, _, _, _) =>
+            (actor ? VerificationProtocol.StopAstConstruction).mapTo[String]
+          case VerHandle(actor, _, _, _) =>
+            (actor ? VerificationProtocol.StopVerification).mapTo[String]
+        }
+      } toList
     val overall_interrupt_future: Future[List[String]] = Future.sequence(interrupt_future_list)
     overall_interrupt_future
   }

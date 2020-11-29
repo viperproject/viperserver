@@ -26,13 +26,14 @@ object VerificationProtocol {
 
   // Request Job Actor to execute an AST construction task
   case class ConstructAst[T](task: TaskThread[T],
-                          queue: SourceQueueWithComplete[Envelope],
-                          publisher: Publisher[Envelope]) extends StartProcessRequest[T]
+                             queue: SourceQueueWithComplete[Envelope],
+                             publisher: Publisher[Envelope]) extends StartProcessRequest[T]
 
   // Request Job Actor to execute a verification task
   case class Verify[T](task: TaskThread[T],
-                    queue: SourceQueueWithComplete[Envelope],
-                    publisher: Publisher[Envelope]) extends StartProcessRequest[T]
+                       queue: SourceQueueWithComplete[Envelope],
+                       publisher: Publisher[Envelope],
+                       prev_job_id: Option[AstJobId]) extends StartProcessRequest[T]
 
   sealed trait StopProcessRequest
 

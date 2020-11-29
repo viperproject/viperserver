@@ -47,7 +47,7 @@ object ViperCoreServerUtils {
     import scala.language.postfixOps
 
     val actor = actor_system.actorOf(SeqActor.props())
-    val complete_future = core.streamMessages(jid, actor).getOrElse(return Future.failed(JobNotFoundException()))
+    val complete_future = core.streamMessages(jid, actor).getOrElse(return Future.failed(JobNotFoundException))
     val res: Future[List[Message]] = complete_future.flatMap(_ => {
       implicit val askTimeout: Timeout = Timeout(core.config.actorCommunicationTimeout() milliseconds)
       val answer: Future[Any] = actor ? SeqActor.Result

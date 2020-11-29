@@ -83,7 +83,7 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
 
           }).flatten
 
-        initializeVerificationProcess(task_backend_fut)
+        initializeVerificationProcess(task_backend_fut, Some(ast_id))
 
       case None =>
         logger.get.error(s"Could not start verification process for non-existent $ast_id")
@@ -100,7 +100,7 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
 
     val args: List[String] = backend_config.toList
     val task_backend = new VerificationWorker(logger.get, args :+ programId, program)
-    val ver_id = initializeVerificationProcess(Future.successful(task_backend))
+    val ver_id = initializeVerificationProcess(Future.successful(task_backend), None)
 
     if (ver_id.id >= 0) {
       logger.get.info(s"Verification process #${ver_id.id} has successfully started.")

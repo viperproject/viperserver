@@ -4,11 +4,11 @@ package viper.server.core
 import ch.qos.logback.classic.Logger
 import viper.server.utility.AstGenerator
 import viper.server.utility.Helpers.getArgListFromArgString
+import viper.server.vsi.AstConstructionException
 import viper.silver.ast.Program
 import viper.silver.reporter.ExceptionReport
 
 
-abstract class AstConstructionException extends Exception
 object ViperFileNotFoundException extends AstConstructionException
 object AstConstructionInterrupted extends AstConstructionException
 object InvalidArgumentsException extends AstConstructionException
