@@ -217,7 +217,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     case d: Domain => "domain"
     case fi: Field => "field"
     case _ => "other"
-  }).mapValues(_.size)
+  }).view.mapValues(_.size).toMap
 
   private def reportProgramStats(prog: Program): Unit = {
     val stats = countInstances(prog)
@@ -284,7 +284,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
         _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName,result.method, Success))
       } else {
         all_cached_errors ++= cached_errors
-        _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(all_cached_errors)))
+        _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(all_cached_errors.toSeq)))
       }
     })
 
@@ -326,7 +326,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
         case Failure(errorList) =>
           _frontend.setVerificationResult(Failure(errorList ++ all_cached_errors))
         case Success =>
-          _frontend.setVerificationResult(Failure(all_cached_errors))
+          _frontend.setVerificationResult(Failure(all_cached_errors.toSeq))
       }
     }
   }

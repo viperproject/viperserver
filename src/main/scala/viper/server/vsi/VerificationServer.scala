@@ -19,6 +19,7 @@ import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
+import scala.language.postfixOps
 
 
 class VerificationServerException extends Exception
