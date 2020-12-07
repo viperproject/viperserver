@@ -8,7 +8,8 @@ package viper.server.core
 
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.http.scaladsl.testkit.ScalatestRouteTest
-import org.scalatest.{Matchers, WordSpec}
+import org.scalatest.wordspec.AnyWordSpec
+import org.scalatest.matchers.should.Matchers
 import viper.server.core.ViperBackendConfigs.SiliconConfig
 import viper.server.vsi._
 import viper.server.utility.AstGenerator
@@ -19,7 +20,7 @@ import viper.silver.reporter._
 import scala.concurrent.Future
 import scala.util.{Failure, Success}
 
-class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
+class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
 
   implicit var actor_system: ActorSystem = ActorSystem("Test")
   val test_actor_0 = actor_system.actorOf(ClientActor.props(0))
@@ -231,9 +232,9 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
         })
         val filesAndFutures = files.zip(messages_futures)
         filesAndFutures.foreach({ case (f, mf) =>
-          while (!mf.isCompleted) {
-            Thread.sleep(100)
-          }
+          // while (!mf.isCompleted) {
+          //   Thread.sleep(100)
+          // }
           mf.onComplete({
             case Success(messages) =>
               messages.last match {
