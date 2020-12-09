@@ -9,7 +9,6 @@ lazy val silver = project in file("silver")
 lazy val silicon = project in file("silicon")
 lazy val carbon = project in file("carbon")
 
-lazy val common = (project in file("common"))
 
 // Publishing settings
 ThisBuild / Test / publishArtifact := true
@@ -25,8 +24,6 @@ lazy val server = (project in file("."))
     .dependsOn(silver % "compile->compile;test->test")
     .dependsOn(silicon % "compile->compile;test->test")
     .dependsOn(carbon % "compile->compile;test->test")
-    .dependsOn(common)
-    .aggregate(common)
     .enablePlugins(JavaAppPackaging)
     .settings(
         // General settings
