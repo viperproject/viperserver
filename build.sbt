@@ -9,15 +9,6 @@ lazy val silver = project in file("silver")
 lazy val silicon = project in file("silicon")
 lazy val carbon = project in file("carbon")
 
-// Publishing settings
-ThisBuild / Test / publishArtifact := true
-// Allows 'publishLocal' SBT command to include test artifacts in a dedicated JAR file
-// (whose name is postfixed by 'test-source') and publish it in the local Ivy repository.
-// This JAR file contains all classes and resources for testing and projects like Carbon
-// and Silicon can rely on it to access the test suit implemented in Silver.
-
-ThisBuild / Test / parallelExecution := false
-
 // Viper Server specific project settings
 lazy val server = (project in file("."))
     .dependsOn(silver % "compile->compile;test->test")
@@ -30,6 +21,10 @@ lazy val server = (project in file("."))
         organization := "viper",
         version := "1.1-SNAPSHOT",
 
+        // Fork test to a different JVM than SBT's, avoiding SBT's classpath interfering with
+        // classpath used by Scala's reflection.
+        Test / fork := true,
+
         // Compilation settings
         libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.6.10",
         libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json" % "10.2.1",
@@ -40,8 +35,8 @@ lazy val server = (project in file("."))
         // Run settings
         run / javaOptions += "-Xss128m",
 
-        // Test settings
-        fork := true,
+        // Test settings.
+        Test / parallelExecution := false,
 
         // Assembly settings
         assembly / assemblyJarName := "viper.jar",                      // JAR filename
