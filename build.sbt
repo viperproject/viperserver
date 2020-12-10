@@ -4,16 +4,6 @@
 //
 // Copyright (c) 2011-2020 ETH Zurich.
 
-ThisBuild / scalaVersion := "2.13.4"
-ThisBuild / scalacOptions ++= Seq(
-  "-encoding", "UTF-8",               // Enforce UTF-8, instead of relying on properly set locales
-  "-deprecation",                     // Warn when using deprecated language features
-  "-unchecked",                       // Warn on generated code assumptions
-  "-feature",                         // Warn on features that requires explicit import
-  "-Wunused",                         // Warn on unused imports
-  "-Ypatmat-exhaust-depth", "40"      // Increase depth of pattern matching analysis
-)
-
 // Import general settings from Silver, Silicon and Carbon
 lazy val silver = project in file("silver")
 lazy val silicon = project in file("silicon")
