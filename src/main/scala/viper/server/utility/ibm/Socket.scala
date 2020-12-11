@@ -53,20 +53,20 @@ object Socket {
       try {
         socket.close ()
       } catch {
-        case e: IOException =>
+        case _: IOException =>
 
         // Ignore IOException on close()
       }
       return port
     } catch {
-      case e: IOException =>
+      case _: IOException =>
 
     } finally {
       if (socket != null) {
         try {
           socket.close ()
         } catch {
-          case e: IOException =>
+          case _: IOException =>
 
         }
       }
@@ -94,14 +94,14 @@ object Socket {
       ds.setReuseAddress(true)
       return true
     } catch {
-      case e: IOException =>
+      case _: IOException =>
 
     } finally {
       if (ds != null) ds.close()
       if (ss != null) try
         ss.close()
       catch {
-        case e: IOException =>
+        case _: IOException =>
 
         /* should not be thrown */
       }

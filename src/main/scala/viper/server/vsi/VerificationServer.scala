@@ -165,13 +165,13 @@ trait VerificationServer extends Unpacker {
       case VerificationProtocol.Stop =>
         val did_I_interrupt = interrupt
         if (did_I_interrupt) {
-          sender ! s"Job #$id has been successfully interrupted."
+          sender() ! s"Job #$id has been successfully interrupted."
         } else {
-          sender ! s"Job #$id has already been finalized."
+          sender() ! s"Job #$id has already been finalized."
         }
       case VerificationProtocol.Verify(task, queue, publisher, executor) =>
         resetVerificationTask()
-        sender ! startJob(task, queue, publisher)(executor)
+        sender() ! startJob(task, queue, publisher)(executor)
       case msg =>
         throw new Exception("Main Actor: unexpected message received: " + msg)
     }
@@ -271,7 +271,7 @@ trait VerificationServer extends Unpacker {
       case Success(_) =>
         _termActor ! Terminator.Exit
         println(s"shutting down...")
-      case Failure(err_msg) =>
+      case Failure(_) =>
         _termActor ! Terminator.Exit
         println(s"forcibly shutting down...")
     }
@@ -280,7 +280,7 @@ trait VerificationServer extends Unpacker {
   /** This method interrupts active jobs upon termination of the server.
     */
   protected def getInterruptFutureList(): Future[List[String]] = {
-    val interrupt_future_list: List[Future[String]] = jobs.jobHandles map { case (jid, handle_future) =>
+    val interrupt_future_list: List[Future[String]] = jobs.jobHandles map { case (_, handle_future) =>
       handle_future.flatMap {
         case JobHandle(actor, _, _) =>
           implicit val askTimeout: Timeout = Timeout(1000 milliseconds)

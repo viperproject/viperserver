@@ -33,7 +33,7 @@ class AstGenerator (private val _logger: ViperLogger){
     val args: Array[String] = Array(vpr_file_path)
     _logger.get.info(s"Parsing viper file.")
     ver_backend.setVerifier(ver_backend.createVerifier(args.mkString(" ")))
-    ver_backend.prepare(args)
+    ver_backend.prepare(args.toIndexedSeq)
     ver_backend.init(ver_backend.verifier)
     ver_backend.reset(Paths.get(ver_backend.config.file()))
     val parse_ast = parse()

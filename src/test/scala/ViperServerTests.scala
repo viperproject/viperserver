@@ -11,14 +11,14 @@ import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSup
 import akka.http.scaladsl.model.{StatusCodes, _}
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
 import akka.testkit.TestDuration
-import org.scalatest.{Matchers, WordSpec}
-
+import org.scalatest.wordspec.AnyWordSpec
+import org.scalatest.matchers.should.Matchers
 import viper.server.ViperServerRunner
 import viper.server.vsi.Requests._
 
 import scala.concurrent.duration._
 
-class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
+class ViperServerSpec extends AnyWordSpec with Matchers with ScalatestRouteTest {
 
   import scala.language.postfixOps
   implicit val jsonStreamingSupport: JsonEntityStreamingSupport = EntityStreamingSupport.json()

@@ -33,7 +33,7 @@ class ViperHttpServer(_args: Array[String])(executor: VerificationExecutionConte
   extends ViperCoreServer(_args)(executor) with VerificationServerHTTP {
 
   override def start(): Unit = {
-    _config = new ViperConfig(_args)
+    _config = new ViperConfig(_args.toIndexedSeq)
     config.verify()
 
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
