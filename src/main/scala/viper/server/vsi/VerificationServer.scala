@@ -6,6 +6,8 @@
 
 package viper.server.vsi
 
+import scala.language.postfixOps
+
 import akka.NotUsed
 import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import akka.pattern.ask

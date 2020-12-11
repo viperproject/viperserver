@@ -207,7 +207,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
         case Failure(errorList) =>
           _frontend.setVerificationResult(Failure(errorList ++ all_cached_errors))
         case Success =>
-          _frontend.setVerificationResult(Failure(all_cached_errors))
+          _frontend.setVerificationResult(Failure(all_cached_errors.toSeq))
       }
     }
   }
