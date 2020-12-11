@@ -30,7 +30,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   implicit val verReqAccept_writer: RootJsonFormat[VerificationRequestAccept] = lift(new RootJsonWriter[VerificationRequestAccept] {
     override def write(obj: VerificationRequestAccept): JsValue = JsObject(
       "ast_id" -> JsNumber(obj.ast_id.id),
-      "ver_id" -> JsNumber(obj.ver_id.id)
+      "id" -> JsNumber(obj.ver_id.id)
     )
   })
   implicit val verReqReject_format: RootJsonFormat[VerificationRequestReject] = jsonFormat1(VerificationRequestReject.apply)
