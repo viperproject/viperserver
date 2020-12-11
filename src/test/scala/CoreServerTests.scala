@@ -64,6 +64,10 @@ class CoreServerTest extends WordSpec with Matchers with ScalatestRouteTest {
 
   private val empty_args: Array[String] = Array()
 
+  // create a new execution context for each ViperCoreServer instance
+  // (otherwise there is a not-unique exception occurring for the Terminator actor when concurrently verifying multiple programs
+  private implicit def getExecutionContext: VerificationExecutionContext = new DefaultVerificationExecutionContext()
+
   "An instance of ViperCoreServer" when {
     "verifying a single program with caching disabled" should {
       val core = new ViperCoreServer(empty_args)

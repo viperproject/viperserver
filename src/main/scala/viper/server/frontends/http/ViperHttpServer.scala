@@ -18,7 +18,7 @@ import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
 import spray.json.DefaultJsonProtocol
 import viper.server.ViperConfig
 import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, SiliconConfig}
-import viper.server.core.{ViperCache, ViperCoreServer}
+import viper.server.core.{VerificationExecutionContext, ViperCache, ViperCoreServer}
 import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
 import viper.server.utility.AstGenerator
 import viper.server.vsi.Requests.CacheResetRequest
@@ -29,8 +29,8 @@ import viper.silver.reporter.Message
 
 import scala.util.{Failure, Success, Try}
 
-class ViperHttpServer(_args: Array[String])
-  extends ViperCoreServer(_args) with VerificationServerHTTP {
+class ViperHttpServer(_args: Array[String])(executor: VerificationExecutionContext)
+  extends ViperCoreServer(_args)(executor) with VerificationServerHTTP {
 
   override def start(): Unit = {
     _config = new ViperConfig(_args)

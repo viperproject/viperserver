@@ -15,9 +15,8 @@ import viper.silver.logger.ViperLogger
 import viper.silver.reporter.Message
 
 import scala.concurrent.Future
-import scala.language.postfixOps
 
-class ViperCoreServer(val _args: Array[String]) extends VerificationServer {
+class ViperCoreServer(val _args: Array[String])(override implicit val executor: VerificationExecutionContext) extends VerificationServer {
 
   // --- VCS : Configuration ---
   protected var _config: ViperConfig = _

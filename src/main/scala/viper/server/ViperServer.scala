@@ -6,6 +6,7 @@
 
 package viper.server
 
+import viper.server.core.DefaultVerificationExecutionContext
 import viper.server.frontends.http.ViperHttpServer
 
 object ViperServerRunner {
@@ -15,8 +16,8 @@ object ViperServerRunner {
   /** Start VCS in HTTP mode.
     * */
   def startHttpServer(args: Array[String]): Unit = {
-
-    viperServerHTTP = new ViperHttpServer(args)
+    val executor = new DefaultVerificationExecutionContext()
+    viperServerHTTP = new ViperHttpServer(args)(executor)
     viperServerHTTP.start()
   }
 

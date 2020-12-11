@@ -14,11 +14,13 @@ import akka.stream.{ActorMaterializer, OverflowStrategy, QueueOfferResult}
 import akka.util.Timeout
 import akka.{Done, NotUsed}
 import org.reactivestreams.Publisher
+import viper.server.core.VerificationExecutionContext
 
 import scala.collection.mutable
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success}
+import scala.language.postfixOps
 
 
 class VerificationServerException extends Exception
@@ -78,8 +80,8 @@ class JobPool(val MAX_ACTIVE_JOBS: Int = 3) {
   */
 trait VerificationServer extends Unpacker {
 
-  implicit val system: ActorSystem = ActorSystem("Main")
-  implicit val executionContext = ExecutionContext.global
+  implicit def executor: VerificationExecutionContext
+  implicit val system: ActorSystem = executor.actorSystem
   implicit val materializer: ActorMaterializer = ActorMaterializer()
 
   protected var jobs: JobPool = _
@@ -92,7 +94,7 @@ trait VerificationServer extends Unpacker {
     * */
   def start(active_jobs: Int): Unit = {
     jobs = new JobPool(active_jobs)
-    _termActor = system.actorOf(Terminator.props(), "terminator")
+    _termActor = executor.actorSystem.actorOf(Terminator.props(), "terminator")
     isRunning = true
   }
 
@@ -142,21 +144,19 @@ trait VerificationServer extends Unpacker {
 
   class JobActor(private val id: Int) extends Actor {
 
-    private var _verificationTask: Thread = _
+    private var _verificationTask: java.util.concurrent.Future[_] = _
 
     private def interrupt: Boolean = {
-      if (_verificationTask != null && _verificationTask.isAlive) {
-        _verificationTask.interrupt()
-        _verificationTask.join()
+      if (_verificationTask != null && !_verificationTask.isDone) {
+        _verificationTask.cancel(true)
         return true
       }
       false
     }
 
     private def resetVerificationTask(): Unit = {
-      if (_verificationTask != null && _verificationTask.isAlive) {
-        _verificationTask.interrupt()
-        _verificationTask.join()
+      if (_verificationTask != null && !_verificationTask.isDone) {
+        _verificationTask.cancel(true)
       }
       _verificationTask = null
     }
@@ -169,16 +169,15 @@ trait VerificationServer extends Unpacker {
         } else {
           sender ! s"Job #$id has already been finalized."
         }
-      case VerificationProtocol.Verify(task, queue, publisher) =>
+      case VerificationProtocol.Verify(task, queue, publisher, executor) =>
         resetVerificationTask()
-        sender ! startJob(task, queue, publisher)
+        sender ! startJob(task, queue, publisher)(executor)
       case msg =>
         throw new Exception("Main Actor: unexpected message received: " + msg)
     }
 
-    private def startJob(task: Thread, queue: SourceQueueWithComplete[Envelope], publisher: Publisher[Envelope]): JobHandle = {
-      _verificationTask = task
-      _verificationTask.start()
+    private def startJob(task: VerificationTask, queue: SourceQueueWithComplete[Envelope], publisher: Publisher[Envelope])(executor: VerificationExecutionContext): JobHandle = {
+      _verificationTask = executor.submit(task)
       JobHandle(self, queue, publisher)
     }
   }
@@ -208,7 +207,7 @@ trait VerificationServer extends Unpacker {
     *
     * As such, it accepts an instance of a VerificationTask, which it will pass to the JobActor.
     */
-  protected def initializeVerificationProcess(task:VerificationTask): JobID = {
+  protected def initializeVerificationProcess(task: VerificationTask): JobID = {
     if(!isRunning) {
       throw new IllegalStateException("Instance of ViperCoreServer already stopped")
     }
@@ -223,8 +222,7 @@ trait VerificationServer extends Unpacker {
                                        .run()
         val message_actor = system.actorOf(QueueActor.props(new_jid, queue), s"queue_actor_$new_jid")
         task.setQueueActor(message_actor)
-        val task_with_actor = new Thread(task)
-        val answer = job_actor ? VerificationProtocol.Verify(task_with_actor, queue, publisher)
+        val answer = job_actor ? VerificationProtocol.Verify(task, queue, publisher, executor)
         val new_job_handle: Future[JobHandle] = answer.mapTo[JobHandle]
         new_job_handle
       }
@@ -322,14 +320,20 @@ abstract class VerificationTask()(implicit val executionContext: ExecutionContex
   protected def enqueueMessages(msg: A): Unit = {
     implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
 
-    var current_offer: Future[QueueOfferResult] = null
     val answer = q_actor ? TaskProtocol.BackendReport(pack(msg))
-    current_offer = answer.flatMap({
-      case res: Future[QueueOfferResult] => res
-    })
-    while(current_offer == null || !current_offer.isCompleted){
-      Thread.sleep(10)
+    Await.ready(answer, Duration.Inf)
+    // we have waited until we got an answer or a timeout so it's safe to call get:
+    val current_offer: Future[QueueOfferResult] = answer.value.get match {
+      case Success(current_offer) if current_offer.isInstanceOf[Future[QueueOfferResult]] =>
+        current_offer.asInstanceOf[Future[QueueOfferResult]]
+      case Success(s) => throw new IllegalStateException(s"unexpected answer received from queue actor: $s")
+      case Failure(exception) =>
+        println(s"enqueuing message into queue has failed with exception: $exception")
+        Future.failed(exception)
     }
+    // wait until either answer completes with a timeout or current_offer completes (an exception is thrown if
+    // current_offer completes with a failure
+    Await.result(current_offer, Duration.Inf)
   }
 
   /** Notify the queue actor that the task has come to an end

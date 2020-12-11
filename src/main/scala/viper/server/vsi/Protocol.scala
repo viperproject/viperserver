@@ -9,6 +9,7 @@ package viper.server.vsi
 import akka.stream.scaladsl.SourceQueueWithComplete
 import org.reactivestreams.Publisher
 import spray.json.{DefaultJsonProtocol, RootJsonFormat}
+import viper.server.core.VerificationExecutionContext
 
 // Protocol to communicate with QueueActor
 object TaskProtocol {
@@ -20,7 +21,7 @@ object TaskProtocol {
 object VerificationProtocol {
 
   // Request Job Actor to execute verification task
-  case class Verify(task: Thread, queue: SourceQueueWithComplete[Envelope], publisher: Publisher[Envelope])
+  case class Verify(task: VerificationTask, queue: SourceQueueWithComplete[Envelope], publisher: Publisher[Envelope], executor: VerificationExecutionContext)
 
   // Verification interrupt request to Terminator Actor
   case class Stop()
