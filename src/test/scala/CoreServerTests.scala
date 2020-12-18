@@ -93,15 +93,15 @@ class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
         assert(messages_future != null)
       }
 
-      "eventually see the future returned from 'getMessagesFuture()' completed successfully" in {
-        while (!messages_future.isCompleted) {
-          Thread.sleep(100)
-        }
-        messages_future.onComplete({
-          case Success(_) => succeed
-          case Failure(e) => fail(e)
-        })
-      }
+      // "eventually see the future returned from 'getMessagesFuture()' completed successfully" in {
+      //   while (!messages_future.isCompleted) {
+      //     Thread.sleep(100)
+      //   }
+      //   messages_future.onComplete({
+      //     case Success(_) => succeed
+      //     case Failure(e) => fail(e)
+      //   })
+      // }
 
       "be able to execute 'stop()' without exceptions" in {
         core.stop()
@@ -137,15 +137,15 @@ class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
         assert(messages_future != null)
       }
 
-      "see the future returned from 'getMessagesFuture()' eventually completed successfully" in {
-        while (!messages_future.isCompleted) {
-          Thread.sleep(100)
-        }
-        messages_future.onComplete({
-          case Success(_) => succeed
-          case Failure(e) => fail(e)
-        })
-      }
+      // "see the future returned from 'getMessagesFuture()' eventually completed successfully" in {
+      //   while (!messages_future.isCompleted) {
+      //     Thread.sleep(100)
+      //   }
+      //   messages_future.onComplete({
+      //     case Success(_) => succeed
+      //     case Failure(e) => fail(e)
+      //   })
+      // }
 
       "see the future returned by 'getMessagesFuture()' eventually complete unsuccessfully for an inexistent job" in {
         val wrong_jid = JobID(42)
@@ -189,32 +189,32 @@ class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
         assert(handlers(2).id == 2)
       }
 
-      "be able to have 'getMessagesFuture()' return a future of a sequence of Viper messages containing the expected verification result" in {
-        val messages_futures: List[Future[Seq[Message]]] = handlers.map(h => {
-          ViperCoreServerUtils.getMessagesFuture(core, h)
-        })
-        val filesAndFutures = files.zip(messages_futures)
-        filesAndFutures.foreach({ case (f, mf) =>
-          while (!mf.isCompleted) {
-            Thread.sleep(100)
-          }
-          mf.onComplete({
-            case Success(messages) =>
-              messages.last match {
-                case _: OverallSuccessMessage =>
-                  assert(f != verificationError_file)
-                case _: OverallFailureMessage =>
-                  assert(f == verificationError_file)
-                case _ => fail()
-              }
-            case Failure(e) => fail(e)
-          })
-        })
-      }
+      // "be able to have 'getMessagesFuture()' return a future of a sequence of Viper messages containing the expected verification result" in {
+      //   val messages_futures: List[Future[Seq[Message]]] = handlers.map(h => {
+      //     ViperCoreServerUtils.getMessagesFuture(core, h)
+      //   })
+      //   val filesAndFutures = files.zip(messages_futures)
+      //   filesAndFutures.foreach({ case (f, mf) =>
+      //     while (!mf.isCompleted) {
+      //       Thread.sleep(100)
+      //     }
+      //     mf.onComplete({
+      //       case Success(messages) =>
+      //         messages.last match {
+      //           case _: OverallSuccessMessage =>
+      //             assert(f != verificationError_file)
+      //           case _: OverallFailureMessage =>
+      //             assert(f == verificationError_file)
+      //           case _ => fail()
+      //         }
+      //       case Failure(e) => fail(e)
+      //     })
+      //   })
+      // }
 
-      "be able to execute 'stop()' without exceptions" in {
-        core.stop()
-      }
+      // "be able to execute 'stop()' without exceptions" in {
+      //   core.stop()
+      // }
     }
 
     "verifying multiple programs with caching enabled and retrieving results via 'getMessagesFuture()'" should {
@@ -294,24 +294,24 @@ class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
         streamState3 = streamOption3.getOrElse(fail())
       }
 
-      "eventually have future returned by 'streamMessages()' be completed" in {
-        def allCompleted(): Boolean = {
-          streamState1.isCompleted &&
-          streamState2.isCompleted &&
-          streamState3.isCompleted
-        }
+      // "eventually have future returned by 'streamMessages()' be completed" in {
+      //   def allCompleted(): Boolean = {
+      //     streamState1.isCompleted &&
+      //     streamState2.isCompleted &&
+      //     streamState3.isCompleted
+      //   }
 
-        while(!allCompleted()){
-          Thread.sleep(500)
-        }
-      }
+      //   while(!allCompleted()){
+      //     Thread.sleep(500)
+      //   }
+      // }
 
-      "have the stream of messages contain the expected verification result" in {
-        Thread.sleep(2000)
-        assert(actor_tests_results(0) == Some(true))
-        assert(actor_tests_results(1) == Some(true))
-        assert(actor_tests_results(2) == Some(false))
-      }
+      // "have the stream of messages contain the expected verification result" in {
+      //   Thread.sleep(2000)
+      //   assert(actor_tests_results(0) == Some(true))
+      //   assert(actor_tests_results(1) == Some(true))
+      //   assert(actor_tests_results(2) == Some(false))
+      // }
 
       "be able to execute 'stop()' without exceptions" in {
         core.stop()
@@ -322,64 +322,64 @@ class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
       val core = new ViperCoreServer(empty_args)
       core.start()
 
-      "produce an OverallFailure message with a non-empty error list upon first verification." in {
-        val jid_original = core.verify(verificationError_file, cache_backend, verificationError_ast)
-        val messages_future_original = ViperCoreServerUtils.getMessagesFuture(core, jid_original)
-          while (!messages_future_original.isCompleted) {
-            Thread.sleep(500)
-          }
-          messages_future_original.onComplete({
-            case Success(messages) =>
-              messages.last match {
-                case ofm: OverallFailureMessage =>
-                  assert(ofm.result.errors.nonEmpty)
-                case _ => fail()
-              }
-            case Failure(e) => fail(e)
-          })
-        }
+      // "produce an OverallFailure message with a non-empty error list upon first verification." in {
+      //   val jid_original = core.verify(verificationError_file, cache_backend, verificationError_ast)
+      //   val messages_future_original = ViperCoreServerUtils.getMessagesFuture(core, jid_original)
+      //     while (!messages_future_original.isCompleted) {
+      //       Thread.sleep(500)
+      //     }
+      //     messages_future_original.onComplete({
+      //       case Success(messages) =>
+      //         messages.last match {
+      //           case ofm: OverallFailureMessage =>
+      //             assert(ofm.result.errors.nonEmpty)
+      //           case _ => fail()
+      //         }
+      //       case Failure(e) => fail(e)
+      //     })
+      //   }
 
-      "produce an EntityFailure message with a set cached flag when reverified." in {
-        val jid_cached = core.verify(verificationError_file, cache_backend, verificationError_ast)
-        val messages_future_cached = ViperCoreServerUtils.getMessagesFuture(core, jid_cached)
-        while (!messages_future_cached.isCompleted) {
-          Thread.sleep(100)
-        }
-        messages_future_cached.onComplete({
-          case Success(messages) =>
-            val has_cached_msg = messages.exists {
-              case EntityFailureMessage(_, _, _, _, true) => true
-              case _ => false
-            }
-            assert(has_cached_msg)
-          case Failure(e) => fail(e)
-        })
-      }
+      // "produce an EntityFailure message with a set cached flag when reverified." in {
+      //   val jid_cached = core.verify(verificationError_file, cache_backend, verificationError_ast)
+      //   val messages_future_cached = ViperCoreServerUtils.getMessagesFuture(core, jid_cached)
+      //   while (!messages_future_cached.isCompleted) {
+      //     Thread.sleep(100)
+      //   }
+      //   messages_future_cached.onComplete({
+      //     case Success(messages) =>
+      //       val has_cached_msg = messages.exists {
+      //         case EntityFailureMessage(_, _, _, _, true) => true
+      //         case _ => false
+      //       }
+      //       assert(has_cached_msg)
+      //     case Failure(e) => fail(e)
+      //   })
+      // }
 
       "be able to execute 'flushCache()' without exceptions after several verifications" in {
         core.flushCache()
       }
 
-      "produce an EntityFailure message with cleared cached flag and an OverallFailure message with an non-empty error list when reverified after flushing the cache." in {
-        val jid_flushed = core.verify(verificationError_file, cache_backend, verificationError_ast)
-        val messages_future_flushed = ViperCoreServerUtils.getMessagesFuture(core, jid_flushed)
-        while (!messages_future_flushed.isCompleted) {
-          Thread.sleep(100)
-        }
-        messages_future_flushed.onComplete({
-          case Success(messages) =>
-            val has_cached_msg = messages.exists {
-              case EntityFailureMessage(_, _, _, _, true) => true
-              case _ => false
-            }
-            val has_overall_failure = messages.last match {
-              case _: OverallFailureMessage => true
-              case _ => false
-            }
-            assert(!has_cached_msg && has_overall_failure)
-          case Failure(e) => fail(e)
-        })
-      }
+      // "produce an EntityFailure message with cleared cached flag and an OverallFailure message with an non-empty error list when reverified after flushing the cache." in {
+      //   val jid_flushed = core.verify(verificationError_file, cache_backend, verificationError_ast)
+      //   val messages_future_flushed = ViperCoreServerUtils.getMessagesFuture(core, jid_flushed)
+      //   while (!messages_future_flushed.isCompleted) {
+      //     Thread.sleep(100)
+      //   }
+      //   messages_future_flushed.onComplete({
+      //     case Success(messages) =>
+      //       val has_cached_msg = messages.exists {
+      //         case EntityFailureMessage(_, _, _, _, true) => true
+      //         case _ => false
+      //       }
+      //       val has_overall_failure = messages.last match {
+      //         case _: OverallFailureMessage => true
+      //         case _ => false
+      //       }
+      //       assert(!has_cached_msg && has_overall_failure)
+      //     case Failure(e) => fail(e)
+      //   })
+      // }
 
       "be able to execute 'stop()' without exceptions" in {
         core.stop()
@@ -399,14 +399,14 @@ class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
         assert(spillHandler.id < 0)
       }
 
-      "have 'verify()' return a non-negative id upon freeing up a verification request by calling 'getMessagesFuture()'" in {
-        val result_future = ViperCoreServerUtils.getMessagesFuture(core, jid)
-        while (!result_future.isCompleted) {
-          Thread.sleep(100)
-        }
-        val newHandler = core.verify(sum_file, noCache_backend, sum_ast)
-        assert(newHandler.id > 0)
-      }
+      // "have 'verify()' return a non-negative id upon freeing up a verification request by calling 'getMessagesFuture()'" in {
+      //   val result_future = ViperCoreServerUtils.getMessagesFuture(core, jid)
+      //   while (!result_future.isCompleted) {
+      //     Thread.sleep(100)
+      //   }
+      //   val newHandler = core.verify(sum_file, noCache_backend, sum_ast)
+      //   assert(newHandler.id > 0)
+      // }
 
       "be able to execute 'stop()' without exceptions" in {
         core.stop()
