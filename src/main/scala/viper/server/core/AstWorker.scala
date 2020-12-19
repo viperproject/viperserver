@@ -27,7 +27,7 @@ class AstWorker(val arg_list: List[String],
 
   private def constructAst(): Future[Program] = Future {
 
-    println(">>> AstWorker.constructAst()")
+    //println(">>> AstWorker.constructAst()")
 
     val file: String = arg_list.last
 
@@ -69,7 +69,7 @@ class AstWorker(val arg_list: List[String],
   }
 
   override def run(): Unit = {
-    println(">>> AstWorker.run()")
+    //println(">>> AstWorker.run()")
     _artifact_pro.completeWith(constructAst())
   }
 

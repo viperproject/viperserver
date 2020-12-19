@@ -1,5 +1,7 @@
 package viper.server.utility
 
+import scala.language.postfixOps
+
 import viper.silver.ast.{AbstractSourcePosition, Domain, Field, Function, LocalVarDecl, Method, NamedDomainAxiom, Positioned, Predicate, Program, Scope}
 import viper.silver.frontend.SilFrontend
 import viper.silver.reporter.{Definition, ProgramDefinitionsReport, ProgramOutlineReport, StatisticsReport}
@@ -98,7 +100,7 @@ trait ProgramDefinitionsProvider {
     case d: Domain => "domain"
     case fi: Field => "field"
     case _ => "other"
-  }).mapValues(_.size)
+  }).mapValues(_.size).toMap
 
   def reportProgramStats(): Unit = {
     val prog = _frontend.program.get

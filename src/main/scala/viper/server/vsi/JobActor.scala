@@ -54,14 +54,14 @@ class JobActor[T](private val id: JobId) extends Actor {
     case req: StartProcessRequest[T] =>
       req match {
         case _: ConstructAst[T] =>
-          println(">>> JobActor received request ConstructAst")
+          //println(">>> JobActor received request ConstructAst")
           resetAstConstructionTask()
           _astConstructionTask = req.task
           _astConstructionTask.start()
           sender ! AstHandle(self, req.queue, req.publisher, _astConstructionTask.getArtifact)
 
         case ver_req: Verify[T] =>
-          println(">>> JobActor received request Verify")
+          //println(">>> JobActor received request Verify")
           resetVerificationTask()
           _verificationTask = ver_req.task
           _verificationTask.start()

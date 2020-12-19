@@ -6,6 +6,8 @@
 
 package viper.server.core
 
+import scala.language.postfixOps
+
 import ch.qos.logback.classic.Logger
 import viper.server.core.ViperCache.logger
 import viper.server.vsi._

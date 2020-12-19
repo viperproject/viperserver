@@ -1,5 +1,7 @@
 package viper.server.vsi
 
+import scala.language.postfixOps
+
 import akka.actor.ActorRef
 import akka.pattern.ask
 import akka.stream.QueueOfferResult

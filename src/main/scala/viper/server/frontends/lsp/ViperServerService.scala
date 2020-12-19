@@ -8,6 +8,8 @@
 
 package viper.server.frontends.lsp
 
+import scala.language.postfixOps
+
 import java.util.concurrent.{CompletableFuture => CFuture}
 
 import akka.actor.{PoisonPill, Props}

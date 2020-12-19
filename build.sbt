@@ -11,15 +11,6 @@ lazy val carbon = project in file("carbon")
 
 lazy val common = (project in file("common"))
 
-// Publishing settings
-ThisBuild / Test / publishArtifact := true
-// Allows 'publishLocal' SBT command to include test artifacts in a dedicated JAR file
-// (whose name is postfixed by 'test-source') and publish it in the local Ivy repository.
-// This JAR file contains all classes and resources for testing and projects like Carbon
-// and Silicon can rely on it to access the test suit implemented in Silver.
-
-ThisBuild / Test / parallelExecution := false
-
 // Viper Server specific project settings
 lazy val server = (project in file("."))
     .dependsOn(silver % "compile->compile;test->test")
@@ -34,11 +25,15 @@ lazy val server = (project in file("."))
         organization := "viper",
         version := "1.1-SNAPSHOT",
 
+        // Fork test to a different JVM than SBT's, avoiding SBT's classpath interfering with
+        // classpath used by Scala's reflection.
+        Test / fork := true,
+
         // Compilation settings
-        libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.5.22",
+        libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.5.23",
         libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json" % "10.1.8",
-        libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.5.22",
-        libraryDependencies += "com.typesafe.akka" %% "akka-stream-testkit" % "2.5.22" % Test,
+        libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.5.23",
+        libraryDependencies += "com.typesafe.akka" %% "akka-stream-testkit" % "2.5.23" % Test,
         libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.1.8" % Test,
         libraryDependencies += "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.8.1", // Java implementation of language server protocol
 
@@ -46,7 +41,7 @@ lazy val server = (project in file("."))
         run / javaOptions += "-Xss128m",
 
         // Test settings
-        fork := true,
+        Test / parallelExecution := false,
 
         // Assembly settings
         assembly / assemblyJarName := "viper.jar",                      // JAR filename
