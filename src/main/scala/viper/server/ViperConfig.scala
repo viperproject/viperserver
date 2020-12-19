@@ -9,6 +9,7 @@ package viper.server
 import java.io.File
 
 import org.rogach.scallop.{ScallopConf, ScallopOption, singleArgConverter}
+import viper.server.utility.Helpers.{canonizedFile, validatePath}
 import viper.server.utility.ibm
 import viper.server.utility.ibm.Socket
 
@@ -31,24 +32,12 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
       val temp: File = java.io.File.createTempFile("viperserver_journal_" + System.currentTimeMillis(), ".log")
       Some(temp.getAbsolutePath)
     },
-    validate = (path: String) => {
-      val f = canonizedLogFile(path)
-      (f.isFile || f.isDirectory) && f.canWrite || f.getParentFile.canWrite
-    },
+    validate = validatePath,
     noshort = true,
     hidden = false)
 
-  private def canonizedLogFile(some_file_path: String): File = {
-    val f = new File(some_file_path)
-    if (f.isAbsolute) {
-      f
-    } else {
-      java.nio.file.Paths.get(System.getProperty("user.dir"), some_file_path).toFile
-    }
-  }
-
   def getLogFileWithGuarantee: String = {
-    val cf: File = canonizedLogFile(logFile())
+    val cf: File = canonizedFile(logFile())
     if ( cf.isDirectory ) {
       val log: File = java.io.File.createTempFile("viperserver_journal_" + System.currentTimeMillis(), ".log", cf)
       log.toString

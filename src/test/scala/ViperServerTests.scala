@@ -91,7 +91,7 @@ class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
       }
     }
 
-    s"start another verification process using `$tool` on an inexistent file" in {
+    s"start another verification process using `$tool` on an non-existent file" in {
       Post("/verify", VerificationRequest(testNonExistingFile_cmd)) ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"POST, /verify, $testEmptyFile_cmd", responseAs[String])
         responseAs[String] should include (s"not found")

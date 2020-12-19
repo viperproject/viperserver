@@ -62,8 +62,8 @@ trait VerificationServer extends Post {
     * will result in an IllegalStateException.
     * */
   def start(active_jobs: Int): Unit = {
-    ast_jobs = new JobPool("Http-AST-pool", active_jobs)
-    ver_jobs = new JobPool("Http-Verification-pool", active_jobs)
+    ast_jobs = new JobPool("VSI-AST-pool", active_jobs)
+    ver_jobs = new JobPool("VSI-Verification-pool", active_jobs)
     _termActor = system.actorOf(Terminator.props(ast_jobs, ver_jobs), "terminator")
     isRunning = true
   }

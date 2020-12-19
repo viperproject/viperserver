@@ -19,7 +19,7 @@ import spray.json.{DefaultJsonProtocol, RootJsonFormat}
 import viper.server.ViperConfig
 import viper.server.core.{AstConstructionFailureException, ViperBackendConfig, ViperCache, ViperCoreServer}
 import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
-import viper.server.utility.Helpers.getArgListFromArgString
+import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.vsi.Requests.CacheResetRequest
 import viper.server.vsi._
 import viper.silver.logger.ViperLogger
@@ -61,9 +61,14 @@ class ViperHttpServer(_args: Array[String])
   }
 
   override def onVerifyPost(vr: Requests.VerificationRequest): ToResponseMarshallable = {
-    val ast_id = requestAst(vr.arg)
-
     val arg_list = getArgListFromArgString(vr.arg)
+
+    if (!validateViperFile(arg_list.last)) {
+      return VerificationRequestReject("File not found")
+    }
+
+    val ast_id = requestAst(arg_list)
+
     val arg_list_partial: List[String] = arg_list.dropRight(1)
     val backend = try {
       ViperBackendConfig(arg_list_partial)

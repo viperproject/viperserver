@@ -45,10 +45,10 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
     println(s"ViperCoreServer started.")
   }
 
-  def requestAst(input: String): AstJobId = {
+  def requestAst(arg_list: List[String]): AstJobId = {
     require(config != null)
 
-    val task_backend = new AstWorker(input, logger.get)
+    val task_backend = new AstWorker(arg_list, logger.get)
     val ast_id = initializeAstConstruction(task_backend)
 
     if (ast_id.id >= 0) {

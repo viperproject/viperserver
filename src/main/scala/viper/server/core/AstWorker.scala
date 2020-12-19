@@ -3,7 +3,6 @@ package viper.server.core
 
 import ch.qos.logback.classic.Logger
 import viper.server.utility.AstGenerator
-import viper.server.utility.Helpers.getArgListFromArgString
 import viper.server.vsi.AstConstructionException
 import viper.silver.ast.Program
 import viper.silver.reporter.ExceptionReport
@@ -20,10 +19,9 @@ case class ServerCrashException(e: Throwable) extends Exception(e)
 
 import scala.concurrent.{ExecutionContext, Future, Promise}
 
-class AstWorker(val input: String,
+class AstWorker(val arg_list: List[String],
                 val logger: Logger)(implicit val ec: ExecutionContext) extends MessageReportingTask {
 
-  //  private var _ast: Promise[Program] =
   private val _artifact_pro: Promise[Program] = Promise()
   override def artifact: Future[Program] = _artifact_pro.future
 
@@ -31,7 +29,6 @@ class AstWorker(val input: String,
 
     println(">>> AstWorker.constructAst()")
 
-    val arg_list = getArgListFromArgString(input)
     val file: String = arg_list.last
 
     val reporter = new ActorReporter("AstGenerationReporter")
