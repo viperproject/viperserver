@@ -6,6 +6,7 @@
 
 package viper.server.core
 
+import akka.Done
 import akka.actor.ActorRef
 import viper.server.ViperConfig
 import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
@@ -111,7 +112,7 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
     ver_id
   }
 
-  override def streamMessages(jid: VerJobId, clientActor: ActorRef): Option[Future[Unit]] = {
+  override def streamMessages(jid: VerJobId, clientActor: ActorRef): Option[Future[Done]] = {
     logger.get.info(s"Streaming results for job #${jid.id}.")
     super.streamMessages(jid, clientActor)
   }

@@ -74,7 +74,6 @@ class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: 
         t_fut
       }
     }
-
     _nextJobId = _nextJobId + 1
     new_jid
   }
@@ -90,7 +89,6 @@ class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: 
       /** 1. Execute the job and get the result's future OR get the priorly cached result's future.
         * 2. Complete the promise with this future. */
       promise.completeWith(_jobExecutors(jid)())
-
       promise.future
     })
   }

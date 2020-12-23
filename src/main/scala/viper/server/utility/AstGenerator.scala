@@ -6,7 +6,10 @@
 
 package viper.server.utility
 
+import java.nio.file.NoSuchFileException
+
 import ch.qos.logback.classic.Logger
+import viper.server.utility.Helpers.validateViperFile
 import viper.silver.ast.Program
 import viper.silver.frontend.{SilFrontend, ViperAstProvider}
 import viper.silver.reporter.{NoopReporter, Reporter}
@@ -25,6 +28,11 @@ class AstGenerator(private val _logger: Logger,
     * Throws an exception when passed an non-existent file!
     */
   def generateViperAst(vpr_file_path: String): Option[Program] = {
+
+    if (!validateViperFile(vpr_file_path)) {
+      throw new NoSuchFileException(vpr_file_path)
+    }
+
     val args: Array[String] = Array(vpr_file_path)
     _logger.info(s"Parsing Viper file ...")
 

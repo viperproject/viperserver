@@ -9,15 +9,15 @@ package viper.server.core
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
-import viper.server.vsi.{VerJobId, JobNotFoundException}
+import viper.server.vsi.{JobNotFoundException, VerJobId}
 import viper.silver.reporter.{EntityFailureMessage, Message}
 import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 
 object ViperCoreServerUtils {
-  implicit private val executionContext = ExecutionContext.global
+  implicit private val executionContext: ExecutionContextExecutor = ExecutionContext.global
 
   private object SeqActor {
     case object Result

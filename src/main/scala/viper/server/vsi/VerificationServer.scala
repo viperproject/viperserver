@@ -6,9 +6,7 @@
 
 package viper.server.vsi
 
-import scala.language.postfixOps
-
-import akka.NotUsed
+import akka.Done
 import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import akka.pattern.ask
 import akka.stream.scaladsl.{Keep, Sink, Source}
@@ -17,6 +15,7 @@ import akka.util.Timeout
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
+import scala.language.postfixOps
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success}
 
@@ -135,9 +134,12 @@ trait VerificationServer extends Post {
 
     }).recover({
       case e: AstConstructionException =>
+        // If the AST construction phase failed, remove the verification job handle
+        // from the corresponding pool.
         pool.discardJob(new_jid)
         new_jid match {
           case _: VerJobId =>
+            // FIXME perhaps return None instead of nulls here.
             VerHandle(null, null, null, prev_job_id_maybe)
         }
     }).mapTo[T])
@@ -175,21 +177,54 @@ trait VerificationServer extends Post {
     *
     * Deletes the JobHandle on completion.
     */
-  protected def streamMessages(jid: VerJobId, clientActor: ActorRef): Option[Future[Unit]] = {
+  protected def streamMessages(jid: VerJobId, clientActor: ActorRef): Option[Future[Done]] = {
     if (!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
 
     ver_jobs.lookupJob(jid) match {
+      case None =>
+        /** Verification job not found */
+        None
       case Some(handle_future) =>
-        def mapHandle(handle: VerHandle): Future[Unit] = {
-          val src_envelope: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
-          val src_msg: Source[A , NotUsed] = src_envelope.map(e => unpack(e))
-          src_msg.runWith(Sink.actorRef(clientActor, Success))
-          handle.queue.watchCompletion().map(_ => ())
-        }
-        Some(handle_future.flatMap(mapHandle))
-      case None => None
+        Some(handle_future.flatMap((ver_handle: VerHandle) => {
+          ver_handle.prev_job_id match {
+            case None =>
+              /** The AST for this verification job wasn't created by this server. */
+              Future.successful((None, ver_handle))
+            case Some(ast_id) =>
+              /** The AST construction job may have been cleaned up
+                * (if all of its messages were already consumed) */
+              ast_jobs.lookupJob(ast_id) match {
+                case Some(ast_handle_fut) =>
+                  ast_handle_fut.map(ast_handle => (Some(ast_handle), ver_handle))
+                case None =>
+                  Future.successful((None, ver_handle))
+              }
+          }
+        }) flatMap {
+          case (ast_handle_maybe: Option[AstHandle[AST]], ver_handle: VerHandle) =>
+            val ver_source = ver_handle match {
+              case VerHandle(null, null, null, ast_id) =>
+                /** There were no messages produced during verification. */
+                Source.empty[Envelope]
+              case _ =>
+                Source.fromPublisher(ver_handle.publisher)
+            }
+            val ast_source = ast_handle_maybe match {
+              case None =>
+                /** The AST messages were already consumed. */
+                Source.empty[Envelope]
+              case Some(ast_handle) =>
+                Source.fromPublisher(ast_handle.publisher)
+            }
+            val resulting_source = ver_source.prepend(ast_source).map(e => unpack(e))
+            resulting_source.runWith(Sink.actorRef(clientActor, Success))
+
+            // FIXME This assumes that someone will actually complete the verification job queue.
+            // FIXME Could we guarantee that the client won't forget to do this?
+            ver_handle.queue.watchCompletion()
+        })
     }
   }
 
