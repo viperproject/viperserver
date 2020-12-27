@@ -114,7 +114,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
 
   /** Run the backend verification functionality
     * */
-  def execute(args: Seq[String]) {
+  def execute(args: Seq[String]): Unit = {
     val (head, tail) = args.splitAt(args.length-1)
     val fileless_args = head ++ Seq("--ignoreFile") ++ tail
     _frontend.setStartTime()
@@ -176,23 +176,31 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
         s" methodsToVerify: ${methodsToVerify.map(_.name)}.")
     _frontend.logger.trace(s"The cached program is equivalent to: \n${transformed_prog.toString()}")
 
-    _frontend.setVerificationResult(_frontend.verifier.verify(transformed_prog))
+    val ver_result: VerificationResult = _frontend.verifier.verify(transformed_prog)
+    _frontend.setVerificationResult(ver_result)
     _frontend.setState(DefaultStates.Verification)
+
+    _frontend.logger.debug(s"Latest verification result: $ver_result")
 
     // update cache
     methodsToVerify.foreach((m: Method) => {
       // Results come back irrespective of program Member.
-      val cachable_errors =
-        for {
-          verRes <- _frontend.getVerificationResult
-          cache_errs <- verRes match {
-            case Failure(errs) => getMethodSpecificErrors(m, errs)
-            case Success => Some(Nil)
-          }
-        } yield cache_errs
+      val cacheable_errors: Option[List[AbstractVerificationError]] = for {
+        verRes <- _frontend.getVerificationResult
+        cache_errs <- verRes match {
+          case Failure(errs) =>
+            val r = getMethodSpecificErrors(m, errs)
+            _frontend.logger.debug(s"getMethodSpecificErrors returned $r")
+            r
+          case Success =>
+            Some(Nil)
+        }
+      } yield cache_errs
 
-      if (cachable_errors.isDefined) {
-        ViperCache.update(backendName, file, m, transformed_prog, cachable_errors.get) match {
+      _frontend.logger.debug(s"Obtained cacheable errors: $cacheable_errors")
+
+      if (cacheable_errors.isDefined) {
+        ViperCache.update(backendName, file, m, transformed_prog, cacheable_errors.get) match {
           case e :: es =>
             _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
           case Nil =>
@@ -221,11 +229,13 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     * if the error belongs to the method and return None.
     */
   private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): Option[List[AbstractVerificationError]] = {
-    val methodPos = m.pos match {
-      case sp: SourcePosition => Some(sp.start.line, sp.end.get.line)
-      case _ => {
+    val methodPos: Option[(Int, Int)] = m.pos match {
+      case sp: SourcePosition =>
+        /** Only the line component matters (not the column) since,
+          * in Viper, each method must be declared on a new line. */
+        Some(sp.start.line, sp.end.get.line)
+      case _ =>
         None
-      }
     }
     val result = scala.collection.mutable.ListBuffer[AbstractVerificationError]()
 
@@ -237,12 +247,13 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
         e.pos match {
           case pos: HasLineColumn =>
             val errorPos = pos.line
-            if (methodPos.isEmpty)
-            {
+            if (methodPos.isEmpty) {
               return None
             }
             // The position of the error is used to determine to which Method it belongs.
-            if (errorPos >= methodPos.get._1 && errorPos <= methodPos.get._2) result += e
+            if (methodPos.get._1 <= errorPos && errorPos <= methodPos.get._2) {
+              result += e
+            }
           case _ =>
             return None
         }
