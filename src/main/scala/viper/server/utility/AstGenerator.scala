@@ -20,7 +20,7 @@ class AstGenerator(private val _logger: Logger,
   /** Creates a backend that reads and parses the file
     */
   protected override val _frontend: SilFrontend = {
-    _logger.info(s"Creating new verification backend.")
+    _logger.info(s"Creating new AstGenerator instance.")
     new ViperAstProvider(_reporter)
   }
   /** Parses and translates a Viper file into a Viper AST.
@@ -43,7 +43,7 @@ class AstGenerator(private val _logger: Logger,
     if (_frontend.errors.isEmpty) {
       Some(_frontend.translationResult)
     } else {
-      _logger.error(s"There was some error while translating ${_frontend.errors}")
+      _logger.error(s"An error occurred while translating ${_frontend.errors}")
       None
     }
   }
