@@ -1,3 +1,5 @@
+package viper.server.core
+
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -17,7 +19,7 @@ import viper.server.vsi.Requests._
 
 import scala.concurrent.duration._
 
-class ViperServerSpec extends WordSpec with Matchers with ScalatestRouteTest {
+class ViperServerHttpSpec extends WordSpec with Matchers with ScalatestRouteTest {
 
   import scala.language.postfixOps
   implicit val jsonStreamingSupport: JsonEntityStreamingSupport = EntityStreamingSupport.json()
