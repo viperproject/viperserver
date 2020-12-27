@@ -19,8 +19,6 @@ class JobActor[T](private val id: JobId) extends Actor {
 
   import VerificationProtocol._
 
-
-
   private var _astConstructionTask: TaskThread[T] = _
   private var _verificationTask: TaskThread[T] = _
 
@@ -58,14 +56,14 @@ class JobActor[T](private val id: JobId) extends Actor {
           resetAstConstructionTask()
           _astConstructionTask = req.task
           _astConstructionTask.start()
-          sender ! AstHandle(self, req.queue, req.publisher, _astConstructionTask.getArtifact)
+          sender() ! AstHandle(self, req.queue, req.publisher, _astConstructionTask.getArtifact)
 
         case ver_req: Verify[T] =>
           //println(">>> JobActor received request Verify")
           resetVerificationTask()
           _verificationTask = ver_req.task
           _verificationTask.start()
-          sender ! VerHandle(self, ver_req.queue, ver_req.publisher, ver_req.prev_job_id)
+          sender() ! VerHandle(self, ver_req.queue, ver_req.publisher, ver_req.prev_job_id)
       }
     case req: StopProcessRequest =>
       val did_I_interrupt = req match {
@@ -75,10 +73,10 @@ class JobActor[T](private val id: JobId) extends Actor {
           interrupt(_verificationTask)
       }
       if (did_I_interrupt) {
-        sender ! s"$id has been successfully interrupted."
+        sender() ! s"$id has been successfully interrupted."
       } else {
         // FIXME: Saying this is a potential vulnerability
-        sender ! s"$id has already been finalized."
+        sender() ! s"$id has already been finalized."
       }
     case msg =>
       throw new Exception("JobActor: received unexpected message: " + msg)
