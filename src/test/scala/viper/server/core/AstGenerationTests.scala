@@ -1,3 +1,5 @@
+package viper.server.core
+
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -13,7 +15,7 @@ import viper.silver.ast.Program
 import viper.silver.logger.ViperStdOutLogger
 
 
-class ParsingTests extends WordSpec with Matchers with ScalatestRouteTest {
+class AstGenerationTests extends WordSpec with Matchers with ScalatestRouteTest {
 
   private val verifiableFile = "src/test/resources/viper/let.vpr"
   private val emptyFile = "src/test/resources/viper/empty.vpr"
