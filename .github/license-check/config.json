@@ -53,6 +53,9 @@
   },
   {
     "include": [
+      ".github/**",
+      "src/main/scala/viper/server/utility/apache/**",
+      "src/main/scala/viper/server/utility/ibm/**",
       "carbon/**",
       "silicon/**",
       "silver/**",
@@ -61,6 +64,8 @@
       "project/project/**",
       "project/target/**",
       "target/**",
+      "docs/**",
+      "lib/**",
       "tmp/**",
       "**/*.json",
       "**/*.log",
