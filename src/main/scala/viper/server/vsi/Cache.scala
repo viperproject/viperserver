@@ -117,8 +117,8 @@ abstract class Cache {
                 key: CacheableMember,
                 dependencies: List[Member]): Option[CacheEntry] = {
 
-    val concerning_hash = key.hash
-    val dependencies_hash = dependencies.map(_.hash).mkString(" ")
+    val concerning_hash = key.hash()
+    val dependencies_hash = dependencies.map(_.hash()).mkString(" ")
     val dependency_hash = CacheHelper.buildHash(concerning_hash + dependencies_hash)
     assert(concerning_hash != null)
 
@@ -144,8 +144,8 @@ abstract class Cache {
               dependencies: List[Member],
               content: CacheContent): List[CacheEntry] = {
 
-    val concerning_hash = key.hash
-    val dependencies_hash = dependencies.map(_.hash).mkString(" ")
+    val concerning_hash = key.hash()
+    val dependencies_hash = dependencies.map(_.hash()).mkString(" ")
     val dependency_hash = CacheHelper.buildHash(concerning_hash + dependencies_hash)
     val new_entry: CacheEntry = new CacheEntry(key, content, dependency_hash)
 

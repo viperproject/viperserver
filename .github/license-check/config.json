@@ -1,0 +1,61 @@
+[
+  {
+    "include": [
+      "**/*.scala",
+      "**/*.vpr",
+      "build.sbt"
+    ],
+    "exclude": [
+      "carbon/**",
+      "silicon/**",
+      "silver/**",
+      "project/project/**",
+      "project/target/**",
+      "target/**"
+    ],
+    "license": "./.github/license-check/headers/MPLv2-ETH.txt"
+  },
+  {
+    "include": [
+      "**/Dockerfile"
+    ],
+    "exclude": [
+      "carbon/**",
+      "silicon/**",
+      "silver/**"
+    ],
+    "license": "./.github/license-check/headers/MPLv2-ETH-hashtags.txt"
+  },
+  {
+    "include": [
+      "**/*.xml"
+    ],
+    "exclude": [
+      "carbon/**",
+      "silicon/**",
+      "silver/**",
+      "project/project/**",
+      "project/target/**",
+      "target/**"
+    ],
+    "license": "./.github/license-check/headers/MPLv2-ETH-xml.txt"
+  },
+  {
+    "include": [
+      "carbon/**",
+      "silicon/**",
+      "silver/**",
+      "project/build.properties",
+      "project/plugins.sbt",
+      "project/project/**",
+      "project/target/**",
+      "target/**",
+      "tmp/**",
+      "**/*.json",
+      "**/*.log",
+      ".github/check-license/**",
+      "**/README.md",
+      "**/LICENSE"
+    ]
+  }
+]

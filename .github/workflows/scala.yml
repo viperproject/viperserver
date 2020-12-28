@@ -2,13 +2,23 @@ name: Scala CI
 
 on:
   push:
-    branches: [  master  ]
   pull_request:
-    branches: [  master  ]
 
 jobs:
+  check-headers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ViperServer repo
+        uses: actions/checkout@v2
+      - name: Check license headers
+        uses: viperproject/check-license-header@v1
+        with:
+          path: ./
+          config: ./.github/license-check/config.json
+          strict: true
+
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout ViperServer
       uses: actions/checkout@v2
@@ -54,6 +64,7 @@ jobs:
 
     - name: Assemble project
       run: cd viperServer; sbt assembly
+        
     - name: test project
       run: cd viperServer; export Z3_EXE="/usr/bin/z3"; env > print_dir.txt; sbt test
       
