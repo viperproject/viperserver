@@ -7,6 +7,7 @@
     ],
     "exclude": [
       "src/main/scala/viper/server/utility/apache/**",
+      "src/main/scala/viper/server/utility/ibm/**",
       "carbon/**",
       "silicon/**",
       "silver/**",
