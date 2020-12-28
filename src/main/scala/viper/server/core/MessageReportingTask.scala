@@ -6,8 +6,6 @@ import viper.silver.reporter.{EntityFailureMessage, EntitySuccessMessage, Messag
 
 trait MessageReportingTask extends MessageStreamingTask[Program] with ViperPost {
 
-//  private val _reporter:
-
   protected def enqueueMessage(msg: Message): Unit = {
     super.enqueueMessage(pack(msg))
   }
@@ -17,6 +15,7 @@ trait MessageReportingTask extends MessageStreamingTask[Program] with ViperPost 
     val name = s"ViperServer_$tag"
 
     def report(msg: Message): Unit = {
+      //TODO use logger
       //println(s">>> ActorReporter.report($msg)")
       msg match {
         case m: EntityFailureMessage if m.concerning.info.isCached =>

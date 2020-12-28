@@ -23,7 +23,7 @@ class AstWorker(val arg_list: List[String],
                 val logger: Logger)(implicit val ec: ExecutionContext) extends MessageReportingTask {
 
   private val _artifact_pro: Promise[Program] = Promise()
-  override def artifact: Future[Program] = _artifact_pro.future
+  override def artifact: Option[Future[Program]] = Some(_artifact_pro.future)
 
   private def constructAst(): Future[Program] = Future {
 

@@ -24,7 +24,7 @@ import scala.concurrent.duration._
   * */
 abstract class MessageStreamingTask[T]()(implicit val executionContext: ExecutionContext) extends Runnable with Post {
 
-  def artifact: Future[T]
+  def artifact: Option[Future[T]]
 
   private var q_actor: ActorRef = _
 

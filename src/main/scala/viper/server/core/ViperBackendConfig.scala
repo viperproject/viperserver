@@ -21,16 +21,14 @@ trait ViperBackendConfig {
   }
 }
 
-//object EmptyConfig extends ViperBackendConfig {
-//  override val backend_name = "empty_config"
-//  val partialCommandLine: List[String] = Nil
-//}
 case class SiliconConfig(partialCommandLine: List[String]) extends ViperBackendConfig {
   override val backend_name = "silicon"
 }
+
 case class CarbonConfig(partialCommandLine: List[String]) extends ViperBackendConfig {
   override val backend_name = "carbon"
 }
+
 case class CustomConfig(partialCommandLine: List[String], backend_name: String) extends ViperBackendConfig
 
 object ViperBackendConfig {
@@ -42,6 +40,6 @@ object ViperBackendConfig {
     case custom :: args => CustomConfig(args, custom)
     case invalid => throw new IllegalArgumentException(s"cannot build ViperConfig from string `$invalid`")
   }
-
+  
   def apply(input: String): ViperBackendConfig = apply(getArgListFromArgString(input))
 }

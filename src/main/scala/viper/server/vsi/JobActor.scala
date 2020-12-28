@@ -6,7 +6,7 @@ import scala.concurrent.Future
 
 
 class TaskThread[T](private val _task: MessageStreamingTask[T]) extends Thread(_task) {
-  def getArtifact: Future[T] = _task.artifact
+  def getArtifact: Option[Future[T]] = _task.artifact
 }
 
 // --- Actor: JobActor ---
@@ -56,7 +56,7 @@ class JobActor[T](private val id: JobId) extends Actor {
           resetAstConstructionTask()
           _astConstructionTask = req.task
           _astConstructionTask.start()
-          sender() ! AstHandle(self, req.queue, req.publisher, _astConstructionTask.getArtifact)
+          sender() ! AstHandle(self, req.queue, req.publisher, _astConstructionTask.getArtifact.get)
 
         case ver_req: Verify[T] =>
           //println(">>> JobActor received request Verify")

@@ -34,7 +34,7 @@ class VerificationWorker(private val logger: Logger,
                          private val program: Program)(implicit val ec: ExecutionContext)
   extends MessageReportingTask {
 
-  override def artifact: Future[Program] = Future.successful(program)
+  override def artifact: Option[Future[Nothing]] = None
   private var backend: ViperBackend = _
 
   private def resolveCustomBackend(clazzName: String, rep: Reporter): Option[SilFrontend] = {
