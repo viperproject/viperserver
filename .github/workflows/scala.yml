@@ -54,6 +54,14 @@ jobs:
 
     - name: Assemble project
       run: cd viperServer; sbt assembly
+    
+    - name: Check license headers
+      uses: viperproject/check-license-header@v1
+      with:
+       path: ./
+       config: ./.github/license-check/config.json
+       strict: true
+    
     - name: test project
       run: cd viperServer; export Z3_EXE="/usr/bin/z3"; env > print_dir.txt; sbt test
       
