@@ -2,22 +2,33 @@
   {
     "include": [
       "**/*.scala",
-      "**/*.vpr",
       "build.sbt"
     ],
     "exclude": [
+      ".github/**",
+      "src/main/scala/viper/server/utility/apache/**",
+      "src/main/scala/viper/server/utility/ibm/**",
       "carbon/**",
       "silicon/**",
       "silver/**",
       "project/project/**",
       "project/target/**",
-      "target/**"
+      "target/**",
+      "docs/**",
+      "lib/**"
     ],
     "license": "./.github/license-check/headers/MPLv2-ETH.txt"
   },
   {
     "include": [
-      "**/Dockerfile"
+      "**/*.vpr"
+    ],
+    "license": "./.github/license-check/headers/CC0.txt"
+  },
+  {
+    "include": [
+      "**/Dockerfile",
+      "**/*.conf"
     ],
     "exclude": [
       "carbon/**",
@@ -42,6 +53,9 @@
   },
   {
     "include": [
+      ".github/**",
+      "src/main/scala/viper/server/utility/apache/**",
+      "src/main/scala/viper/server/utility/ibm/**",
       "carbon/**",
       "silicon/**",
       "silver/**",
@@ -50,6 +64,8 @@
       "project/project/**",
       "project/target/**",
       "target/**",
+      "docs/**",
+      "lib/**",
       "tmp/**",
       "**/*.json",
       "**/*.log",
