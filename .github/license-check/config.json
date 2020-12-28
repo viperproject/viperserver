@@ -22,7 +22,7 @@
     "exclude": [
       "carbon/**",
       "silicon/**",
-      "silver/**",
+      "silver/**"
     ],
     "license": "./.github/license-check/headers/MPLv2-ETH-hashtags.txt"
   },
