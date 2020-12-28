@@ -8,6 +8,8 @@ jobs:
   check-headers:
     runs-on: ubuntu-20.04
     steps:
+    - name: Checkout ViperServer repo
+      uses: actions/checkout@v2
     - name: Check license headers
       uses: viperproject/check-license-header@v1
       with:
