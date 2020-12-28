@@ -2,10 +2,10 @@
   {
     "include": [
       "**/*.scala",
-      "**/*.vpr",
       "build.sbt"
     ],
     "exclude": [
+      ".github/**",
       "src/main/scala/viper/server/utility/apache/**",
       "src/main/scala/viper/server/utility/ibm/**",
       "carbon/**",
@@ -18,6 +18,12 @@
       "lib/**"
     ],
     "license": "./.github/license-check/headers/MPLv2-ETH.txt"
+  },
+  {
+    "include": [
+      "**/*.vpr"
+    ],
+    "license": "./.github/license-check/headers/CC0.txt"
   },
   {
     "include": [
