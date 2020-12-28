@@ -74,6 +74,7 @@ class ViperServerService(args: Array[String]) extends ViperCoreServer(args) with
     val astGen = new AstGenerator(_logger.get)
     var ast_option: Option[Program] = None
     try {
+      // TODO use AstWorker instead
       ast_option = astGen.generateViperAst(file)
     } catch {
       case _: java.nio.file.NoSuchFileException =>
