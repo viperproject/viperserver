@@ -6,18 +6,22 @@
       "build.sbt"
     ],
     "exclude": [
+      "src/main/scala/viper/server/utility/apache/**",
       "carbon/**",
       "silicon/**",
       "silver/**",
       "project/project/**",
       "project/target/**",
-      "target/**"
+      "target/**",
+      "docs/**",
+      "lib/**"
     ],
     "license": "./.github/license-check/headers/MPLv2-ETH.txt"
   },
   {
     "include": [
-      "**/Dockerfile"
+      "**/Dockerfile",
+      "**/*.conf"
     ],
     "exclude": [
       "carbon/**",
