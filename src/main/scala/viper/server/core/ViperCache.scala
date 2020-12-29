@@ -7,7 +7,6 @@
 package viper.server.core
 
 import scala.language.postfixOps
-
 import ch.qos.logback.classic.Logger
 import viper.server.core.ViperCache.logger
 import viper.server.vsi._
@@ -16,6 +15,7 @@ import viper.silver.utility.CacheHelper
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, VerificationError, errors}
 
+import scala.annotation.tailrec
 import scala.collection.mutable.{Map => MutableMap}
 
 // ===== CACHE OBJECT ==================================================================
@@ -314,8 +314,10 @@ object ViperCacheHelper {
     *
     * The second argument list is used for specifying external keys as (backend, file).
     *  This is needed for removing separate parts of the hash table.
+ *
     *  @see [[forgetFile]].
     */
+  @tailrec
   private def getHashForNode(node: Node)(implicit key: String): String = node match {
     case m: Method => removeBody(m).entityHash
     case hn: Hashable => hn.entityHash
