@@ -51,8 +51,11 @@ jobs:
     - name: Symbolically link Silicon to ViperServer
       run: cd viperServer; ln --symbolic ../silicon
     
-    - name: Install Z3
-      run: sudo apt-get update -y; sudo apt-get install -y z3
+    - name: Install Z3-4.8.6
+      uses: pavpanchekha/setup-z3
+      with:
+        version: 4.8.6
+        architecture: x64
     
     - name: Set up JDK 15
       uses: actions/setup-java@v1
