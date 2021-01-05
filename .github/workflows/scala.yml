@@ -51,15 +51,6 @@ jobs:
     - name: Symbolically link Silicon to ViperServer
       run: cd viperServer; ln --symbolic ../silicon
     
-    - name: Print a greeting
-      env:
-        MY_VAR: Hi there! My name is
-        FIRST_NAME: Mona
-        MIDDLE_NAME: The
-        LAST_NAME: Octocat
-      run: |
-        echo $MY_VAR $FIRST_NAME $MIDDLE_NAME $LAST_NAME.
-
     - name: Install Z3
       env: 
         Z3_VERSION: 4.8.9
@@ -69,7 +60,7 @@ jobs:
         export Z3=z3-$Z3_VERSION-$Z3_PLATFORM-$Z3_OS; 
         curl -J -L https://github.com/Z3Prover/z3/releases/download/z3-$Z3_VERSION/$Z3.zip > z3.zip; 
         unzip z3.zip; 
-        ln -s $Z3/bin/z3
+        sudo ln -s $(pwd)/$Z3/bin/z3 /usr/bin/z3
 
     - name: Set up JDK 15
       uses: actions/setup-java@v1
