@@ -314,7 +314,7 @@ object ViperCacheHelper {
     *
     * The second argument list is used for specifying external keys as (backend, file).
     *  This is needed for removing separate parts of the hash table.
- *
+    *
     *  @see [[forgetFile]].
     */
   @tailrec

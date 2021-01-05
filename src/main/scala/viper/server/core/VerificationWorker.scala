@@ -159,7 +159,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
       val cached_errors = result.verification_errors
       if (cached_errors.isEmpty) {
         _frontend.reporter report
-          CachedEntityMessage(_frontend.getVerifierName,result.method, Success)
+          CachedEntityMessage(_frontend.getVerifierName, result.method, Success)
       } else {
         all_cached_errors ++= cached_errors
         _frontend.reporter report
@@ -182,8 +182,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
 
     _frontend.logger.debug(s"Latest verification result: $ver_result")
 
-    // update cache
-    methodsToVerify.foreach((m: Method) => {
+    val meth_to_err_map: Seq[(Method, Option[List[AbstractVerificationError]])] = methodsToVerify.map((m: Method) => {
       // Results come back irrespective of program Member.
       val cacheable_errors: Option[List[AbstractVerificationError]] = for {
         verRes <- _frontend.getVerificationResult
@@ -197,17 +196,39 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
         }
       } yield cache_errs
 
-      _frontend.logger.debug(s"Obtained cacheable errors: $cacheable_errors")
+      (m, cacheable_errors)
+    })
 
-      if (cacheable_errors.isDefined) {
-        ViperCache.update(backendName, file, m, transformed_prog, cacheable_errors.get) match {
-          case e :: es =>
-            _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
-          case Nil =>
-            _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}) FAILED.")
+    // Check that the mapping from errors to methods is not messed up
+    // (otherwise it is unsafe to cache the results)
+    val update_cache_criterion: Boolean = {
+      val all_errors_in_file = meth_to_err_map.flatMap(_._2).flatten
+      _frontend.getVerificationResult.get match {
+        case Success =>
+          all_errors_in_file.isEmpty
+        case Failure(errors) =>
+          // FIXME find a better sorting criterion
+          errors.sortBy(ae => ae.hashCode()) == all_errors_in_file.sortBy(ae => ae.hashCode())
+      }
+    }
+
+    if (update_cache_criterion) {
+      // update cache
+      meth_to_err_map.foreach { case (m: Method, cacheable_errors: Option[List[AbstractVerificationError]]) =>
+        _frontend.logger.debug(s"Obtained cacheable errors: $cacheable_errors")
+
+        if (cacheable_errors.isDefined) {
+          ViperCache.update(backendName, file, m, transformed_prog, cacheable_errors.get) match {
+            case e :: es =>
+              _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
+            case Nil =>
+              _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}) FAILED.")
+          }
         }
       }
-    })
+    } else {
+      _frontend.logger.debug(s"Inconsistent error splitting; no cache update for this verification attempt in $file.")
+    }
 
     // combine errors:
     if (all_cached_errors.nonEmpty) {
