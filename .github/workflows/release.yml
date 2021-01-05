@@ -1,4 +1,4 @@
-name: Scala CI
+name: Release
 
 on:
   pull_request:
