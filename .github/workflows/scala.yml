@@ -20,6 +20,10 @@ jobs:
   test:
     runs-on: ubuntu-16.04
     steps:
+      - name: Get Current Date
+        id: date
+        run: echo "name=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
       - name: Checkout ViperServer
         uses: actions/checkout@v2
         with:
@@ -80,9 +84,14 @@ jobs:
           sbt assembly
       
       - name: Publish Nightly Artifact
-        uses: skx/github-action-publish-binaries@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with: 
-          releaseId: ${{ needs.create_release.outputs.id }}
-          args: 'target/scala-*/viper.jar'
+          FILE: target/scala-2.13/viper.jar
+          NIGHTLY_RELEASE_ID: 36021300
+          ARTIFACT_NAME: viper-nightly-${{ steps.date.outputs.date }}.jar
+        run: |
+          echo Publishing $FILE as $ARTIFACT_NAME ...;
+          curl -H "Accept: application/vnd.github.v3+json" 
+               -H "Content-Type: $(file -b --mime-type $FILE)"
+               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}"
+               --data-binary @$FILE
+               "https://uploads.github.com/repos/aterga/viperserver/releases/$NIGHTLY_RELEASE_ID/assets?name=$ARTIFACT_NAME"
