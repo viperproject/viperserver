@@ -85,7 +85,7 @@ jobs:
       
       - name: Publish Nightly Artifact
         env:
-          FILE: target/scala-2.13/viper.jar
+          FILE: viperServer/target/scala-2.13/viper.jar
           NIGHTLY_RELEASE_ID: 36021300
           ARTIFACT_NAME: viper-nightly-${{ steps.date.outputs.DATE }}.jar
         run: |
