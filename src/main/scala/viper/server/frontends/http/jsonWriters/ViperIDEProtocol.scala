@@ -16,7 +16,7 @@ import viper.server.vsi.{AstJobId, VerJobId}
 import viper.silicon.SymbLog
 import viper.silicon.state.terms.Term
 import viper.silver.reporter._
-import viper.silver.verifier._
+import viper.silver.verifier.{ValueEntry, _}
 
 object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
 
@@ -102,17 +102,50 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     }
   })
 
+  implicit val constantEntry_writer: RootJsonFormat[ConstantEntry] = lift(new RootJsonWriter[ConstantEntry] {
+    override def write(obj: ConstantEntry): JsValue = JsString(obj.value)
+  })
+
+  implicit val applicationEntry_writer: RootJsonFormat[ApplicationEntry] = lift(new RootJsonWriter[ApplicationEntry] {
+    override def write(obj: ApplicationEntry): JsValue = JsObject(
+      "name" -> JsString(obj.name),
+      "args" -> JsArray(obj.arguments.map(_.toJson).toVector)
+    )
+  })
+
+  implicit val modelValue_writer: RootJsonFormat[ValueEntry] = lift(new RootJsonWriter[ValueEntry] {
+    override def write(obj: ValueEntry): JsValue = obj match {
+      case c: ConstantEntry =>
+        JsObject(
+          "type" -> JsString("constant_entry"),
+          "value" -> c.toJson
+        )
+      case a: ApplicationEntry =>
+        JsObject(
+          "type" -> JsString("application_entry"),
+          "value" -> a.toJson
+        )
+    }
+  })
+
+  implicit val mapEntry_writer: RootJsonFormat[MapEntry] = lift(new RootJsonWriter[MapEntry] {
+    override def write(obj: MapEntry): JsValue = JsObject(
+      "type" -> JsString("map_entry"),
+      "cases" -> JsArray(obj.options.map {
+        case (args: Seq[ValueEntry], res: ValueEntry) =>
+          JsObject("args" -> JsArray(args.map(_.toJson).toVector),
+                   "value" -> res.toJson)
+      }.toVector),
+      "default" -> obj.default.toJson
+    )
+  })
+
   implicit val modelEntry_writer: RootJsonFormat[ModelEntry] = lift(new RootJsonWriter[ModelEntry] {
     override def write(obj: ModelEntry): JsValue = obj match {
-      case SingleEntry(value: String) =>
-        JsString(value)
-      case MapEntry(options, els) =>
-        JsObject(
-          "cases" -> JsObject(options.map {
-            case (args: Seq[String], res: String) =>
-              (res, JsArray(args.map(_.toJson).toVector)) }),
-          "else" -> JsString(els)
-        )
+      case ve: ValueEntry =>
+        ve.toJson
+      case me: MapEntry =>
+        me.toJson
     }
   })
 
