@@ -13,7 +13,7 @@ jobs:
         run: echo "::set-output name=DATE::$(date +'%Y-%m-%d')"
         
       - name: Generate atrifact
-        run: mkdir -p target/scala-2.13; cat "Hello Viper" > target/scala-2.13/viper.jar
+        run: mkdir -p target/scala-2.13; echo "Hello Viper" > target/scala-2.13/viper.jar
       
       - name: Publish Nightly Artifact
         env:
