@@ -80,7 +80,7 @@ class JobPool(val MAX_ACTIVE_JOBS: Int = 3) {
   */
 trait VerificationServer extends Unpacker {
 
-  implicit def executor: VerificationExecutionContext
+  implicit val executor: VerificationExecutionContext
   implicit val system: ActorSystem = executor.actorSystem
   implicit val materializer: ActorMaterializer = ActorMaterializer()
 
@@ -249,7 +249,7 @@ trait VerificationServer extends Unpacker {
           val src_msg: Source[A , NotUsed] = src_envelope.map(e => unpack(e))
           src_msg.runWith(Sink.actorRef(clientActor, Success))
           _termActor ! Terminator.WatchJobQueue(jid, handle)
-          handle.queue.watchCompletion().map(_ => ())
+          handle.queue.watchCompletion().flatMap(_ => Future.unit)
         }
         Some(handle_future.flatMap(mapHandle))
       case None => None
@@ -261,20 +261,21 @@ trait VerificationServer extends Unpacker {
     * As such it should be the last method called. Calling any other function after stop will
     * result in an IllegalStateException.
     * */
-  def stop(): Unit = {
+  def stop(): Future[Unit] = {
     if(!isRunning) {
       throw new IllegalStateException("Instance of ViperCoreServer already stopped")
     }
     isRunning = false
-
-    getInterruptFutureList() onComplete {
-      case Success(_) =>
-        _termActor ! Terminator.Exit
-        println(s"shutting down...")
-      case Failure(_) =>
-        _termActor ! Terminator.Exit
-        println(s"forcibly shutting down...")
-    }
+    getInterruptFutureList().transform(r => {
+      _termActor ! Terminator.Exit
+      r match {
+        case Success(_) => println(s"shutting down...")
+        case Failure(_) => println(s"forcibly shutting down...")
+      }
+      // delete termActor since we no longer need it. Otherwise, start() cannot be called
+      _termActor = null
+      Success()
+    })
   }
 
   /** This method interrupts active jobs upon termination of the server.

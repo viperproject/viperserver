@@ -17,7 +17,8 @@ import viper.silver.ast.Program
 import viper.silver.logger.SilentLogger
 import viper.silver.reporter._
 
-import scala.concurrent.Future
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success}
 
 class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
@@ -63,19 +64,29 @@ class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
   private val noCache_backend = SiliconConfig(List("--disableCaching"))
   private val cache_backend = SiliconConfig(List())
 
-  private val empty_args: Array[String] = Array()
-
-  // create a new execution context for each ViperCoreServer instance
-  // (otherwise there is a not-unique exception occurring for the Terminator actor when concurrently verifying multiple programs
-  private implicit def getExecutionContext: VerificationExecutionContext = new DefaultVerificationExecutionContext()
+  /** loan-fixture taking care of starting and stopping a core server */
+  def withServer(testCode: (ViperCoreServer, VerificationExecutionContext) => Any,
+                 afterStop: (ViperCoreServer, VerificationExecutionContext) => Any = (_, _) => {}): Unit = {
+    // create a new execution context for each ViperCoreServer instance which keeps the tests independent since
+    val executionContext = new DefaultVerificationExecutionContext()
+    val empty_args: Array[String] = Array()
+    val core = new ViperCoreServer(empty_args)(executionContext)
+    "be able to execute 'start()' without exceptions" in {
+      core.start()
+    }
+    try {
+      testCode(core, executionContext)
+    } finally {
+      "be able to execute 'stop()' without exceptions" in {
+        val stopFuture = core.stop()
+        Await.ready(stopFuture, Duration.Inf)
+      }
+    }
+    afterStop(core, executionContext)
+  }
 
   "An instance of ViperCoreServer" when {
-    "verifying a single program with caching disabled" should {
-      val core = new ViperCoreServer(empty_args)
-
-      "be able to execute 'start()' without exceptions" in {
-        core.start()
-      }
+    "verifying a single program with caching disabled" should withServer({ (core, context) =>
 
       var jid: JobID = null
       "be able to execute 'verify()' without exceptions" in {
@@ -89,37 +100,27 @@ class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
 
       var messages_future: Future[Seq[Message]] = null
       "be able to have 'getMessagesFuture()' return a future of a sequence of Viper messages." in {
-        messages_future = ViperCoreServerUtils.getMessagesFuture(core, jid)
+        messages_future = ViperCoreServerUtils.getMessagesFuture(core, jid)(context)
         assert(messages_future != null)
       }
 
-      // "eventually see the future returned from 'getMessagesFuture()' completed successfully" in {
-      //   while (!messages_future.isCompleted) {
-      //     Thread.sleep(100)
-      //   }
-      //   messages_future.onComplete({
-      //     case Success(_) => succeed
-      //     case Failure(e) => fail(e)
-      //   })
-      // }
-
-      "be able to execute 'stop()' without exceptions" in {
-        core.stop()
+      "eventually see the future returned from 'getMessagesFuture()' completed successfully" in {
+        Await.ready(messages_future, Duration.Inf)
+        messages_future onComplete {
+          case Success(_) => succeed
+          case Failure(e) => fail(e)
+        }
       }
 
+    }, { (core, _) =>
       "not be able to execute 'verify()' after 'stop()' without exceptions" in {
         assertThrows[IllegalStateException] {
           core.verify(verificationError_file, noCache_backend, verificationError_ast)
         }
       }
-    }
+    })
 
-    "verifying a single program with caching enabled" should {
-      val core = new ViperCoreServer(empty_args)
-
-      "be able to execute 'start()' without exceptions" in {
-        core.start()
-      }
+    "verifying a single program with caching enabled" should withServer({ (core, context) =>
 
       var jid: JobID = null
       "be able to execute 'verify()' without exceptions" in {
@@ -133,49 +134,40 @@ class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
 
       var messages_future: Future[Seq[Message]] = null
       "be able to have 'getMessagesFuture()' return a future of a sequence of Viper messages" in {
-        messages_future = ViperCoreServerUtils.getMessagesFuture(core, jid)
+        messages_future = ViperCoreServerUtils.getMessagesFuture(core, jid)(context)
         assert(messages_future != null)
       }
 
-      // "see the future returned from 'getMessagesFuture()' eventually completed successfully" in {
-      //   while (!messages_future.isCompleted) {
-      //     Thread.sleep(100)
-      //   }
-      //   messages_future.onComplete({
-      //     case Success(_) => succeed
-      //     case Failure(e) => fail(e)
-      //   })
-      // }
+      "eventually see the future returned from 'getMessagesFuture()' completed successfully" in {
+        Await.ready(messages_future, Duration.Inf)
+        messages_future onComplete {
+          case Success(_) => succeed
+          case Failure(e) => fail(e)
+        }
+      }
 
       "see the future returned by 'getMessagesFuture()' eventually complete unsuccessfully for an inexistent job" in {
         val wrong_jid = JobID(42)
-        messages_future = ViperCoreServerUtils.getMessagesFuture(core, wrong_jid)
-        while (!messages_future.isCompleted) {
-          Thread.sleep(100)
-        }
-        messages_future.onComplete({
+        messages_future = ViperCoreServerUtils.getMessagesFuture(core, wrong_jid)(context)
+
+        Await.ready(messages_future, Duration.Inf)
+        messages_future onComplete {
           case Success(_) => fail()
           case Failure(_) => succeed
-        })
+        }
       }
-
-      "be able to execute 'stop()' without exceptions" in {
-        core.stop()
-      }
+    }, { (core, _) =>
 
       "not be able to execute 'verify()' after 'stop()' without exceptions" in {
         assertThrows[IllegalStateException] {
           core.verify(sum_file, noCache_backend, sum_ast)
         }
       }
-    }
+    })
 
-    "verifying multiple programs with caching disabled and retrieving results via 'getMessagesFuture()'" should {
+    "verifying multiple programs with caching disabled and retrieving results via 'getMessagesFuture()'" should withServer({ (core, context) =>
       val files: List[String] = List(empty_file, sum_file, verificationError_file)
       val programs: List[Program] = List(empty_ast, sum_ast, verificationError_ast)
-
-      val core = new ViperCoreServer(empty_args)
-      core.start()
 
       val filesAndProgs: List[(String, Program)] = files.zip(programs)
       var handlers: List[JobID] = null
@@ -189,40 +181,27 @@ class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
         assert(handlers(2).id == 2)
       }
 
-      // "be able to have 'getMessagesFuture()' return a future of a sequence of Viper messages containing the expected verification result" in {
-      //   val messages_futures: List[Future[Seq[Message]]] = handlers.map(h => {
-      //     ViperCoreServerUtils.getMessagesFuture(core, h)
-      //   })
-      //   val filesAndFutures = files.zip(messages_futures)
-      //   filesAndFutures.foreach({ case (f, mf) =>
-      //     while (!mf.isCompleted) {
-      //       Thread.sleep(100)
-      //     }
-      //     mf.onComplete({
-      //       case Success(messages) =>
-      //         messages.last match {
-      //           case _: OverallSuccessMessage =>
-      //             assert(f != verificationError_file)
-      //           case _: OverallFailureMessage =>
-      //             assert(f == verificationError_file)
-      //           case _ => fail()
-      //         }
-      //       case Failure(e) => fail(e)
-      //     })
-      //   })
-      // }
+      "be able to have 'getMessagesFuture()' return a future of a sequence of Viper messages containing the expected verification result" in {
+        val messages_futures: List[Future[Seq[Message]]] = handlers.map(h => {
+          ViperCoreServerUtils.getMessagesFuture(core, h)(context)
+        })
+        val messages = Await.result(Future.sequence(messages_futures), Duration.Inf)
+        val filesAndMessages = files.zip(messages)
+        filesAndMessages foreach { case (f, msgs) =>
+          msgs.last match {
+            case _: OverallSuccessMessage =>
+              assert(f != verificationError_file)
+            case _: OverallFailureMessage =>
+              assert(f == verificationError_file)
+            case _ => fail()
+          }
+        }
+      }
+    })
 
-      // "be able to execute 'stop()' without exceptions" in {
-      //   core.stop()
-      // }
-    }
-
-    "verifying multiple programs with caching enabled and retrieving results via 'getMessagesFuture()'" should {
+    "verifying multiple programs with caching enabled and retrieving results via 'getMessagesFuture()'" should withServer({ (core, context) =>
       val files: List[String] = List(empty_file, sum_file, verificationError_file)
       val programs: List[Program] = List(empty_ast, sum_ast, verificationError_ast)
-
-      val core = new ViperCoreServer(empty_args)
-      core.start()
 
       val filesAndProgs: List[(String, Program)] = files.zip(programs)
       var handlers: List[JobID] = null
@@ -232,33 +211,24 @@ class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
 
       "be able to have 'getMessagesFuture()' return a future of a sequence of Viper messages containing the expected verification result" in {
         val messages_futures: List[Future[Seq[Message]]] = handlers.map(h => {
-          ViperCoreServerUtils.getMessagesFuture(core, h)
+          ViperCoreServerUtils.getMessagesFuture(core, h)(context)
         })
-        val filesAndFutures = files.zip(messages_futures)
-        filesAndFutures.foreach({ case (f, mf) =>
-          // while (!mf.isCompleted) {
-          //   Thread.sleep(100)
-          // }
-          mf.onComplete({
-            case Success(messages) =>
-              messages.last match {
-                case _: OverallSuccessMessage =>
-                  assert(f != verificationError_file)
-                case _: OverallFailureMessage =>
-                  assert(f == verificationError_file)
-                case _ => fail()
-              }
-            case Failure(e) => fail(e)
-          })
-        })
+        val messages = Await.result(Future.sequence(messages_futures), Duration.Inf)
+        val filesAndMessages = files.zip(messages)
+        filesAndMessages foreach { case (f, msgs) =>
+          msgs.last match {
+            case _: OverallSuccessMessage =>
+              assert(f != verificationError_file)
+            case _: OverallFailureMessage =>
+              assert(f == verificationError_file)
+            case _ => fail()
+          }
+        }
       }
+    })
 
-      "be able to execute 'stop()' without exceptions" in {
-        core.stop()
-      }
-    }
-
-    "verifying multiple programs with caching disabled and retrieving results via 'streamMessages()" should {
+    "verifying multiple programs with caching disabled and retrieving results via 'streamMessages()" should withServer({ (core, context) =>
+      println("test")
       val file1 = empty_file
       val file2 = sum_file
       val file3 = verificationError_file
@@ -267,13 +237,6 @@ class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
       val ast2 = sum_ast
       val ast3 = verificationError_ast
 
-      val core = new ViperCoreServer(empty_args)
-      core.start()
-
-      val jid1 = core.verify(file1, noCache_backend, ast1)
-      val jid2 = core.verify(file2, noCache_backend, ast2)
-      val jid3 = core.verify(file3, noCache_backend, ast3)
-
       var streamOption1: Option[Future[Unit]] = null
       var streamOption2: Option[Future[Unit]] = null
       var streamOption3: Option[Future[Unit]] = null
@@ -281,6 +244,16 @@ class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
       var streamState1: Future[Unit] = null
       var streamState2: Future[Unit] = null
       var streamState3: Future[Unit] = null
+
+      var jid1: JobID = null
+      var jid2: JobID = null
+      var jid3: JobID = null
+
+      "be able to verify three ASTs" in {
+        jid1 = core.verify(file1, noCache_backend, ast1)
+        jid2 = core.verify(file2, noCache_backend, ast2)
+        jid3 = core.verify(file3, noCache_backend, ast3)
+      }
 
       "be able to have 'streamMessages()' stream a sequence of Viper messages without errors" in {
         streamOption1 = core.streamMessages(jid1, test_actor_0)
@@ -294,123 +267,80 @@ class CoreServerTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
         streamState3 = streamOption3.getOrElse(fail())
       }
 
-      // "eventually have future returned by 'streamMessages()' be completed" in {
-      //   def allCompleted(): Boolean = {
-      //     streamState1.isCompleted &&
-      //     streamState2.isCompleted &&
-      //     streamState3.isCompleted
-      //   }
-
-      //   while(!allCompleted()){
-      //     Thread.sleep(500)
-      //   }
-      // }
-
-      // "have the stream of messages contain the expected verification result" in {
-      //   Thread.sleep(2000)
-      //   assert(actor_tests_results(0) == Some(true))
-      //   assert(actor_tests_results(1) == Some(true))
-      //   assert(actor_tests_results(2) == Some(false))
-      // }
-
-      "be able to execute 'stop()' without exceptions" in {
-        core.stop()
+      "eventually have future returned by 'streamMessages()' be completed" in {
+        Await.ready(Future.sequence(Seq(streamState1, streamState2, streamState3)), Duration.Inf)
       }
-    }
 
-    "verifying an incorrect viper program several times with caching enabled" should {
-      val core = new ViperCoreServer(empty_args)
-      core.start()
+      "have the stream of messages contain the expected verification result" in {
+        assert(actor_tests_results(0).contains(true))
+        assert(actor_tests_results(1).contains(true))
+        assert(actor_tests_results(2).contains(false))
+      }
+    })
 
-      // "produce an OverallFailure message with a non-empty error list upon first verification." in {
-      //   val jid_original = core.verify(verificationError_file, cache_backend, verificationError_ast)
-      //   val messages_future_original = ViperCoreServerUtils.getMessagesFuture(core, jid_original)
-      //     while (!messages_future_original.isCompleted) {
-      //       Thread.sleep(500)
-      //     }
-      //     messages_future_original.onComplete({
-      //       case Success(messages) =>
-      //         messages.last match {
-      //           case ofm: OverallFailureMessage =>
-      //             assert(ofm.result.errors.nonEmpty)
-      //           case _ => fail()
-      //         }
-      //       case Failure(e) => fail(e)
-      //     })
-      //   }
+    "verifying an incorrect viper program several times with caching enabled" should withServer({ (core, context) =>
 
-      // "produce an EntityFailure message with a set cached flag when reverified." in {
-      //   val jid_cached = core.verify(verificationError_file, cache_backend, verificationError_ast)
-      //   val messages_future_cached = ViperCoreServerUtils.getMessagesFuture(core, jid_cached)
-      //   while (!messages_future_cached.isCompleted) {
-      //     Thread.sleep(100)
-      //   }
-      //   messages_future_cached.onComplete({
-      //     case Success(messages) =>
-      //       val has_cached_msg = messages.exists {
-      //         case EntityFailureMessage(_, _, _, _, true) => true
-      //         case _ => false
-      //       }
-      //       assert(has_cached_msg)
-      //     case Failure(e) => fail(e)
-      //   })
-      // }
+      "produce an OverallFailure message with a non-empty error list upon first verification." in {
+        val jid_original = core.verify(verificationError_file, cache_backend, verificationError_ast)
+        val messages_future_original = ViperCoreServerUtils.getMessagesFuture(core, jid_original)(context)
+        val messages = Await.result(messages_future_original, Duration.Inf)
+        messages.last match {
+          case ofm: OverallFailureMessage => assert(ofm.result.errors.nonEmpty)
+          case _ => fail()
+        }
+      }
+
+      "produce an EntityFailure message with a set cached flag when reverified." in {
+        val jid_cached = core.verify(verificationError_file, cache_backend, verificationError_ast)
+        val messages_future_cached = ViperCoreServerUtils.getMessagesFuture(core, jid_cached)(context)
+        val messages = Await.result(messages_future_cached, Duration.Inf)
+        val has_cached_msg = messages.exists {
+          case EntityFailureMessage(_, _, _, _, true) => true
+          case _ => false
+        }
+        assert(has_cached_msg)
+      }
 
       "be able to execute 'flushCache()' without exceptions after several verifications" in {
         core.flushCache()
       }
 
-      // "produce an EntityFailure message with cleared cached flag and an OverallFailure message with an non-empty error list when reverified after flushing the cache." in {
-      //   val jid_flushed = core.verify(verificationError_file, cache_backend, verificationError_ast)
-      //   val messages_future_flushed = ViperCoreServerUtils.getMessagesFuture(core, jid_flushed)
-      //   while (!messages_future_flushed.isCompleted) {
-      //     Thread.sleep(100)
-      //   }
-      //   messages_future_flushed.onComplete({
-      //     case Success(messages) =>
-      //       val has_cached_msg = messages.exists {
-      //         case EntityFailureMessage(_, _, _, _, true) => true
-      //         case _ => false
-      //       }
-      //       val has_overall_failure = messages.last match {
-      //         case _: OverallFailureMessage => true
-      //         case _ => false
-      //       }
-      //       assert(!has_cached_msg && has_overall_failure)
-      //     case Failure(e) => fail(e)
-      //   })
-      // }
-
-      "be able to execute 'stop()' without exceptions" in {
-        core.stop()
+      "produce an EntityFailure message with cleared cached flag and an OverallFailure message with an non-empty error list when reverified after flushing the cache." in {
+        val jid_flushed = core.verify(verificationError_file, cache_backend, verificationError_ast)
+        val messages_future_flushed = ViperCoreServerUtils.getMessagesFuture(core, jid_flushed)(context)
+        val messages = Await.result(messages_future_flushed, Duration.Inf)
+        val has_cached_msg = messages.exists {
+          case EntityFailureMessage(_, _, _, _, true) => true
+          case _ => false
+        }
+        val has_overall_failure = messages.last match {
+          case _: OverallFailureMessage => true
+          case _ => false
+        }
+        assert(!has_cached_msg && has_overall_failure)
       }
-    }
+    })
 
-    "maximum capacity of verification jobs is exceeded" should {
-      val core = new ViperCoreServer(empty_args)
-      core.start()
+    "maximum capacity of verification jobs is exceeded" should withServer({ (core, context) =>
 
-      val jid = core.verify(sum_file, noCache_backend, sum_ast)
-      core.verify(sum_file, noCache_backend, sum_ast)
-      core.verify(sum_file, noCache_backend, sum_ast)
+      var jid: JobID = null
+      "be able to start three verification jobs" in {
+        jid = core.verify(sum_file, noCache_backend, sum_ast)
+        core.verify(sum_file, noCache_backend, sum_ast)
+        core.verify(sum_file, noCache_backend, sum_ast)
+      }
 
       "have 'verify()' return a VerificationJobHandler with negative id" in {
         val spillHandler = core.verify(sum_file, noCache_backend, sum_ast)
         assert(spillHandler.id < 0)
       }
 
-      // "have 'verify()' return a non-negative id upon freeing up a verification request by calling 'getMessagesFuture()'" in {
-      //   val result_future = ViperCoreServerUtils.getMessagesFuture(core, jid)
-      //   while (!result_future.isCompleted) {
-      //     Thread.sleep(100)
-      //   }
-      //   val newHandler = core.verify(sum_file, noCache_backend, sum_ast)
-      //   assert(newHandler.id > 0)
-      // }
-
-      "be able to execute 'stop()' without exceptions" in {
-        core.stop()
+      "have 'verify()' return a non-negative id upon freeing up a verification request by calling 'getMessagesFuture()'" in {
+        val result_future = ViperCoreServerUtils.getMessagesFuture(core, jid)(context)
+        Await.ready(result_future, Duration.Inf)
+        val newHandler = core.verify(sum_file, noCache_backend, sum_ast)
+        assert(newHandler.id > 0)
       }
-    }
+    })
   }
 }

@@ -80,7 +80,7 @@ class ViperCoreServer(val _args: Array[String])(override implicit val executor: 
     logger.get.info(s"The cache has been flushed.")
   }
 
-  override def stop(): Unit = {
+  override def stop(): Future[Unit] = {
     logger.get.info(s"Stopping ViperCoreServer")
     super.stop()
   }
