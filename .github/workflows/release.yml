@@ -1,19 +1,28 @@
+name: Scala CI
+
 on:
-  push:
-    types: [created]
-name: Handle Push
+  pull_request:
+
 jobs:
-  generate:
-    name: Create nigtly artifacts
-    runs-on: ubuntu-latest
+  nightly:
+    runs-on: ubuntu-16.04
     steps:
-      - name: Checkout the repository
-        uses: actions/checkout@master
-      - name: Generate the artifacts
-        uses: skx/github-action-build@master
-      - name: Upload the artifacts
-        uses: skx/github-action-publish-binaries@master
+      - name: Get Current Date
+        id: date
+        run: echo "::set-output name=DATE::$(date +'%Y-%m-%d')"
+        
+      - name: Generate atrifact
+        run: mkdir -p target/scala-2.13; cat "Hello Viper" > target/scala-2.13/viper.jar
+      
+      - name: Publish Nightly Artifact
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: 'example-*'
+          FILE: target/scala-2.13/viper.jar
+          NIGHTLY_RELEASE_ID: 36021300
+          ARTIFACT_NAME: viper-nightly-${{ steps.date.outputs.DATE }}.jar
+        run: |
+          echo Publishing $FILE as $ARTIFACT_NAME ...;
+          curl -H "Accept: application/vnd.github.v3+json" \
+               -H "Content-Type: $(file -b --mime-type $FILE)" \
+               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+               --data-binary @$FILE \
+               "https://uploads.github.com/repos/aterga/viperserver/releases/$NIGHTLY_RELEASE_ID/assets?name=$ARTIFACT_NAME"
