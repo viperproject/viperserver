@@ -1,4 +1,4 @@
-name: Scala CI
+name: Check, Build, Test, Publish Nightly
 
 on:
   push:
@@ -22,7 +22,7 @@ jobs:
     steps:
       - name: Get Current Date
         id: date
-        run: echo "name=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+        run: echo "::set-output name=DATE::$(date +'%Y-%m-%d')"
 
       - name: Checkout ViperServer
         uses: actions/checkout@v2
@@ -87,11 +87,11 @@ jobs:
         env:
           FILE: target/scala-2.13/viper.jar
           NIGHTLY_RELEASE_ID: 36021300
-          ARTIFACT_NAME: viper-nightly-${{ steps.date.outputs.date }}.jar
+          ARTIFACT_NAME: viper-nightly-${{ steps.date.outputs.DATE }}.jar
         run: |
           echo Publishing $FILE as $ARTIFACT_NAME ...;
-          curl -H "Accept: application/vnd.github.v3+json" 
-               -H "Content-Type: $(file -b --mime-type $FILE)"
-               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}"
-               --data-binary @$FILE
+          curl -H "Accept: application/vnd.github.v3+json" \
+               -H "Content-Type: $(file -b --mime-type $FILE)" \
+               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+               --data-binary @$FILE \
                "https://uploads.github.com/repos/aterga/viperserver/releases/$NIGHTLY_RELEASE_ID/assets?name=$ARTIFACT_NAME"
