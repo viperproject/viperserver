@@ -80,6 +80,11 @@ jobs:
           export Z3_EXE="/usr/bin/z3"; 
           env > print_dir.txt; 
           sbt test
+          
+      - name: Assemble the fat JAR file
+        run: |
+          cd viperServer; 
+          sbt assembly
       
       - name: Publish Nightly Artifact
         uses: skx/github-action-publish-binaries@release-1.3
