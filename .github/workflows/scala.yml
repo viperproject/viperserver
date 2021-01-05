@@ -51,8 +51,8 @@ jobs:
     - name: Symbolically link Silicon to ViperServer
       run: cd viperServer; ln --symbolic ../silicon
     
-    - name: Install Z3-4.8.6@v1
-      uses: pavpanchekha/setup-z3
+    - name: Install Z3-4.8.6
+      uses: pavpanchekha/setup-z3@v1
       with:
         version: 4.8.6
         architecture: x64
