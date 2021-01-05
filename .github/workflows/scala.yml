@@ -18,7 +18,7 @@ jobs:
           strict: true
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-16.04
     steps:
     - name: Checkout ViperServer
       uses: actions/checkout@v2
@@ -70,9 +70,6 @@ jobs:
 
     - name: Install SBT
       run: echo "deb https://dl.bintray.com/sbt/debian /" | sudo tee -a /etc/apt/sources.list.d/sbt.list; curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x2EE0EA64E40A89B84B2DF73499E82A75642AC823" | sudo apt-key add; sudo apt-get update; sudo apt-get install sbt
-
-    - name: Assemble project
-      run: cd viperServer; sbt assembly
         
     - name: test project
       run: cd viperServer; export Z3_EXE="/usr/bin/z3"; env > print_dir.txt; sbt test
