@@ -11,7 +11,6 @@ import java.io.File
 import org.rogach.scallop.{ScallopConf, ScallopOption, singleArgConverter}
 import viper.server.utility.Helpers.{canonizedFile, validatePath}
 import viper.server.utility.ibm
-import viper.server.utility.ibm.Socket
 
 class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
 
@@ -55,13 +54,8 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
 
   val port: ScallopOption[Int] = opt[Int]("port", 'p',
     descr = ("Specifies the port on which ViperServer will be started."
-      + s"The port must be an integer in range [${Socket.MIN_PORT_NUMBER}-${ibm.Socket.MAX_PORT_NUMBER}]"
+      + s"The port must be an integer in range [${ibm.Socket.MIN_PORT_NUMBER}-${ibm.Socket.MAX_PORT_NUMBER}]"
       + "If the option is omitted, an available port will be selected automatically."),
-    default = {
-      val p = ibm.Socket.findFreePort
-      println(s"Automatically selecting port $p ...")
-      Some(p)
-    },
     validate = p => try {
       ibm.Socket.available(p)
     } catch {

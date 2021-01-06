@@ -19,7 +19,7 @@ object LanguageServerRunner {
   def main(args: Array[String]): Unit = {
     _config = new ViperConfig(args)
     _config.verify()
-    val port = _config.port()
+    val port = _config.port.getOrElse(0)
     runServer(port)
   }
 
@@ -28,10 +28,11 @@ object LanguageServerRunner {
     try {
       val socket = new Socket("localhost", port)
       val localAddress = socket.getLocalAddress.getHostAddress
-      println(s"going to listen on $localAddress:$port")
 
-      Coordinator.port = port
+      Coordinator.port = socket.getPort
       Coordinator.url = localAddress
+
+      println(s"preparing to listen on ${Coordinator.url}:${Coordinator.port}")
 
       val server: CustomReceiver = new CustomReceiver()
       val launcher = Launcher.createLauncher(server, classOf[IdeLanguageClient], socket.getInputStream, socket.getOutputStream)

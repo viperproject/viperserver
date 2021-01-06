@@ -26,6 +26,11 @@ import scala.util.{Failure, Success, Try}
   * */
 sealed trait BasicHttp {
 
+  /** Specifies the port through which the clients may access this server instance.
+    *
+    * The default port number tells the system to automatically pick an available port
+    * (depends on the implementation of the underlying socket library)
+    * */
   var port: Int = _
 
   /** Must be implemented to return the routes defined for this server.

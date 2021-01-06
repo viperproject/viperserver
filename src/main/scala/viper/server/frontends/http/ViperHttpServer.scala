@@ -20,6 +20,7 @@ import viper.server.ViperConfig
 import viper.server.core.{AstConstructionFailureException, ViperBackendConfig, ViperCache, ViperCoreServer}
 import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
+import viper.server.utility.ibm
 import viper.server.vsi.Requests.CacheResetRequest
 import viper.server.vsi._
 import viper.silver.logger.ViperLogger
@@ -39,9 +40,9 @@ class ViperHttpServer(_args: Array[String])
 
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 
-    port = config.port()
+    port = config.port.getOrElse(ibm.Socket.findFreePort)
     super.start(config.maximumActiveJobs())
-    println(s"ViperServer online at http://localhost:${config.port()}")
+    println(s"ViperServer online at http://localhost:$port}")
   }
 
   def setRoutes(): Route = {

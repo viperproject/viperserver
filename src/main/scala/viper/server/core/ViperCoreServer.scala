@@ -43,7 +43,7 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 
     super.start(config.maximumActiveJobs())
-    println(s"ViperCoreServer started.")
+    println(s"ViperCoreServer has started.")
   }
 
   def requestAst(arg_list: List[String]): AstJobId = {
