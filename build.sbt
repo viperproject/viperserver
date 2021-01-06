@@ -30,11 +30,11 @@ lazy val server = (project in file("."))
         Test / fork := true,
 
         // Compilation settings
-        libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.5.23",
-        libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json" % "10.1.8",
-        libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.5.23",
-        libraryDependencies += "com.typesafe.akka" %% "akka-stream-testkit" % "2.5.23" % Test,
-        libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.1.8" % Test,
+        libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.6.10",
+        libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json" % "10.2.1",
+        libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.6.10",
+        libraryDependencies += "com.typesafe.akka" %% "akka-stream-testkit" % "2.6.10" % Test,
+        libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.2.1" % Test,
         libraryDependencies += "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.8.1", // Java implementation of language server protocol
 
         // Run settings
