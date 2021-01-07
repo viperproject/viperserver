@@ -46,10 +46,10 @@ abstract class Cache {
     * The inner map is referred to as the fileCache. As the name indicates, it stores, for each
     * file, a number of hashes and corresponding cache entries.
     */
-  protected val _cache = MutableMap[String, FileCash]()
+  protected val _cache: MutableMap[String, FileCash] = MutableMap()
   type FileCash = MutableMap[String, List[CacheEntry]]
 
-  protected val _program_cache = MutableMap[Ast, MutableMap[CacheableMember, List[Member]]]()
+  protected val _program_cache: MutableMap[Ast, MutableMap[CacheableMember, List[Member]]] = MutableMap()
 
   /** This method transforms a program and returns verification results based on the cache's
     * current state.
@@ -113,10 +113,9 @@ abstract class Cache {
 
   /** Utility function to retrieve entries for single members.
     * */
-  final def get(
-                 file_key: String,
-                 key: CacheableMember,
-                 dependencies: List[Member]): Option[CacheEntry] = {
+  final def get(file_key: String,
+                key: CacheableMember,
+                dependencies: List[Member]): Option[CacheEntry] = {
 
     val concerning_hash = key.hash()
     val dependencies_hash = dependencies.map(_.hash()).mkString(" ")
@@ -214,8 +213,8 @@ trait CacheContent
   * */
 trait Member {
 
- /** Must be implemented to return a hash String for this Member.
-   * */
+  /** Must be implemented to return a hash String for this Member.
+    * */
   def hash(): String
 }
 

@@ -1,3 +1,5 @@
+package viper.server.core
+
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -7,13 +9,13 @@
 import java.nio.file.NoSuchFileException
 
 import akka.http.scaladsl.testkit.ScalatestRouteTest
-import org.scalatest.wordspec.AnyWordSpec
-import org.scalatest.matchers.should.Matchers
+import org.scalatest.{Matchers, WordSpec}
 import viper.server.utility.AstGenerator
 import viper.silver.ast.Program
 import viper.silver.logger.ViperStdOutLogger
 
-class ParsingTests extends AnyWordSpec with Matchers with ScalatestRouteTest {
+
+class AstGenerationTests extends WordSpec with Matchers with ScalatestRouteTest {
 
   private val verifiableFile = "src/test/resources/viper/let.vpr"
   private val emptyFile = "src/test/resources/viper/empty.vpr"
@@ -27,7 +29,7 @@ class ParsingTests extends AnyWordSpec with Matchers with ScalatestRouteTest {
   "AstGenerator" should {
     var ast_gen: AstGenerator = null
     s"should be instantiated without errors" in {
-      ast_gen = new AstGenerator(console_logger)
+      ast_gen = new AstGenerator(console_logger.get)
     }
 
     var test_ast: Option[Program] = null

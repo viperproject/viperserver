@@ -15,22 +15,21 @@ import akka.stream.scaladsl.Source
 import edu.mit.csail.sdg.alloy4.A4Reporter
 import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
-import spray.json.DefaultJsonProtocol
+import spray.json.{DefaultJsonProtocol, RootJsonFormat}
 import viper.server.ViperConfig
-import viper.server.core.ViperBackendConfigs.{CarbonConfig, CustomConfig, SiliconConfig}
-import viper.server.core.{ViperCache, ViperCoreServer}
+import viper.server.core.{AstConstructionFailureException, ViperBackendConfig, ViperCache, ViperCoreServer}
 import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
-import viper.server.utility.AstGenerator
+import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
+import viper.server.utility.ibm
 import viper.server.vsi.Requests.CacheResetRequest
 import viper.server.vsi._
-import viper.silver.ast.Program
 import viper.silver.logger.ViperLogger
 import viper.silver.reporter.Message
 
 import scala.util.{Failure, Success, Try}
 
 class ViperHttpServer(_args: Array[String])
-  extends ViperCoreServer(_args) with VerificationServerHTTP {
+  extends ViperCoreServer(_args) with VerificationServerHttp {
 
   override def start(): Unit = {
     _config = new ViperConfig(_args.toIndexedSeq)
@@ -41,9 +40,9 @@ class ViperHttpServer(_args: Array[String])
 
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 
-    port = config.port()
+    port = config.port.getOrElse(ibm.Socket.findFreePort)
     super.start(config.maximumActiveJobs())
-    println(s"ViperServer online at http://localhost:${config.port()}")
+    println(s"ViperServer online at http://localhost:$port}")
   }
 
   def setRoutes(): Route = {
@@ -63,43 +62,27 @@ class ViperHttpServer(_args: Array[String])
   }
 
   override def onVerifyPost(vr: Requests.VerificationRequest): ToResponseMarshallable = {
-    // Extract file name from args list
     val arg_list = getArgListFromArgString(vr.arg)
-    val file: String = arg_list.last
-    val arg_list_partial = arg_list.dropRight(1)
 
-    // Parse file
-    val astGen = new AstGenerator(_logger)
-    var ast_option: Option[Program] = None
-    try {
-      ast_option = astGen.generateViperAst(file)
-    } catch {
-      case _: java.nio.file.NoSuchFileException =>
-        return VerificationRequestReject("The file for which verification has been requested was not found.")
+    if (!validateViperFile(arg_list.last)) {
+      return VerificationRequestReject("File not found")
     }
-    val ast = ast_option.getOrElse(return VerificationRequestReject("The file for which verification has been requested contained syntax errors."))
 
-    // prepare backend config
-    val backend = arg_list_partial match {
-      case "silicon" :: args => SiliconConfig(args)
-      case "carbon" :: args => CarbonConfig(args)
-      case "custom" :: args => CustomConfig(args)
-      case args =>
-        logger.get.error(s"Invalid arguments: ${args.toString} " +
+    val ast_id = requestAst(arg_list)
+
+    val arg_list_partial: List[String] = arg_list.dropRight(1)
+    val backend = try {
+      ViperBackendConfig(arg_list_partial)
+    } catch {
+      case _: IllegalArgumentException =>
+        logger.get.error(s"Invalid arguments: ${vr.arg} " +
           s"You need to specify the verification backend, e.g., `silicon [args]`")
         return VerificationRequestReject("Invalid arguments for backend.")
     }
 
-    val jid: JobID = verify(file, backend, ast)
+    val ver_id = verify(ast_id, backend)
 
-    if (jid.id >= 0) {
-      logger.get.info(s"Verification process #${jid.id} has successfully started.")
-      VerificationRequestAccept(jid.id)
-    } else {
-      logger.get.error(s"Could not start verification process. " +
-        s"The maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
-      VerificationRequestReject(s"the maximum number of active verification jobs are currently running (${jobs.MAX_ACTIVE_JOBS}).")
-    }
+    VerificationRequestAccept(ast_id, ver_id)
   }
 
   override def unpackMessages(s: Source[Envelope, NotUsed]): ToResponseMarshallable = {
@@ -110,9 +93,12 @@ class ViperHttpServer(_args: Array[String])
 
   override def verificationRequestRejection(jid: Int, e: Throwable): ToResponseMarshallable = {
     e match {
-      case JobNotFoundException() =>
+      case JobNotFoundException =>
         logger.get.error(s"The verification job #$jid does not exist.")
         VerificationRequestReject(s"The verification job #$jid does not exist.")
+      case AstConstructionFailureException =>
+        logger.get.error(s"The verification job #$jid could not be created since the AST is inconsistent.")
+        VerificationRequestReject(s"The verification job #$jid could not be created since the AST is inconsistent.")
       case _ =>
         logger.get.error(s"The verification job #$jid resulted in a terrible error: $e")
         VerificationRequestReject(s"The verification job #$jid resulted in a terrible error: $e")
@@ -172,7 +158,7 @@ class ViperHttpServer(_args: Array[String])
       post {
         object AlloyRequest extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
           case class AlloyGenerationRequest(arg: String, solver: String)
-          implicit val generateStuff = jsonFormat2(AlloyGenerationRequest.apply)
+          implicit val generateStuff: RootJsonFormat[AlloyRequest.AlloyGenerationRequest] = jsonFormat2(AlloyGenerationRequest.apply)
         }
 
         entity(as[AlloyRequest.AlloyGenerationRequest]) { r =>
@@ -208,15 +194,6 @@ class ViperHttpServer(_args: Array[String])
           }
         }
       }
-    }
-  }
-
-  private def getArgListFromArgString(arg_str: String): List[String] = {
-    val possibly_quoted_string = raw"""[^\s"']+|"[^"]*"|'[^']*'""".r
-    val quoted_string = """^["'](.*)["']$""".r
-    possibly_quoted_string.findAllIn(arg_str).toList.map {
-      case quoted_string(noqt_a) => noqt_a
-      case a => a
     }
   }
 }

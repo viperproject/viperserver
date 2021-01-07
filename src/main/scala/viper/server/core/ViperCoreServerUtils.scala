@@ -9,15 +9,15 @@ package viper.server.core
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
-import viper.server.vsi.{JobID, JobNotFoundException}
+import viper.server.vsi.{JobNotFoundException, VerJobId}
 import viper.silver.reporter.{EntityFailureMessage, Message}
 import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 
 object ViperCoreServerUtils {
-  implicit private val executionContext = ExecutionContext.global
+  implicit private val executionContext: ExecutionContextExecutor = ExecutionContext.global
 
   private object SeqActor {
     case object Result
@@ -43,18 +43,14 @@ object ViperCoreServerUtils {
     *
     * Deletes the jobHandle on completion.
     */
-  def getMessagesFuture(core: ViperCoreServer, jid: JobID)(implicit actor_system: ActorSystem): Future[List[Message]] = {
+  def getMessagesFuture(core: ViperCoreServer, jid: VerJobId)(implicit actor_system: ActorSystem): Future[List[Message]] = {
     import scala.language.postfixOps
 
     val actor = actor_system.actorOf(SeqActor.props())
-    val complete_future = core.streamMessages(jid, actor).getOrElse(return Future.failed(JobNotFoundException()))
+    val complete_future = core.streamMessages(jid, actor).getOrElse(return Future.failed(JobNotFoundException))
     val res: Future[List[Message]] = complete_future.flatMap(_ => {
       implicit val askTimeout: Timeout = Timeout(core.config.actorCommunicationTimeout() milliseconds)
-      val answer: Future[Any] = actor ? SeqActor.Result
-      //recover result type from "Any"
-      answer.map({
-        case res: List[Message] => res
-      })
+      (actor ? SeqActor.Result).mapTo[List[Message]]
     })
     res
   }
@@ -66,7 +62,7 @@ object ViperCoreServerUtils {
     *
     * Deletes the jobHandle on completion.
     */
-  def getResultsFuture(core: ViperCoreServer, jid: JobID)(implicit actor_system: ActorSystem): Future[VerificationResult] = {
+  def getResultsFuture(core: ViperCoreServer, jid: VerJobId)(implicit actor_system: ActorSystem): Future[VerificationResult] = {
     val messages_future = getMessagesFuture(core, jid)
     val result_future: Future[VerificationResult] = messages_future.map(msgs => {
 
