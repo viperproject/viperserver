@@ -11,13 +11,14 @@ import java.util.{concurrent => java_concurrent}
 
 import akka.actor.ActorSystem
 
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
+import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
 
 trait VerificationExecutionContext extends ExecutionContext {
   def actorSystem: ActorSystem
   def submit(r: Runnable): java_concurrent.Future[_]
   /** terminate executor and actor system */
-  def terminate(timeoutMSec: Long = 1000): Future[Unit]
+  def terminate(timeoutMSec: Long = 1000): Unit
   /** restart actor system */
   def restart(): Future[Unit]
 }
@@ -67,15 +68,15 @@ class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_Syste
 
   override def submit(r: Runnable): java_concurrent.Future[_] = context.submit(r)
 
-  override def terminate(timeoutMSec: Long = 1000): Future[Unit] = {
+  override def terminate(timeoutMSec: Long = 1000): Unit = {
     executorService.shutdown()
-    executorService.awaitTermination(timeoutMSec, TimeUnit.MILLISECONDS)
     val oldSystem = actorSystem
     system = None
-    oldSystem.terminate().map(_ => {})(this)
+    Await.ready(oldSystem.terminate(), FiniteDuration(timeoutMSec, TimeUnit.MILLISECONDS))
   }
 
   override def restart(): Future[Unit] = {
+    // the executor service stays untouched, i.e. only the actor system is restarted
     val oldSystem = actorSystem
     system = None
     oldSystem.terminate().map(_ => {
