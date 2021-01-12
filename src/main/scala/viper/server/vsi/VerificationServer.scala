@@ -231,11 +231,12 @@ trait VerificationServer extends Post {
   }
 
   /** Stops an instance of VerificationServer from running.
+    * The actor system and executor do not get terminated and are the responsibility of the caller
     *
     * As such it should be the last method called. Calling any other function after stop will
     * result in an IllegalStateException.
     * */
-  def stop(): Future[Unit] = {
+  def stop(): Future[List[String]] = {
     if(!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
@@ -248,7 +249,7 @@ trait VerificationServer extends Post {
       }
       // delete termActor since we no longer need it. Otherwise, start() cannot be called
       _termActor = null
-      Success()
+      r
     })
   }
 

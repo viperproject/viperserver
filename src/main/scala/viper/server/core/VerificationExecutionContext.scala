@@ -6,15 +6,20 @@
 
 package viper.server.core
 
-import java.util.concurrent.{ExecutorService, Executors, Future, ThreadFactory}
+import java.util.concurrent.{ExecutorService, Executors, ThreadFactory, TimeUnit}
+import java.util.{concurrent => java_concurrent}
 
 import akka.actor.ActorSystem
 
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
 
 trait VerificationExecutionContext extends ExecutionContext {
   def actorSystem: ActorSystem
-  def submit(r: Runnable): Future[_]
+  def submit(r: Runnable): java_concurrent.Future[_]
+  /** terminate executor and actor system */
+  def terminate(timeoutMSec: Long = 1000): Future[Unit]
+  /** restart actor system */
+  def restart(): Future[Unit]
 }
 
 object DefaultVerificationExecutionContext {
@@ -57,7 +62,25 @@ class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_Syste
 
   override def reportFailure(cause: Throwable): Unit = context.reportFailure(cause)
 
-  override lazy val actorSystem: ActorSystem = ActorSystem(actorSystemName)
+  private var system: Option[ActorSystem] = Some(ActorSystem(actorSystemName))
+  override def actorSystem: ActorSystem = system.getOrElse(throw new IllegalStateException(s"actor system has been terminated"))
 
-  override def submit(r: Runnable): Future[_] = context.submit(r)
+  override def submit(r: Runnable): java_concurrent.Future[_] = context.submit(r)
+
+  override def terminate(timeoutMSec: Long = 1000): Future[Unit] = {
+    executorService.shutdown()
+    executorService.awaitTermination(timeoutMSec, TimeUnit.MILLISECONDS)
+    val oldSystem = actorSystem
+    system = None
+    oldSystem.terminate().map(_ => {})(this)
+  }
+
+  override def restart(): Future[Unit] = {
+    val oldSystem = actorSystem
+    system = None
+    oldSystem.terminate().map(_ => {
+      // set new actor system:
+      system = Some(ActorSystem(actorSystemName))
+    })(this)
+  }
 }

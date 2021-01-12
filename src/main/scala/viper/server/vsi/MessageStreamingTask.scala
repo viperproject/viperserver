@@ -17,7 +17,7 @@ import viper.server.core.VerificationExecutionContext
 
 import scala.concurrent.{Await, Future, Promise}
 import scala.concurrent.duration._
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 
 
 
@@ -52,21 +52,22 @@ abstract class MessageStreamingTask[T]() extends Callable[T] with Post {
     * blocking, as it waits for the successful completion of such an offer.
     * */
   protected def enqueueMessage(msg: Envelope)(implicit executor: VerificationExecutionContext): Unit = {
-    // FIXME ATG: this method needs a review
     implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-
-    val answer = q_actor ? TaskProtocol.BackendReport(msg)
-    val current_offer: Future[QueueOfferResult] = answer transformWith {
-      case Success(current_offer) if current_offer.isInstanceOf[Future[QueueOfferResult]] =>
-        current_offer.asInstanceOf[Future[QueueOfferResult]]
-      case Success(s) => throw new IllegalStateException(s"unexpected answer received from queue actor: $s")
-      case Failure(exception) =>
-        println(s"enqueuing message into queue has failed with exception: $exception")
-        Future.failed(exception)
+    // answer is a future that will resolve with the actor's response to the BackendReport request
+    val answer = (q_actor ? TaskProtocol.BackendReport(msg)).mapTo[Future[QueueOfferResult]]
+    // currentOffer is the future that the actor will send in its response (assuming that no timeout occurred requesting it from the actor)
+    // currentOffer will resolve when the message is dequeued from the queue
+    val currentOffer = answer.flatten
+    try {
+      // note that an exception is thrown if the currentOffer future fails, e.g. because the askTimeout occurred
+      Await.result(currentOffer, Duration.Inf)
+    } catch {
+      case ex: Exception =>
+        // print exception such that one sees that something went wrong:
+        println(s"exception in enqueueMessage occurred: $ex")
+        // rethrow exception:
+        throw ex
     }
-    // wait until either answer completes with a timeout or current_offer completes (an exception is thrown if
-    // current_offer completes with a failure
-    Await.result(current_offer, Duration.Inf)
   }
 
   /** Notify the queue actor that the task has come to an end
