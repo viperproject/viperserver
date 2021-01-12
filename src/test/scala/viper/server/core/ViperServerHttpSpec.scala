@@ -1,3 +1,5 @@
+package viper.server.core
+
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -18,7 +20,7 @@ import viper.server.vsi.Requests._
 
 import scala.concurrent.duration._
 
-class ViperServerSpec extends AnyWordSpec with Matchers with ScalatestRouteTest {
+class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteTest {
 
   import scala.language.postfixOps
   implicit val jsonStreamingSupport: JsonEntityStreamingSupport = EntityStreamingSupport.json()
@@ -26,12 +28,13 @@ class ViperServerSpec extends AnyWordSpec with Matchers with ScalatestRouteTest 
 
   ViperServerRunner.main(Array())
 
-  private val _routsUnderTest = ViperServerRunner.viperServerHTTP.routes()
+  private val _routsUnderTest = ViperServerRunner.viperServerHttp.routes()
 
   def printRequestResponsePair(req: String, res: String): Unit = {
     println(s">>> ViperServer test request `$req` response in the following response: $res")
   }
 
+  // FIXME this does not work with SBT for some reason
   def getResourcePath(vpr_file: String): String = {
     val cross_platform_path = new File(vpr_file) getPath
     val resource = getClass.getResource(cross_platform_path)
@@ -48,14 +51,14 @@ class ViperServerSpec extends AnyWordSpec with Matchers with ScalatestRouteTest 
     "\"" + fname + "\""
   }
 
-  private val verifiableFile = "viper/let.vpr"
-  private val nonExistingFile = "viper/bla.vpr"
-  private val emptyFile = "viper/empty.vpr"
+  private val verifiableFile = "src/test/resources/viper/let.vpr"
+  private val nonExistingFile = "2165e0fbd4b980436557b5a6f1a41f68.vpr"
+  private val emptyFile = "src/test/resources/viper/empty.vpr"
 
   private val tool = "silicon"
-  private val testSimpleViperCode_cmd = s"$tool --disableCaching ${getResourcePath(verifiableFile)}"
-  private val testEmptyFile_cmd = s"$tool --disableCaching ${getResourcePath(emptyFile)}"
-  private val testNonExistingFile_cmd = s"$tool --disableCaching ${getResourcePath(nonExistingFile)}"
+  private val testSimpleViperCode_cmd = s"$tool --disableCaching ${verifiableFile}"
+  private val testEmptyFile_cmd = s"$tool --disableCaching ${emptyFile}"
+  private val testNonExistingFile_cmd = s"$tool --disableCaching ${nonExistingFile}"
 
   "ViperServer" should {
     s"start a verification process using `$tool` over a small Viper program" in {
@@ -63,15 +66,16 @@ class ViperServerSpec extends AnyWordSpec with Matchers with ScalatestRouteTest 
         //printRequestResponsePair(s"POST, /verify, $testSimpleViperCode_cmd", responseAs[String])
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
+        responseAs[String] should not include ("""File not found""")
       }
     }
 
     "respond with the result for process #0" in {
       Get("/verify/0") ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"GET, /verify/0", responseAs[String])
-        responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
+        responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
       }
     }
 
@@ -80,24 +84,25 @@ class ViperServerSpec extends AnyWordSpec with Matchers with ScalatestRouteTest 
         //printRequestResponsePair(s"POST, /verify, $testEmptyFile_cmd", responseAs[String])
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
+        responseAs[String] should not include ("""File not found""")
       }
     }
 
     "respond with the result for process #1" in {
       Get("/verify/1") ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"GET, /verify/1", responseAs[String])
-        responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
+        responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
       }
     }
 
-    s"start another verification process using `$tool` on an inexistent file" in {
+    s"start another verification process using `$tool` on an non-existent file" in {
       Post("/verify", VerificationRequest(testNonExistingFile_cmd)) ~> _routsUnderTest ~> check {
         //printRequestResponsePair(s"POST, /verify, $testEmptyFile_cmd", responseAs[String])
-        responseAs[String] should include (s"not found")
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
+        responseAs[String] should include (s"not found")
       }
     }
 

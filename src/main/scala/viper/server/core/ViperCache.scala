@@ -6,6 +6,7 @@
 
 package viper.server.core
 
+import scala.language.postfixOps
 import ch.qos.logback.classic.Logger
 import viper.server.core.ViperCache.logger
 import viper.server.vsi._
@@ -14,6 +15,7 @@ import viper.silver.utility.CacheHelper
 import viper.silver.verifier.errors._
 import viper.silver.verifier.{AbstractVerificationError, VerificationError, errors}
 
+import scala.annotation.tailrec
 import scala.collection.mutable.{Map => MutableMap}
 
 // ===== CACHE OBJECT ==================================================================
@@ -291,9 +293,9 @@ object ViperCache extends Cache {
 
 object ViperCacheHelper {
   private val _node_hash_memo = MutableMap.empty[String, MutableMap[Node, String]]
-  def node_hash_memo = _node_hash_memo
+  def node_hash_memo: MutableMap[String, MutableMap[Node, String]] = _node_hash_memo
 
-  protected def hex(h: String) = h.hashCode.toHexString
+  protected def hex(h: String): String = h.hashCode.toHexString
 
   /**
     * This method is used for computing unique-ish hashes of AST nodes.
@@ -312,8 +314,10 @@ object ViperCacheHelper {
     *
     * The second argument list is used for specifying external keys as (backend, file).
     *  This is needed for removing separate parts of the hash table.
+    *
     *  @see [[forgetFile]].
     */
+  @tailrec
   private def getHashForNode(node: Node)(implicit key: String): String = node match {
     case m: Method => removeBody(m).entityHash
     case hn: Hashable => hn.entityHash
@@ -467,14 +471,20 @@ class AccessPath(val accessPath: List[Number]) {
 
 case class ViperAst(p: Program) extends Ast {
 
-  def compose(cs: List[CacheableMember]): Ast = {
-    val new_methods: List[Method] = cs.map(_.asInstanceOf[ViperMethod].m)
-    val new_program = Program(p.domains, p.fields, p.functions, p.predicates, new_methods, p.extensions)(p.pos, p.info, p.errT)
+  override def compose(cs: List[CacheableMember]): Ast = {
+    // FIXME Use polymorphic types instead of casts!
+    val new_methods: List[Method] = cs filter { _.isInstanceOf[ViperMethod] } map { vm => vm.asInstanceOf[ViperMethod].m }
+    val new_predicates: List[Predicate] = cs filter { _.isInstanceOf[ViperPredicate] } map { vp => vp.asInstanceOf[ViperPredicate].p }
+    val new_functions: List[Function] = cs filter { _.isInstanceOf[ViperFunction] } map { vf => vf.asInstanceOf[ViperFunction].f }
+    val new_program = Program(p.domains, p.fields,
+      new_functions, new_predicates, new_methods, p.extensions)(p.pos, p.info, p.errT)
     ViperAst(new_program)
   }
 
-  def decompose(): List[CacheableMember] = {
-    p.methods.map(m => ViperMethod(m)).toList
+  override def decompose(): List[CacheableMember] = {
+    p.methods.map(m => ViperMethod(m)) ++
+      p.predicates.map(p => ViperPredicate(p)) ++
+      p.functions.map(f => ViperFunction(f)) toList
   }
 
   override def equals(other: Ast): Boolean = {
@@ -504,5 +514,35 @@ case class ViperMethod(m: Method) extends CacheableMember {
   def getDependencies(ast: Ast): List[Member] = {
     val p = ast.asInstanceOf[ViperAst].p
     p.getDependencies(p, m).map(h => ViperMember(h))
+  }
+}
+
+case class ViperPredicate(p: Predicate) extends CacheableMember {
+  def hash(): String = {
+    p.entityHash
+  }
+
+  def transform: CacheableMember = {
+    ViperPredicate(p.copy()(p.pos, ConsInfo(p.info, Cached), p.errT))
+  }
+
+  def getDependencies(ast: Ast): List[Member] = {
+    val p = ast.asInstanceOf[ViperAst].p
+    p.members filter (_.entityHash != hash()) map (h => ViperMember(h)) toList
+  }
+}
+
+case class ViperFunction(f: Function) extends CacheableMember {
+  def hash(): String = {
+    f.entityHash
+  }
+
+  def transform: CacheableMember = {
+    ViperFunction(f.copy()(f.pos, ConsInfo(f.info, Cached), f.errT))
+  }
+
+  def getDependencies(ast: Ast): List[Member] = {
+    val p = ast.asInstanceOf[ViperAst].p
+    p.members filter (_.entityHash != hash()) map (h => ViperMember(h)) toList
   }
 }

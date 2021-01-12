@@ -4,7 +4,7 @@
 
 This is ViperServer, an HTTP server that manages verification requests to different tools from the Viper tool stack.
 
-The main two tools currently are:
+The main two Viper tools (a.k.a verification backends) currently are: 
 
 - [Carbon](https://bitbucket.org/viperproject/carbon), a verification condition generation (VCG) backend for the Viper language.
 - [Silicon](https://bitbucket.org/viperproject/silicon), a symbolic execution verification backend.
@@ -14,13 +14,16 @@ The main two tools currently are:
 
 1. Viper IDE: integration of Viper into Visual Studio Code (VS Code). Viper IDE provides the best user experience for Viper.
    More details here: http://viper.ethz.ch/downloads/
-2. Avoid 1-3 second delays caused by JVM startup time. ViperServer offers a robust alternative to, e.g.,
+1. Facilitate the development of verification IDEs for Viper frontends, such as: 
+    - [Gobra](https://github.com/viperproject/gobra), the Viper-based verifier for the Go language
+    - [Prusti](https://github.com/viperproject/prusti-dev/), the Viper-based verifier for the Rust language
+1. Avoid 1-3 second delays caused by JVM startup time. ViperServer offers a robust alternative to, e.g.,
    [Nailgun](https://github.com/facebook/nailgun).
-3. Develop Viper encodings more efficiently with caching.
-4. Interact with Viper tools programmatically using the HTTP API. A reference client implementation (in Python) is
+1. Develop Viper encodings more efficiently with caching.
+1. Interact with Viper tools programmatically using the HTTP API. A reference client implementation (in Python) is
    available via [viper_client](https://bitbucket.org/viperproject/viper_client).
 
-For more details, please visit: http://viper.ethz.ch/downloads/
+For more details about using Viper, please visit: http://viper.ethz.ch/downloads/
 
 
 ### Installation Instructions ###

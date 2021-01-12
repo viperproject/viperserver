@@ -9,11 +9,15 @@ lazy val silver = project in file("silver")
 lazy val silicon = project in file("silicon")
 lazy val carbon = project in file("carbon")
 
+lazy val common = (project in file("common"))
+
 // Viper Server specific project settings
 lazy val server = (project in file("."))
     .dependsOn(silver % "compile->compile;test->test")
     .dependsOn(silicon % "compile->compile;test->test")
     .dependsOn(carbon % "compile->compile;test->test")
+    .dependsOn(common)
+    .aggregate(common)
     .enablePlugins(JavaAppPackaging)
     .settings(
         // General settings
@@ -31,11 +35,12 @@ lazy val server = (project in file("."))
         libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.6.10",
         libraryDependencies += "com.typesafe.akka" %% "akka-stream-testkit" % "2.6.10" % Test,
         libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.2.1" % Test,
+        libraryDependencies += "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.8.1", // Java implementation of language server protocol
 
         // Run settings
         run / javaOptions += "-Xss128m",
 
-        // Test settings.
+        // Test settings
         Test / parallelExecution := false,
 
         // Assembly settings

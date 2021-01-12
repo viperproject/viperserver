@@ -12,18 +12,12 @@ package viper.server.vsi
   * */
 trait Envelope
 
-sealed trait Post {
+trait Post {
   type A
-}
-
-trait Packer extends Post {
 
   /** Must be implemented to map client-specific messages to Envelopes.
     * */
   def pack(m: A): Envelope
-}
-
-trait Unpacker extends Post {
 
   /** Must be implemented to map Envelopes to client-specific messages.
     * */

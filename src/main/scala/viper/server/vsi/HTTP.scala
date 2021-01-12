@@ -16,7 +16,7 @@ import akka.http.scaladsl.server.Route
 import akka.pattern.ask
 import akka.stream.scaladsl.Source
 import akka.util.Timeout
-import viper.server.vsi.VerificationProtocol.Stop
+import viper.server.vsi.VerificationProtocol.StopVerification
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -26,6 +26,11 @@ import scala.util.{Failure, Success, Try}
   * */
 sealed trait BasicHttp {
 
+  /** Specifies the port through which the clients may access this server instance.
+    *
+    * The default port number tells the system to automatically pick an available port
+    * (depends on the implementation of the underlying socket library)
+    * */
   var port: Int = _
 
   /** Must be implemented to return the routes defined for this server.
@@ -56,16 +61,17 @@ sealed trait CustomizableHttp extends BasicHttp {
   * server. In particular, this means providing a protocol that returns the VerificationServer's
   * responses as type [[ToResponseMarshallable]].
   * */
-trait VerificationServerHTTP extends VerificationServer with CustomizableHttp {
+trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
 
   def setRoutes(): Route
 
   var bindingFuture: Future[Http.ServerBinding] = _
 
   override def start(active_jobs: Int): Unit = {
-    jobs = new JobPool(active_jobs)
+    ast_jobs = new JobPool("AST-pool", active_jobs)
+    ver_jobs = new JobPool("Verification-pool", active_jobs)
     bindingFuture = Http().bindAndHandle(setRoutes(), "localhost", port)
-    _termActor = system.actorOf(Terminator.props(bindingFuture), "terminator")
+    _termActor = system.actorOf(Terminator.props(ast_jobs, ver_jobs, Some(bindingFuture)), "terminator")
     isRunning = true
   }
 
@@ -113,46 +119,94 @@ trait VerificationServerHTTP extends VerificationServer with CustomizableHttp {
         complete(onVerifyPost(r))
       }
     }
-  } ~ path("verify" / IntNumber) { jid =>
+  } ~ path("ast" / IntNumber) { id =>
+    val ast_id = AstJobId(id)
+    get {
+      ast_jobs.lookupJob(ast_id) match {
+        case Some(handle_future) =>
+          onComplete(handle_future) {
+            case Success(handle) =>
+              val s: Source[Envelope, NotUsed] = Source.fromPublisher(handle.publisher)
+              complete(unpackMessages(s))
+            case Failure(error) =>
+              // TODO use AST-specific response
+              complete(verificationRequestRejection(id, error))
+          }
+        case None =>
+          // TODO use AST-specific response
+          complete(verificationRequestRejection(id, JobNotFoundException))
+      }
+    }
+  } ~ path("verify" / IntNumber) { id =>
     /** Send GET request to "/verify/<jid>" where <jid> is a non-negative integer.
       * <jid> must be an ID of an existing verification job.
       */
+    val ver_id = VerJobId(id)
     get {
-      jobs.lookupJob(JobID(jid)) match {
+      ver_jobs.lookupJob(ver_id) match {
+        case None =>
+          /** Verification job with this ID is not found. */
+          complete(verificationRequestRejection(id, JobNotFoundException))
+
         case Some(handle_future) =>
-          // Found a job with this jid.
-          onComplete(handle_future) {
-            case Success(handle) =>
-              val s: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
-              _termActor ! Terminator.WatchJobQueue(JobID(jid), handle)
-              complete(unpackMessages(s))
+          /** Combine the future AST and the future verification results. */
+          onComplete(handle_future.flatMap((ver_handle: VerHandle) => {
+            /** If there exists a verification job, there should have existed
+              * (or should still exist) a corresponding AST construction job. */
+            val ast_id: AstJobId = ver_handle.prev_job_id.get
+
+            /** The AST construction job may have been cleaned up
+              * (if all of its messages were already consumed) */
+            ast_jobs.lookupJob(ast_id) match {
+              case Some(ast_handle_fut) =>
+                ast_handle_fut.map(ast_handle => (Some(ast_handle), ver_handle))
+              case None =>
+                Future.successful((None, ver_handle))
+            }
+          })) {
+            case Success((ast_handle_maybe, ver_handle)) =>
+              val ver_source = ver_handle match {
+                case VerHandle(null, null, null, ast_id) =>
+                  /** There were no messages produced during verification. */
+                  Source.empty[Envelope]
+                case _ =>
+                  Source.fromPublisher(ver_handle.publisher)
+              }
+              val ast_source = ast_handle_maybe match {
+                case None =>
+                  /** The AST messages were already consumed. */
+                  Source.empty[Envelope]
+                case Some(ast_handle) =>
+                  Source.fromPublisher(ast_handle.publisher)
+              }
+              val resulting_source = ver_source.prepend(ast_source)
+              complete(unpackMessages(resulting_source))
             case Failure(error) =>
-              complete(verificationRequestRejection(jid, error))
+              complete(verificationRequestRejection(id, error))
           }
-        case _ =>
-          complete(verificationRequestRejection(jid, JobNotFoundException()))
       }
     }
-  } ~ path("discard" / IntNumber) { jid =>
+  } ~ path("discard" / IntNumber) { id =>
     /** Send GET request to "/discard/<jid>" where <jid> is a non-negative integer.
       * <jid> must be an ID of an existing verification job.
       */
+    val ver_id = VerJobId(id)
     get {
-      jobs.lookupJob(JobID(jid)) match {
+      ver_jobs.lookupJob(ver_id) match {
         case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>
               implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-              val interrupt_done: Future[String] = (handle.job_actor ? Stop).mapTo[String]
+              val interrupt_done: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
               onSuccess(interrupt_done) { msg =>
                 handle.job_actor ! PoisonPill // the actor played its part.
-                complete(discardJobConfirmation(jid, msg))
+                complete(discardJobConfirmation(id, msg))
               }
             case Failure(_) =>
-              complete(discardJobRejection(jid))
+              complete(discardJobRejection(id))
           }
         case _ =>
-          complete(discardJobRejection(jid))
+          complete(discardJobRejection(id))
       }
     }
   }

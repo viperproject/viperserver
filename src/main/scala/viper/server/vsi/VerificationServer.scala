@@ -6,62 +6,25 @@
 
 package viper.server.vsi
 
-import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
-import akka.http.scaladsl.Http
+import akka.Done
+import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import akka.pattern.ask
-import akka.stream.scaladsl.{Keep, Sink, Source, SourceQueueWithComplete}
-import akka.stream.{ActorMaterializer, OverflowStrategy, QueueOfferResult}
+import akka.stream.scaladsl.{Keep, Sink, Source}
+import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.Timeout
-import akka.{Done, NotUsed}
-import org.reactivestreams.Publisher
 import viper.server.core.VerificationExecutionContext
 
-import scala.collection.mutable
 import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.Future
+import scala.reflect.ClassTag
 import scala.util.{Failure, Success}
+
 import scala.language.postfixOps
 
 
-class VerificationServerException extends Exception
-case class JobNotFoundException() extends VerificationServerException
-
-case class JobID(id: Int)
-case class JobHandle(job_actor: ActorRef,
-                     queue: SourceQueueWithComplete[Envelope],
-                     publisher: Publisher[Envelope])
-
-/** This class manages the verification jobs the server receives.
-  */
-class JobPool(val MAX_ACTIVE_JOBS: Int = 3) {
-  var jobHandles: mutable.Map[Int, Future[JobHandle]] = mutable.Map[Int, Future[JobHandle]]()
-  private var _nextJobId: Int = 0
-
-  def newJobsAllowed = jobHandles.size < MAX_ACTIVE_JOBS
-
-  /** Creates a Future of a JobHandle.
-    *
-    * For the next available job ID the function job_executor will set up a JobActor. That actor
-    * will start a verification process and produce a Future JobHandle. The Future will
-    * successfully complete as soon as the verification process was started successfully.
-    * */
-  def bookNewJob(job_executor: Int => Future[JobHandle]): (Int, Future[JobHandle]) = {
-    val new_jid = _nextJobId
-    jobHandles(new_jid) = job_executor(new_jid)
-    _nextJobId = _nextJobId + 1
-    (new_jid, jobHandles(new_jid))
-  }
-
-  /** Discards the JobHandle for the given JobID
-    * */
-  def discardJob(jid: JobID): mutable.Map[Int, Future[JobHandle]] = {
-    jobHandles -= jid.id
-  }
-
-  def lookupJob(jid: JobID): Option[ Future[JobHandle] ] = {
-    jobHandles.get(jid.id)
-  }
-}
+abstract class VerificationServerException extends Exception
+case object JobNotFoundException extends VerificationServerException
+abstract class AstConstructionException extends VerificationServerException
 
 /** This trait provides state and process management functionality for verification servers.
   *
@@ -78,128 +41,121 @@ class JobPool(val MAX_ACTIVE_JOBS: Int = 3) {
   *  between a VerificationTask's backend and the server. The Terminator Actor is in charge of
   *  terminating both individual processes and the server.
   */
-trait VerificationServer extends Unpacker {
+trait VerificationServer extends Post {
+
+  type AST
 
   implicit val executor: VerificationExecutionContext
   implicit val system: ActorSystem = executor.actorSystem
   implicit val materializer: ActorMaterializer = ActorMaterializer()
 
-  protected var jobs: JobPool = _
+  protected var _termActor: ActorRef = _
+
+  implicit val ast_id_fact: Int => AstJobId = AstJobId.apply
+  implicit val ver_id_fact: Int => VerJobId = VerJobId.apply
+
+  protected var ast_jobs: JobPool[AstJobId, AstHandle[AST]] = _
+  protected var ver_jobs: JobPool[VerJobId, VerHandle] = _
+
   var isRunning: Boolean = false
 
-  /** Configures an instance of ViperCoreServer.
+  /** Configures an instance of VerificationServer.
     *
     * This function must be called before any other. Calling any other function before this one
     * will result in an IllegalStateException.
     * */
   def start(active_jobs: Int): Unit = {
-    jobs = new JobPool(active_jobs)
-    _termActor = executor.actorSystem.actorOf(Terminator.props(), "terminator")
+    ast_jobs = new JobPool("VSI-AST-pool", active_jobs)
+    ver_jobs = new JobPool("VSI-Verification-pool", active_jobs)
+    _termActor = system.actorOf(Terminator.props(ast_jobs, ver_jobs), "terminator")
     isRunning = true
   }
 
-  // --- Actor: Terminator ---
+  protected def initializeProcess[S <: JobId, T <: JobHandle : ClassTag]
+                      (pool: JobPool[S, T],
+                      task_fut: Future[MessageStreamingTask[_]],
+                      prev_job_id_maybe: Option[AstJobId] = None): S = {
 
-  protected var _termActor: ActorRef = _
+    if (!isRunning) {
+      throw new IllegalStateException("Instance of VerificationServer already stopped")
+    }
 
-  object Terminator {
-    case object Exit
-    case class WatchJobQueue(jid: JobID, handle: JobHandle)
+    require(pool.newJobsAllowed)
 
-    def props(bindingFuture: Future[Http.ServerBinding]): Props = Props(new Terminator(Some(bindingFuture)))
-    def props(): Props = Props(new Terminator(None))
-  }
+    /** Ask the pool to book a new job using the above function
+      * to construct Future[JobHandle] and Promise[AST] later on. */
+    pool.bookNewJob((new_jid: S) => task_fut.flatMap((task: MessageStreamingTask[_]) => {
 
-  class Terminator(bindingFuture: Option[Future[Http.ServerBinding]]) extends Actor {
+      /** TODO avoid hardcoded parameters */
+      implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
 
-    override def receive: PartialFunction[Any, Unit] = {
-      case Terminator.Exit =>
-        bindingFuture match {
-          case Some(future) =>
-            future
-              .flatMap(_.unbind()) // trigger unbinding from the port
-              .onComplete(_ => {
-                system.terminate() // and shutdown when done
-              })
-          case None =>
-            system.terminate() // shutdown
+      /** What we really want here is SourceQueueWithComplete[Envelope]
+        * Publisher[Envelope] might be needed to create a stream later on,
+        * but the publisher and the queue are synchronized are should be viewed
+        * as different representation of the same concept.
+        */
+      val (queue, publisher) = Source.queue[Envelope](10000, OverflowStrategy.backpressure)
+        .toMat(Sink.asPublisher(false))(Keep.both).run()
+
+      /** This actor will be responsible for managing ONE queue,
+        * whereas the JobActor can manage multiple tasks, all of which are related to some pipeline,
+        * e.g.   [Text] ---> [AST] ---> [VerificationResult]
+        *        '--- Task I ----'                         |
+        *                    '---------- Task II ----------'
+        **/
+      val message_actor = system.actorOf(QueueActor.props(queue), s"${pool.tag}--message_actor--${new_jid.id}")
+      task.setQueueActor(message_actor)
+
+      val job_actor = system.actorOf(JobActor.props(new_jid), s"${pool.tag}_job_actor_${new_jid}")
+
+      /** Register cleanup task. */
+      queue.watchCompletion().onComplete(_ => {
+        pool.discardJob(new_jid)
+        /** FIXME: if the job actors are meant to be reused from one phase to another (not implemented yet),
+          * FIXME: then they should be stopped only after the **last** job is completed in the pipeline. */
+        job_actor ! PoisonPill
+      })
+
+      (job_actor ? (new_jid match {
+        case _: AstJobId =>
+          VerificationProtocol.ConstructAst(task, queue, publisher, executor)
+        case _: VerJobId =>
+          VerificationProtocol.Verify(task, queue, publisher,
+            /** TODO: Use factories for specializing the messages.
+              * TODO: Clearly, there should be a clean separation between concrete job types
+              * TODO: (AST Construction, Verification) and generic types (JobHandle). */
+            prev_job_id_maybe match {
+              case Some(prev_job_id: AstJobId) =>
+                Some(prev_job_id)
+              case Some(prev_job_id) =>
+                throw new IllegalArgumentException(s"cannot map ${prev_job_id.toString} to expected type AstJobId")
+              case None =>
+                None
+            }, executor)
+      })).mapTo[T]
+
+    }).recover({
+      case e: AstConstructionException =>
+        // If the AST construction phase failed, remove the verification job handle
+        // from the corresponding pool.
+        pool.discardJob(new_jid)
+        new_jid match {
+          case _: VerJobId =>
+            // FIXME perhaps return None instead of nulls here.
+            VerHandle(null, null, null, prev_job_id_maybe)
         }
-      case Terminator.WatchJobQueue(jid, handle) =>
-        val queue_completion_future: Future[Done] = handle.queue.watchCompletion()
-        queue_completion_future.onComplete( {
-          case Failure(e) =>
-            throw e
-          case Success(_) =>
-            jobs.discardJob(jid)
-        })
-    }
+    }).mapTo[T])
   }
 
-
-  // --- Actor: JobActor ---
-
-  object JobActor {
-    def props(id: Int): Props = Props(new JobActor(id))
-  }
-
-  class JobActor(private val id: Int) extends Actor {
-
-    private var _verificationTask: java.util.concurrent.Future[_] = _
-
-    private def interrupt: Boolean = {
-      if (_verificationTask != null && !_verificationTask.isDone) {
-        _verificationTask.cancel(true)
-        return true
-      }
-      false
+  protected def initializeAstConstruction(task: MessageStreamingTask[AST]): AstJobId = {
+    if (!isRunning) {
+      throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
 
-    private def resetVerificationTask(): Unit = {
-      if (_verificationTask != null && !_verificationTask.isDone) {
-        _verificationTask.cancel(true)
-      }
-      _verificationTask = null
-    }
-
-    override def receive: PartialFunction[Any, Unit] = {
-      case VerificationProtocol.Stop =>
-        val did_I_interrupt = interrupt
-        if (did_I_interrupt) {
-          sender() ! s"Job #$id has been successfully interrupted."
-        } else {
-          sender() ! s"Job #$id has already been finalized."
-        }
-      case VerificationProtocol.Verify(task, queue, publisher, executor) =>
-        resetVerificationTask()
-        sender() ! startJob(task, queue, publisher)(executor)
-      case msg =>
-        throw new Exception("Main Actor: unexpected message received: " + msg)
-    }
-
-    private def startJob(task: VerificationTask, queue: SourceQueueWithComplete[Envelope], publisher: Publisher[Envelope])(executor: VerificationExecutionContext): JobHandle = {
-      _verificationTask = executor.submit(task)
-      JobHandle(self, queue, publisher)
-    }
-  }
-
-
-  // --- Actor: MessageActor ---
-
-  object QueueActor {
-    def props(jid: Int, queue: SourceQueueWithComplete[Envelope]): Props =
-      Props(new QueueActor(jid, queue))
-  }
-
-  class QueueActor(jid: Int, queue: SourceQueueWithComplete[Envelope]) extends Actor {
-
-    override def receive: PartialFunction[Any, Unit] = {
-      case TaskProtocol.BackendReport(msg) =>
-        val offer_status = queue.offer(msg)
-        sender() ! offer_status
-      case TaskProtocol.FinalBackendReport(_) =>
-        queue.complete()
-        self ! PoisonPill
-      case _ =>
+    if (ast_jobs.newJobsAllowed) {
+      initializeProcess(ast_jobs, Future.successful(task))
+    } else {
+      AstJobId(-1) // Process Management running  at max capacity.
     }
   }
 
@@ -207,29 +163,15 @@ trait VerificationServer extends Unpacker {
     *
     * As such, it accepts an instance of a VerificationTask, which it will pass to the JobActor.
     */
-  protected def initializeVerificationProcess(task: VerificationTask): JobID = {
-    if(!isRunning) {
-      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
+  protected def initializeVerificationProcess(task_fut: Future[MessageStreamingTask[Unit]], ast_job_id_maybe: Option[AstJobId]): VerJobId = {
+    if (!isRunning) {
+      throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
 
-    if (jobs.newJobsAllowed) {
-      def createJob(new_jid: Int): Future[JobHandle] = {
-
-        implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-        val job_actor = system.actorOf(JobActor.props(new_jid), s"job_actor_$new_jid")
-        val (queue, publisher) = Source.queue[Envelope](10000, OverflowStrategy.backpressure)
-                                       .toMat(Sink.asPublisher(false))(Keep.both)
-                                       .run()
-        val message_actor = system.actorOf(QueueActor.props(new_jid, queue), s"queue_actor_$new_jid")
-        task.setQueueActor(message_actor)
-        val answer = job_actor ? VerificationProtocol.Verify(task, queue, publisher, executor)
-        val new_job_handle: Future[JobHandle] = answer.mapTo[JobHandle]
-        new_job_handle
-      }
-      val (id, _) = jobs.bookNewJob(createJob)
-      JobID(id)
+    if (ver_jobs.newJobsAllowed) {
+      initializeProcess(ver_jobs, task_fut, ast_job_id_maybe)
     } else {
-      JobID(-1) // Process Management running  at max capacity.
+      VerJobId(-1)  // Process Management running  at max capacity.
     }
   }
 
@@ -237,33 +179,65 @@ trait VerificationServer extends Unpacker {
     *
     * Deletes the JobHandle on completion.
     */
-  protected def streamMessages(jid: JobID, clientActor: ActorRef): Option[Future[Unit]] = {
-    if(!isRunning) {
-      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
+  protected def streamMessages(jid: VerJobId, clientActor: ActorRef): Option[Future[Done]] = {
+    if (!isRunning) {
+      throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
 
-    jobs.lookupJob(jid) match {
+    ver_jobs.lookupJob(jid) match {
+      case None =>
+        /** Verification job not found */
+        None
       case Some(handle_future) =>
-        def mapHandle(handle: JobHandle): Future[Unit] = {
-          val src_envelope: Source[Envelope, NotUsed] = Source.fromPublisher((handle.publisher))
-          val src_msg: Source[A , NotUsed] = src_envelope.map(e => unpack(e))
-          src_msg.runWith(Sink.actorRef(clientActor, Success))
-          _termActor ! Terminator.WatchJobQueue(jid, handle)
-          handle.queue.watchCompletion().flatMap(_ => Future.unit)
-        }
-        Some(handle_future.flatMap(mapHandle))
-      case None => None
+        Some(handle_future.flatMap((ver_handle: VerHandle) => {
+          ver_handle.prev_job_id match {
+            case None =>
+              /** The AST for this verification job wasn't created by this server. */
+              Future.successful((None, ver_handle))
+            case Some(ast_id) =>
+              /** The AST construction job may have been cleaned up
+                * (if all of its messages were already consumed) */
+              ast_jobs.lookupJob(ast_id) match {
+                case Some(ast_handle_fut) =>
+                  ast_handle_fut.map(ast_handle => (Some(ast_handle), ver_handle))
+                case None =>
+                  Future.successful((None, ver_handle))
+              }
+          }
+        }) flatMap {
+          case (ast_handle_maybe: Option[AstHandle[AST]], ver_handle: VerHandle) =>
+            val ver_source = ver_handle match {
+              case VerHandle(null, null, null, ast_id) =>
+                /** There were no messages produced during verification. */
+                Source.empty[Envelope]
+              case _ =>
+                Source.fromPublisher(ver_handle.publisher)
+            }
+            val ast_source = ast_handle_maybe match {
+              case None =>
+                /** The AST messages were already consumed. */
+                Source.empty[Envelope]
+              case Some(ast_handle) =>
+                Source.fromPublisher(ast_handle.publisher)
+            }
+            val resulting_source = ver_source.prepend(ast_source).map(e => unpack(e))
+            resulting_source.runWith(Sink.actorRef(clientActor, Success))
+
+            // FIXME This assumes that someone will actually complete the verification job queue.
+            // FIXME Could we guarantee that the client won't forget to do this?
+            ver_handle.queue.watchCompletion()
+        })
     }
   }
 
-  /** Stops an instance of ViperCoreServer from running.
+  /** Stops an instance of VerificationServer from running.
     *
     * As such it should be the last method called. Calling any other function after stop will
     * result in an IllegalStateException.
     * */
   def stop(): Future[Unit] = {
     if(!isRunning) {
-      throw new IllegalStateException("Instance of ViperCoreServer already stopped")
+      throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
     isRunning = false
     getInterruptFutureList().transform(r => {
@@ -281,69 +255,17 @@ trait VerificationServer extends Unpacker {
   /** This method interrupts active jobs upon termination of the server.
     */
   protected def getInterruptFutureList(): Future[List[String]] = {
-    val interrupt_future_list: List[Future[String]] = jobs.jobHandles map { case (_, handle_future) =>
-      handle_future.flatMap {
-        case JobHandle(actor, _, _) =>
-          implicit val askTimeout: Timeout = Timeout(1000 milliseconds)
-          (actor ? VerificationProtocol.Stop).mapTo[String]
-      }
-    } toList
+    implicit val askTimeout: Timeout = Timeout(1000 milliseconds)
+    val interrupt_future_list: List[Future[String]] = (ver_jobs.jobHandles ++ ast_jobs.jobHandles) map {
+      case (jid, handle_future) =>
+        handle_future.flatMap {
+          case AstHandle(actor, _, _, _) =>
+            (actor ? VerificationProtocol.StopAstConstruction).mapTo[String]
+          case VerHandle(actor, _, _, _) =>
+            (actor ? VerificationProtocol.StopVerification).mapTo[String]
+        }
+      } toList
     val overall_interrupt_future: Future[List[String]] = Future.sequence(interrupt_future_list)
     overall_interrupt_future
-  }
-}
-
-
-/** This class is a generic wrapper for a any sort of verification a VerificationServer might
-  * work on.
-  *
-  * It has the following properties:
-  *  - implements runnable
-  *  - provides a reference to a queue actor.
-  *
-  *  The first serves the purpose of running the process concurrently. The second allows to
-  *  communicate from the verification process to the server.
-  * */
-abstract class VerificationTask()(implicit val executionContext: ExecutionContext) extends Runnable with Packer {
-
-  private var q_actor: ActorRef = _
-
-  final def setQueueActor(actor: ActorRef): Unit = {
-    q_actor = actor
-  }
-
-  /** Sends massage to the attached actor.
-    *
-    * The actor receiving this message offers it to a queue. This offering returns a Future,
-    * which  will eventually indicate whether or not the offer was successful. This method is
-    * blocking, as it waits for the successful completion of such an offer.
-    * */
-  protected def enqueueMessages(msg: A): Unit = {
-    implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-
-    val answer = q_actor ? TaskProtocol.BackendReport(pack(msg))
-    Await.ready(answer, Duration.Inf)
-    // we have waited until we got an answer or a timeout so it's safe to call get:
-    val current_offer: Future[QueueOfferResult] = answer.value.get match {
-      case Success(current_offer) if current_offer.isInstanceOf[Future[QueueOfferResult]] =>
-        current_offer.asInstanceOf[Future[QueueOfferResult]]
-      case Success(s) => throw new IllegalStateException(s"unexpected answer received from queue actor: $s")
-      case Failure(exception) =>
-        println(s"enqueuing message into queue has failed with exception: $exception")
-        Future.failed(exception)
-    }
-    // wait until either answer completes with a timeout or current_offer completes (an exception is thrown if
-    // current_offer completes with a failure
-    Await.result(current_offer, Duration.Inf)
-  }
-
-  /** Notify the queue actor that the task has come to an end
-    *
-    * The actor receiving this message will close the queue.
-    *
-    * @param success indicates whether or not the task has ended as successfully.
-    * */
-  protected def registerTaskEnd(success: Boolean): Unit = {
-    q_actor ! TaskProtocol.FinalBackendReport(success)
   }
 }

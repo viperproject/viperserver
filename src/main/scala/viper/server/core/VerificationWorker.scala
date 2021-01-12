@@ -8,8 +8,7 @@ package viper.server.core
 
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
-import viper.server.ViperConfig
-import viper.server.vsi.{Envelope, VerificationTask}
+import viper.server.vsi.Envelope
 import viper.silicon.SiliconFrontend
 import viper.silver.ast._
 import viper.silver.frontend.{DefaultStates, SilFrontend}
@@ -17,7 +16,7 @@ import viper.silver.reporter.{Reporter, _}
 import viper.silver.verifier.{AbstractVerificationError, VerificationResult, _}
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 import scala.language.postfixOps
 
 class ViperServerException extends Exception
@@ -28,12 +27,12 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
   override def toString: String = s"Verification backend (<: SilFrontend) `$name` could not be found."
 }
 
-case class SilverEnvelope(m: Message) extends Envelope
+case class ViperEnvelope(m: Message) extends Envelope
 
-class VerificationWorker(private val viper_config: ViperConfig,
-                         private val logger: Logger,
+class VerificationWorker(private val logger: Logger,
                          private val command: List[String],
-                         private val program: Program)(implicit val ec: ExecutionContext) extends VerificationTask {
+                         private val program: Program)
+  extends MessageReportingTask[Unit] {
 
   private var backend: ViperBackend = _
 
@@ -53,15 +52,6 @@ class VerificationWorker(private val viper_config: ViperConfig,
         throw ViperServerWrongTypeException(instance.getClass.getName)
       case _ =>
         throw ViperServerBackendNotFoundException(clazzName)
-    }
-  }
-
-  // Implementation of the Reporter interface used by the backend.
-  class ActorReporter(val tag: String) extends Reporter {
-    val name = s"ViperServer_$tag"
-
-    def report(msg: Message): Unit = {
-      enqueueMessages(msg)
     }
   }
 
@@ -88,8 +78,9 @@ class VerificationWorker(private val viper_config: ViperConfig,
       case _: InterruptedException =>
       case _: java.nio.channels.ClosedByInterruptException =>
       case e: Throwable =>
-        enqueueMessages(ExceptionReport(e))
-        logger.trace(s"Creation/Execution of the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
+        enqueueMessage(ExceptionReport(e))
+        logger.trace(s"Creation/Execution of the verification backend " +
+          s"${if (backend == null) "<null>" else backend.toString} resulted in an exception.", e)
     } finally {
       try {
         backend.stop()
@@ -107,10 +98,9 @@ class VerificationWorker(private val viper_config: ViperConfig,
     }
   }
 
-  override type A = Message
-
-  override def pack(m: A): Envelope = {
-    SilverEnvelope(m)
+  override def call(): Unit = {
+    // println(">>> VerificationWorker.call()")
+    run()
   }
 }
 
@@ -126,116 +116,9 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
       s"ViperBackend( ${_frontend.verifier.name} )"
   }
 
-  private def collectDefinitions(program: Program): List[Definition] = {
-    (program.members.collect {
-      case t: Method =>
-        (Definition(t.name, "Method", t.pos) +: (t.pos match {
-          case p: AbstractSourcePosition =>
-            t.formalArgs.map { arg => Definition(arg.name, "Argument", arg.pos, Some(p)) } ++
-              t.formalReturns.map { arg => Definition(arg.name, "Return", arg.pos, Some(p)) }
-          case _ => Seq()
-        })) ++ t.deepCollectInBody {
-          case scope: Scope with Positioned =>
-            scope.pos match {
-              case p: AbstractSourcePosition =>
-                scope.scopedDecls.map { local_decl => Definition(local_decl.name, "Local", local_decl.pos, Some(p)) }
-              case _ => Seq()
-            }
-        }.flatten
-
-      case t: Function =>
-        (Definition(t.name, "Function", t.pos) +: (t.pos match {
-          case p: AbstractSourcePosition =>
-            t.formalArgs.map { arg => Definition(arg.name, "Argument", arg.pos, Some(p)) }
-          case _ => Seq()
-        })) ++ (t.body match {
-          case Some(exp) =>
-            exp.deepCollect {
-              case scope:Scope with Positioned =>
-                scope.pos match {
-                  case p: AbstractSourcePosition =>
-                    scope.scopedDecls.map { local_decl => Definition(local_decl.name, "Local", local_decl.pos, Some(p)) }
-                  case _ => Seq()
-                }
-            } flatten
-          case _ => Seq()
-        })
-
-      case t: Predicate =>
-        (Definition(t.name, "Predicate", t.pos) +: (t.pos match {
-          case p: AbstractSourcePosition =>
-            t.formalArgs.map { arg => Definition(arg.name, "Argument", arg.pos, Some(p)) }
-          case _ => Seq()
-        })) ++ (t.body match {
-          case Some(exp) =>
-            exp.deepCollect {
-              case scope:Scope with Positioned =>
-                scope.pos match {
-                  case p: AbstractSourcePosition =>
-                    scope.scopedDecls.map { local_decl => Definition(local_decl.name, "Local", local_decl.pos, Some(p)) }
-                  case _ => Seq()
-                }
-            } flatten
-          case _ => Seq()
-        })
-
-      case t: Domain =>
-        (Definition(t.name, "Domain", t.pos) +: (t.pos match {
-          case p: AbstractSourcePosition =>
-            t.functions.flatMap { func =>
-              Definition(func.name, "Function", func.pos, Some(p)) +: (func.pos match {
-                case func_p: AbstractSourcePosition =>
-                  func.formalArgs.map { arg => Definition(if (arg.isInstanceOf[LocalVarDecl]) arg.asInstanceOf[LocalVarDecl].name else "unnamed parameter", "Argument", arg.pos, Some(func_p)) }
-                case _ => Seq()
-              })
-            } ++ t.axioms.flatMap { ax =>
-              Definition(if (ax.isInstanceOf[NamedDomainAxiom]) ax.asInstanceOf[NamedDomainAxiom].name else "", "Axiom", ax.pos, Some(p)) +: (ax.pos match {
-                case ax_p: AbstractSourcePosition =>
-                  ax.exp.deepCollect {
-                    case scope:Scope with Positioned =>
-                      scope.pos match {
-                        case p: AbstractSourcePosition =>
-                          scope.scopedDecls.map { local_decl => Definition(local_decl.name, "Local", local_decl.pos, Some(p)) }
-                        case _ => Seq()
-                      }
-                  } flatten
-                case _ => Seq()
-              }) }
-          case _ => Seq()
-        })) ++ Seq()
-
-      case t: Field =>
-        Seq(Definition(t.name, "Field", t.pos))
-
-    } flatten) toList
-  }
-
-  private def countInstances(p: Program): Map[String, Int] = p.members.groupBy({
-    case m: Method => "method"
-    case fu: Function => "function"
-    case p: Predicate => "predicate"
-    case d: Domain => "domain"
-    case fi: Field => "field"
-    case _ => "other"
-  }).view.mapValues(_.size).toMap
-
-  private def reportProgramStats(prog: Program): Unit = {
-    val stats = countInstances(prog)
-
-    _frontend.reporter.report(ProgramOutlineReport(prog.members.toList))
-    _frontend.reporter.report(StatisticsReport(
-      stats.getOrElse("method", 0),
-      stats.getOrElse("function", 0),
-      stats.getOrElse("predicate", 0),
-      stats.getOrElse("domain", 0),
-      stats.getOrElse("field", 0)
-    ))
-    _frontend.reporter.report(ProgramDefinitionsReport(collectDefinitions(prog)))
-  }
-
   /** Run the backend verification functionality
     * */
-  def execute(args: Seq[String]){
+  def execute(args: Seq[String]): Unit = {
     val (head, tail) = args.splitAt(args.length-1)
     val fileless_args = head ++ Seq("--ignoreFile") ++ tail
     _frontend.setStartTime()
@@ -243,8 +126,6 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
 
     if (!_frontend.prepare(fileless_args)) return
     _frontend.init( _frontend.verifier )
-
-    reportProgramStats(_ast)
 
     val temp_result: Option[VerificationResult] = if (_frontend.config.disableCaching()) {
       _frontend.logger.info("Verification with caching disabled")
@@ -269,7 +150,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     _frontend.verifier.stop()
   }
 
-  private def doCachedVerification(real_program: Program) = {
+  private def doCachedVerification(real_program: Program): Unit = {
     /** Top level branch is here for the same reason as in
       * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
 
@@ -278,47 +159,80 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
 
     // collect and report errors
     val all_cached_errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
-    cached_results.foreach (result => {
+    cached_results.foreach((result: CacheResult) => {
       val cached_errors = result.verification_errors
-      if(cached_errors.isEmpty){
-        _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName,result.method, Success))
+      if (cached_errors.isEmpty) {
+        _frontend.reporter report
+          CachedEntityMessage(_frontend.getVerifierName, result.method, Success)
       } else {
         all_cached_errors ++= cached_errors
-        _frontend.reporter.report(CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(all_cached_errors.toSeq)))
+        _frontend.reporter report
+          CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(cached_errors))
       }
     })
+
+    val methodsToVerify: Seq[Method] = transformed_prog.methods.filter(_.body.isDefined)
 
     _frontend.logger.debug(
       s"Retrieved data from cache..." +
         s" cachedErrors: ${all_cached_errors.map(_.loggableMessage)};" +
-        s" methodsToVerify: ${cached_results.map(_.method.name)}.")
+        s" cachedMethods: ${cached_results.map(_.method.name)};" +
+        s" methodsToVerify: ${methodsToVerify.map(_.name)}.")
     _frontend.logger.trace(s"The cached program is equivalent to: \n${transformed_prog.toString()}")
 
-    _frontend.setVerificationResult(_frontend.verifier.verify(transformed_prog))
+    val ver_result: VerificationResult = _frontend.verifier.verify(transformed_prog)
+    _frontend.setVerificationResult(ver_result)
     _frontend.setState(DefaultStates.Verification)
 
-    // update cache
-    val methodsToVerify = transformed_prog.methods.filter(_.body.isDefined)
-    methodsToVerify.foreach(m => {
-      // Results come back irrespective of program Member.
-      val cachable_errors =
-        for {
-          verRes <- _frontend.getVerificationResult
-          cache_errs <- verRes match {
-            case Failure(errs) => getMethodSpecificErrors(m, errs)
-            case Success => Some(Nil)
-          }
-        } yield cache_errs
+    _frontend.logger.debug(s"Latest verification result: $ver_result")
 
-      if(cachable_errors.isDefined){
-        ViperCache.update(backendName, file, m, transformed_prog, cachable_errors.get) match {
-          case e :: es =>
-            _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
-          case Nil =>
-            _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}) FAILED.")
+    val meth_to_err_map: Seq[(Method, Option[List[AbstractVerificationError]])] = methodsToVerify.map((m: Method) => {
+      // Results come back irrespective of program Member.
+      val cacheable_errors: Option[List[AbstractVerificationError]] = for {
+        verRes <- _frontend.getVerificationResult
+        cache_errs <- verRes match {
+          case Failure(errs) =>
+            val r = getMethodSpecificErrors(m, errs)
+            _frontend.logger.debug(s"getMethodSpecificErrors returned $r")
+            r
+          case Success =>
+            Some(Nil)
+        }
+      } yield cache_errs
+
+      (m, cacheable_errors)
+    })
+
+    // Check that the mapping from errors to methods is not messed up
+    // (otherwise it is unsafe to cache the results)
+    val update_cache_criterion: Boolean = {
+      val all_errors_in_file = meth_to_err_map.flatMap(_._2).flatten
+      _frontend.getVerificationResult.get match {
+        case Success =>
+          all_errors_in_file.isEmpty
+        case Failure(errors) =>
+          // FIXME find a better sorting criterion
+          errors.sortBy(ae => ae.hashCode()) == all_errors_in_file.sortBy(ae => ae.hashCode())
+      }
+    }
+
+    if (update_cache_criterion) {
+      // update cache
+      meth_to_err_map.foreach { case (m: Method, cacheable_errors: Option[List[AbstractVerificationError]]) =>
+        _frontend.logger.debug(s"Obtained cacheable errors: $cacheable_errors")
+
+        if (cacheable_errors.isDefined) {
+          ViperCache.update(backendName, file, m, transformed_prog, cacheable_errors.get) match {
+            case e :: es =>
+              _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
+            case Nil =>
+              _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}) FAILED.")
+          }
         }
       }
-    })
+    } else {
+      _frontend.logger.debug(s"Inconsistent error splitting; no cache update for this verification attempt in $file.")
+    }
 
     // combine errors:
     if (all_cached_errors.nonEmpty) {
@@ -340,11 +254,13 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     * if the error belongs to the method and return None.
     */
   private def getMethodSpecificErrors(m: Method, errors: Seq[AbstractError]): Option[List[AbstractVerificationError]] = {
-    val methodPos = m.pos match {
-      case sp: SourcePosition => Some(sp.start.line, sp.end.get.line)
-      case _ => {
+    val methodPos: Option[(Int, Int)] = m.pos match {
+      case sp: SourcePosition =>
+        /** Only the line component matters (not the column) since,
+          * in Viper, each method must be declared on a new line. */
+        Some(sp.start.line, sp.end.get.line)
+      case _ =>
         None
-      }
     }
     val result = scala.collection.mutable.ListBuffer[AbstractVerificationError]()
 
@@ -356,12 +272,13 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
         e.pos match {
           case pos: HasLineColumn =>
             val errorPos = pos.line
-            if (methodPos.isEmpty)
-            {
+            if (methodPos.isEmpty) {
               return None
             }
             // The position of the error is used to determine to which Method it belongs.
-            if (errorPos >= methodPos.get._1 && errorPos <= methodPos.get._2) result += e
+            if (methodPos.get._1 <= errorPos && errorPos <= methodPos.get._2) {
+              result += e
+            }
           case _ =>
             return None
         }

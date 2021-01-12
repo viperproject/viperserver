@@ -1,0 +1,77 @@
+[
+  {
+    "include": [
+      "**/*.scala",
+      "build.sbt"
+    ],
+    "exclude": [
+      ".github/**",
+      "src/main/scala/viper/server/utility/apache/**",
+      "src/main/scala/viper/server/utility/ibm/**",
+      "carbon/**",
+      "silicon/**",
+      "silver/**",
+      "project/project/**",
+      "project/target/**",
+      "target/**",
+      "docs/**",
+      "lib/**"
+    ],
+    "license": "./.github/license-check/headers/MPLv2-ETH.txt"
+  },
+  {
+    "include": [
+      "**/*.vpr"
+    ],
+    "license": "./.github/license-check/headers/CC0.txt"
+  },
+  {
+    "include": [
+      "**/Dockerfile",
+      "**/*.conf"
+    ],
+    "exclude": [
+      "carbon/**",
+      "silicon/**",
+      "silver/**"
+    ],
+    "license": "./.github/license-check/headers/MPLv2-ETH-hashtags.txt"
+  },
+  {
+    "include": [
+      "**/*.xml"
+    ],
+    "exclude": [
+      "carbon/**",
+      "silicon/**",
+      "silver/**",
+      "project/project/**",
+      "project/target/**",
+      "target/**"
+    ],
+    "license": "./.github/license-check/headers/MPLv2-ETH-xml.txt"
+  },
+  {
+    "include": [
+      ".github/**",
+      "src/main/scala/viper/server/utility/apache/**",
+      "src/main/scala/viper/server/utility/ibm/**",
+      "carbon/**",
+      "silicon/**",
+      "silver/**",
+      "project/build.properties",
+      "project/plugins.sbt",
+      "project/project/**",
+      "project/target/**",
+      "target/**",
+      "docs/**",
+      "lib/**",
+      "tmp/**",
+      "**/*.json",
+      "**/*.log",
+      ".github/check-license/**",
+      "**/README.md",
+      "**/LICENSE"
+    ]
+  }
+]
