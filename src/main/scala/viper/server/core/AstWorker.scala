@@ -23,7 +23,7 @@ case class ServerCrashException(e: Throwable) extends Exception(e)
 
 
 class AstWorker(val arg_list: List[String],
-                val logger: Logger) extends MessageReportingTask[Program] {
+                val logger: Logger)(override val executor: VerificationExecutionContext) extends MessageReportingTask[Program] {
 
   private def constructAst(): Program = {
     val file: String = arg_list.last

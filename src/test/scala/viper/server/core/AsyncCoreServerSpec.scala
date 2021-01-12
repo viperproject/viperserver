@@ -209,7 +209,9 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
       }
     })}
     // map resultFuture to a single assertion:
-    Future.sequence(resultFutures).map(_ => Succeeded)
+    // Future.sequence(resultFutures).map(_ => Succeeded)
+    // to not forget about the issue mentioned above:
+    Future.sequence(resultFutures).map(results => assert(results.length == 3))
   })
 
   it should s"be able to verify multiple programs with caching enabled and retrieve results" in withServer({ (core, context) =>
@@ -228,7 +230,9 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
       }
     })}
     // map resultFuture to a single assertion:
-    Future.sequence(resultFutures).map(_ => Succeeded)
+    // Future.sequence(resultFutures).map(_ => Succeeded)
+    // to not forget about the issue mentioned above:
+    Future.sequence(resultFutures).map(results => assert(results.length == 3))
   })
 
   object ClientActor {
@@ -263,18 +267,17 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
     // TODO fix to use all 3 files
     val files = Vector(correct_viper_file)
     val test_actors = 0 to 2 map ((i: Int) => actor_system.actorOf(ClientActor.props(i, context)))
-    val expected_results: Array[Option[Boolean]] = Array(Some(true), Some(true), Some(false))
     val jids = files.map(file => verifySiliconWithoutCaching(core, file))
     // stream messages to actors
     val jidsWithActors = jids zip test_actors
     val streamOptionsWithActors = jidsWithActors map { case (jid, actor) => (core.streamMessages(jid, actor), actor) }
     // stream options should be defined
-    val streamDones = streamOptionsWithActors map { case (streamOption, actor) => {
+    val streamDones = streamOptionsWithActors map { case (streamOption, actor) =>
       assert(streamOption.isDefined)
       val streamDoneFuture = streamOption.get
       // as soon as stream completes, complete it with the actor
       streamDoneFuture.map(_ => actor)
-    }}
+    }
     // streamState futures should eventually be resolved
     val allVerificationsFuture = Future.sequence(streamDones)
     val outcomesFuture = allVerificationsFuture.flatMap(actors => {
@@ -288,7 +291,9 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
       assert(outcome.contains(file != ver_error_file))
     })
     // map assertionsFuture to a single assertion:
-    assertionsFuture.map(_ => Succeeded)
+    // assertionsFuture.map(_ => Succeeded)
+    // to not forget about the issue mentioned above:
+    assertionsFuture.map(assertions => assert(assertions.length == 3))
   })
 
 // the following test case fails as it is currently not possible to start 3 simultaneous verification jobs

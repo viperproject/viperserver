@@ -32,6 +32,7 @@ case class ViperEnvelope(m: Message) extends Envelope
 class VerificationWorker(private val logger: Logger,
                          private val command: List[String],
                          private val program: Program)
+                        (override val executor: VerificationExecutionContext)
   extends MessageReportingTask[Unit] {
 
   private var backend: ViperBackend = _

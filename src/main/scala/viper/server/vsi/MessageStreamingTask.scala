@@ -13,6 +13,7 @@ import akka.actor.ActorRef
 import akka.pattern.ask
 import akka.stream.QueueOfferResult
 import akka.util.Timeout
+import viper.server.core.VerificationExecutionContext
 
 import scala.concurrent.{Await, Future, Promise}
 import scala.concurrent.duration._
@@ -50,14 +51,12 @@ abstract class MessageStreamingTask[T]() extends Callable[T] with Post {
     * which  will eventually indicate whether or not the offer was successful. This method is
     * blocking, as it waits for the successful completion of such an offer.
     * */
-  protected def enqueueMessage(msg: Envelope): Unit = {
+  protected def enqueueMessage(msg: Envelope)(implicit executor: VerificationExecutionContext): Unit = {
     // FIXME ATG: this method needs a review
     implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
 
     val answer = q_actor ? TaskProtocol.BackendReport(msg)
-    Await.ready(answer, Duration.Inf)
-    // we have waited until we got an answer or a timeout so it's safe to call get:
-    val current_offer: Future[QueueOfferResult] = answer.value.get match {
+    val current_offer: Future[QueueOfferResult] = answer transformWith {
       case Success(current_offer) if current_offer.isInstanceOf[Future[QueueOfferResult]] =>
         current_offer.asInstanceOf[Future[QueueOfferResult]]
       case Success(s) => throw new IllegalStateException(s"unexpected answer received from queue actor: $s")
