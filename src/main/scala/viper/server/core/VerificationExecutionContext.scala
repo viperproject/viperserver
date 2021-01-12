@@ -70,6 +70,7 @@ class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_Syste
 
   override def terminate(timeoutMSec: Long = 1000): Unit = {
     executorService.shutdown()
+    executorService.awaitTermination(timeoutMSec, TimeUnit.MILLISECONDS)
     val oldSystem = actorSystem
     system = None
     Await.ready(oldSystem.terminate(), FiniteDuration(timeoutMSec, TimeUnit.MILLISECONDS))
