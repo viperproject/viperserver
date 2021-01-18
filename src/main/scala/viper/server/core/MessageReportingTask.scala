@@ -10,10 +10,12 @@ import viper.server.vsi.MessageStreamingTask
 import viper.silver.ast.Program
 import viper.silver.reporter.{EntityFailureMessage, EntitySuccessMessage, Message, Reporter}
 
-trait MessageReportingTask extends MessageStreamingTask[Program] with ViperPost {
+trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
+
+  def executor: VerificationExecutionContext
 
   protected def enqueueMessage(msg: Message): Unit = {
-    super.enqueueMessage(pack(msg))
+    super.enqueueMessage(pack(msg))(executor)
   }
 
   // Implementation of the Reporter interface used by the backend.

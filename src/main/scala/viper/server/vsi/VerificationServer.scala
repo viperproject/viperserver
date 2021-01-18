@@ -12,12 +12,14 @@ import akka.pattern.ask
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.Timeout
+import viper.server.core.VerificationExecutionContext
 
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
-import scala.language.postfixOps
+import scala.concurrent.Future
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success}
+
+import scala.language.postfixOps
 
 
 abstract class VerificationServerException extends Exception
@@ -43,8 +45,8 @@ trait VerificationServer extends Post {
 
   type AST
 
-  implicit val system: ActorSystem = ActorSystem("Main")
-  implicit val executionContext: ExecutionContextExecutor = ExecutionContext.global
+  implicit val executor: VerificationExecutionContext
+  implicit val system: ActorSystem = executor.actorSystem
   implicit val materializer: ActorMaterializer = ActorMaterializer()
 
   protected var _termActor: ActorRef = _
@@ -71,7 +73,7 @@ trait VerificationServer extends Post {
 
   protected def initializeProcess[S <: JobId, T <: JobHandle : ClassTag]
                       (pool: JobPool[S, T],
-                      task_fut: Future[MessageStreamingTask[AST]],
+                      task_fut: Future[MessageStreamingTask[_]],
                       prev_job_id_maybe: Option[AstJobId] = None): S = {
 
     if (!isRunning) {
@@ -82,7 +84,7 @@ trait VerificationServer extends Post {
 
     /** Ask the pool to book a new job using the above function
       * to construct Future[JobHandle] and Promise[AST] later on. */
-    pool.bookNewJob((new_jid: S) => task_fut.flatMap((task: MessageStreamingTask[AST]) => {
+    pool.bookNewJob((new_jid: S) => task_fut.flatMap((task: MessageStreamingTask[_]) => {
 
       /** TODO avoid hardcoded parameters */
       implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
@@ -116,9 +118,9 @@ trait VerificationServer extends Post {
 
       (job_actor ? (new_jid match {
         case _: AstJobId =>
-          VerificationProtocol.ConstructAst(new TaskThread(task), queue, publisher)
+          VerificationProtocol.ConstructAst(task, queue, publisher, executor)
         case _: VerJobId =>
-          VerificationProtocol.Verify(new TaskThread(task), queue, publisher,
+          VerificationProtocol.Verify(task, queue, publisher,
             /** TODO: Use factories for specializing the messages.
               * TODO: Clearly, there should be a clean separation between concrete job types
               * TODO: (AST Construction, Verification) and generic types (JobHandle). */
@@ -129,7 +131,7 @@ trait VerificationServer extends Post {
                 throw new IllegalArgumentException(s"cannot map ${prev_job_id.toString} to expected type AstJobId")
               case None =>
                 None
-            })
+            }, executor)
       })).mapTo[T]
 
     }).recover({
@@ -161,7 +163,7 @@ trait VerificationServer extends Post {
     *
     * As such, it accepts an instance of a VerificationTask, which it will pass to the JobActor.
     */
-  protected def initializeVerificationProcess(task_fut: Future[MessageStreamingTask[AST]], ast_job_id_maybe: Option[AstJobId]): VerJobId = {
+  protected def initializeVerificationProcess(task_fut: Future[MessageStreamingTask[Unit]], ast_job_id_maybe: Option[AstJobId]): VerJobId = {
     if (!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
@@ -229,24 +231,26 @@ trait VerificationServer extends Post {
   }
 
   /** Stops an instance of VerificationServer from running.
+    * The actor system and executor do not get terminated and are the responsibility of the caller
     *
     * As such it should be the last method called. Calling any other function after stop will
     * result in an IllegalStateException.
     * */
-  def stop(): Unit = {
+  def stop(): Future[List[String]] = {
     if(!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
     isRunning = false
-
-    getInterruptFutureList() onComplete {
-      case Success(_) =>
-        _termActor ! Terminator.Exit
-        println(s"shutting down...")
-      case Failure(err_msg) =>
-        _termActor ! Terminator.Exit
-        println(s"forcibly shutting down...")
-    }
+    getInterruptFutureList().transform(r => {
+      _termActor ! Terminator.Exit
+      r match {
+        case Success(_) => println(s"shutting down...")
+        case Failure(_) => println(s"forcibly shutting down...")
+      }
+      // delete termActor since we no longer need it. Otherwise, start() cannot be called
+      _termActor = null
+      r
+    })
   }
 
   /** This method interrupts active jobs upon termination of the server.

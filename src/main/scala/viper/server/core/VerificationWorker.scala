@@ -31,10 +31,10 @@ case class ViperEnvelope(m: Message) extends Envelope
 
 class VerificationWorker(private val logger: Logger,
                          private val command: List[String],
-                         private val program: Program)(implicit val ec: ExecutionContext)
-  extends MessageReportingTask {
+                         private val program: Program)
+                        (override val executor: VerificationExecutionContext)
+  extends MessageReportingTask[Unit] {
 
-  override def artifact: Option[Future[Nothing]] = None
   private var backend: ViperBackend = _
 
   private def resolveCustomBackend(clazzName: String, rep: Reporter): Option[SilFrontend] = {
@@ -97,6 +97,11 @@ class VerificationWorker(private val logger: Logger,
       logger.error(s"The command `${command.mkString(" ")}` did not result in initialization of verification backend.")
       registerTaskEnd(false)
     }
+  }
+
+  override def call(): Unit = {
+    // println(">>> VerificationWorker.call()")
+    run()
   }
 }
 

@@ -6,14 +6,10 @@
 
 package viper.server.vsi
 
+import java.util.concurrent.FutureTask
+
 import akka.actor.{Actor, Props}
 
-import scala.concurrent.Future
-
-
-class TaskThread[T](private val _task: MessageStreamingTask[T]) extends Thread(_task) {
-  def getArtifact: Option[Future[T]] = _task.artifact
-}
 
 // --- Actor: JobActor ---
 
@@ -25,22 +21,20 @@ class JobActor[T](private val id: JobId) extends Actor {
 
   import VerificationProtocol._
 
-  private var _astConstructionTask: TaskThread[T] = _
-  private var _verificationTask: TaskThread[T] = _
+  private var _astConstructionTask: FutureTask[T] = _
+  private var _verificationTask: FutureTask[T] = _
 
-  private def interrupt(task: TaskThread[T]): Boolean = {
-    if (task != null && task.isAlive) {
-      task.interrupt()
-      task.join()
+  private def interrupt(task: FutureTask[T]): Boolean = {
+    if (task != null && !task.isDone) {
+      task.cancel(true)
       return true
     }
     false
   }
 
-  private def resetTask(task: TaskThread[T]): Unit = {
-    if (task != null && task.isAlive) {
-      task.interrupt()
-      task.join()
+  private def resetTask(task: FutureTask[T]): Unit = {
+    if (task != null && !task.isDone) {
+      task.cancel(true)
     }
   }
 
@@ -60,15 +54,15 @@ class JobActor[T](private val id: JobId) extends Actor {
         case _: ConstructAst[T] =>
           //println(">>> JobActor received request ConstructAst")
           resetAstConstructionTask()
-          _astConstructionTask = req.task
-          _astConstructionTask.start()
-          sender() ! AstHandle(self, req.queue, req.publisher, _astConstructionTask.getArtifact.get)
+          _astConstructionTask = req.task.futureTask
+          req.executor.execute(_astConstructionTask)
+          sender() ! AstHandle(self, req.queue, req.publisher, req.task.artifact)
 
         case ver_req: Verify[T] =>
           //println(">>> JobActor received request Verify")
           resetVerificationTask()
-          _verificationTask = ver_req.task
-          _verificationTask.start()
+          _verificationTask = ver_req.task.futureTask
+          req.executor.execute(_verificationTask)
           sender() ! VerHandle(self, ver_req.queue, ver_req.publisher, ver_req.prev_job_id)
       }
     case req: StopProcessRequest =>

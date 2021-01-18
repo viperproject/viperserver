@@ -105,8 +105,7 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
       */
     path("exit") {
       get {
-        onComplete(getInterruptFutureList()) { err: Try[List[String]] =>
-          _termActor ! Terminator.Exit
+        onComplete(stop()) { err: Try[List[String]] =>
           complete( serverStopConfirmation(err) )
         }
       }

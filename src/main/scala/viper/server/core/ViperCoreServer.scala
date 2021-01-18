@@ -14,9 +14,8 @@ import viper.silver.ast.Program
 import viper.silver.logger.ViperLogger
 
 import scala.concurrent.Future
-import scala.language.postfixOps
 
-class ViperCoreServer(val _args: Array[String]) extends VerificationServer with ViperPost {
+class ViperCoreServer(val _args: Array[String])(implicit val executor: VerificationExecutionContext) extends VerificationServer with ViperPost {
 
   override type AST = Program
 
@@ -49,7 +48,7 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
   def requestAst(arg_list: List[String]): AstJobId = {
     require(config != null)
 
-    val task_backend = new AstWorker(arg_list, logger.get)
+    val task_backend = new AstWorker(arg_list, logger.get)(executor)
     val ast_id = initializeAstConstruction(task_backend)
 
     if (ast_id.id >= 0) {
@@ -75,7 +74,7 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
           handle_future.map((handle: AstHandle[Program]) => {
             val art: Future[Program] = handle.artifact
             art.map(program => {
-              new VerificationWorker(logger.get, args :+ programId, program)
+              new VerificationWorker(logger.get, args :+ programId, program)(executor)
             }).recover({
               case e: Throwable =>
                 println(s"### As exception has occurred while constructing Viper AST: $e")
@@ -100,7 +99,7 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
     require(program != null && backend_config != null)
 
     val args: List[String] = backend_config.toList
-    val task_backend = new VerificationWorker(logger.get, args :+ programId, program)
+    val task_backend = new VerificationWorker(logger.get, args :+ programId, program)(executor)
     val ver_id = initializeVerificationProcess(Future.successful(task_backend), None)
 
     if (ver_id.id >= 0) {
@@ -125,10 +124,8 @@ class ViperCoreServer(val _args: Array[String]) extends VerificationServer with 
     logger.get.info(s"The cache has been flushed.")
   }
 
-  override def stop(): Unit = {
+  override def stop(): Future[List[String]] = {
     logger.get.info(s"Stopping ViperCoreServer")
     super.stop()
   }
-
-
 }

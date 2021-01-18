@@ -17,7 +17,7 @@ import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
 import spray.json.{DefaultJsonProtocol, RootJsonFormat}
 import viper.server.ViperConfig
-import viper.server.core.{AstConstructionFailureException, ViperBackendConfig, ViperCache, ViperCoreServer}
+import viper.server.core.{AstConstructionFailureException, VerificationExecutionContext, ViperBackendConfig, ViperCache, ViperCoreServer}
 import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.utility.ibm
@@ -28,8 +28,8 @@ import viper.silver.reporter.Message
 
 import scala.util.{Failure, Success, Try}
 
-class ViperHttpServer(_args: Array[String])
-  extends ViperCoreServer(_args) with VerificationServerHttp {
+class ViperHttpServer(_args: Array[String])(executor: VerificationExecutionContext)
+  extends ViperCoreServer(_args)(executor) with VerificationServerHttp {
 
   override def start(): Unit = {
     _config = new ViperConfig(_args.toIndexedSeq)

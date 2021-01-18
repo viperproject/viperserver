@@ -9,6 +9,7 @@ package viper.server.vsi
 import akka.stream.scaladsl.SourceQueueWithComplete
 import org.reactivestreams.Publisher
 import spray.json.{DefaultJsonProtocol, RootJsonFormat}
+import viper.server.core.VerificationExecutionContext
 
 // Protocol to communicate with QueueActor
 object TaskProtocol {
@@ -19,21 +20,24 @@ object TaskProtocol {
 object VerificationProtocol {
 
   sealed trait StartProcessRequest[T] {
-    val task: TaskThread[T]
+    val task: MessageStreamingTask[T]
     val queue: SourceQueueWithComplete[Envelope]
     val publisher: Publisher[Envelope]
+    val executor: VerificationExecutionContext
   }
 
   // Request Job Actor to execute an AST construction task
-  case class ConstructAst[T](task: TaskThread[T],
+  case class ConstructAst[T](task: MessageStreamingTask[T],
                              queue: SourceQueueWithComplete[Envelope],
-                             publisher: Publisher[Envelope]) extends StartProcessRequest[T]
+                             publisher: Publisher[Envelope],
+                             executor: VerificationExecutionContext) extends StartProcessRequest[T]
 
   // Request Job Actor to execute a verification task
-  case class Verify[T](task: TaskThread[T],
+  case class Verify[T](task: MessageStreamingTask[T],
                        queue: SourceQueueWithComplete[Envelope],
                        publisher: Publisher[Envelope],
-                       prev_job_id: Option[AstJobId]) extends StartProcessRequest[T]
+                       prev_job_id: Option[AstJobId],
+                       executor: VerificationExecutionContext) extends StartProcessRequest[T]
 
   sealed trait StopProcessRequest
 

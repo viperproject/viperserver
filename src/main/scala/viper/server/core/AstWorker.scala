@@ -22,18 +22,10 @@ object OutOfResourcesException extends AstConstructionException
 case class ServerCrashException(e: Throwable) extends Exception(e)
 
 
-import scala.concurrent.{ExecutionContext, Future, Promise}
-
 class AstWorker(val arg_list: List[String],
-                val logger: Logger)(implicit val ec: ExecutionContext) extends MessageReportingTask {
+                val logger: Logger)(override val executor: VerificationExecutionContext) extends MessageReportingTask[Program] {
 
-  private val _artifact_pro: Promise[Program] = Promise()
-  override def artifact: Option[Future[Program]] = Some(_artifact_pro.future)
-
-  private def constructAst(): Future[Program] = Future {
-
-    //println(">>> AstWorker.constructAst()")
-
+  private def constructAst(): Program = {
     val file: String = arg_list.last
 
     val reporter = new ActorReporter("AstGenerationReporter")
@@ -73,9 +65,8 @@ class AstWorker(val arg_list: List[String],
     }
   }
 
-  override def run(): Unit = {
-    //println(">>> AstWorker.run()")
-    _artifact_pro.completeWith(constructAst())
+  override def call(): Program = {
+    // println(">>> AstWorker.call()")
+    constructAst()
   }
-
 }
