@@ -30,6 +30,7 @@ object ViperCache extends Cache {
   def initialize(logger: Logger, backendSpecificCache: Boolean): Unit = {
     _backendSpecificCache = backendSpecificCache
     _logger = logger
+    resetCache()
   }
 
   def applyCache(
