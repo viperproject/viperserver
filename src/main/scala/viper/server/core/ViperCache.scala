@@ -299,7 +299,9 @@ object ViperCacheHelper {
   protected def hex(h: String): String = h.hashCode.toHexString
 
   /**
-    * This method is used for computing unique-ish hashes of AST nodes.
+    * This method is used for computing unique-ish hashes of AST nodes. `idx` represents
+    * the node's index as child of the parent node. `idx` should be included in the hash
+    * calculations to avoid having the same hash for two children of the same parent.
     *
     * It is important that the hash depends only on the part of the AST node
     *  that will **not** be cached. Otherwise, we do not have the guarantee
@@ -319,28 +321,32 @@ object ViperCacheHelper {
     *  @see [[forgetFile]].
     */
   @tailrec
-  private def getHashForNode(node: Node)(implicit key: String): String = node match {
-    case m: Method => removeBody(m).entityHash
-    case hn: Hashable => hn.entityHash
-    case n =>
-      _node_hash_memo.get(key) match {
-        case Some(memo) => memo.get(n) match {
-          case Some(hash) => hash
+  private def getHashForNode(node: Node, idx: Int)(implicit key: String): String = {
+    def addIdxToHash(hash: String): String = idx.toString + hash
+
+    node match {
+      case m: Method => addIdxToHash(removeBody(m).entityHash)
+      case hn: Hashable => addIdxToHash(hn.entityHash)
+      case n =>
+        _node_hash_memo.get(key) match {
+          case Some(memo) => memo.get(n) match {
+            case Some(hash) => hash
+            case None =>
+              if ( memo.size > 100 || _node_hash_memo.size > 100 ) {
+                val msg = s"[WARNING] ViperCache has memoized more than 100 non-Hashable nodes." +
+                  s" Consider optimizing the code."
+                logger.warn(msg)
+                println(msg)
+              }
+              val hash = addIdxToHash(CacheHelper.computeEntityHash("", node))
+              _node_hash_memo(key)(n) = hash
+              hash
+          }
           case None =>
-            if ( memo.size > 100 || _node_hash_memo.size > 100 ) {
-              val msg = s"[WARNING] ViperCache has memoized more than 100 non-Hashable nodes." +
-                s" Consider optimizing the code."
-              logger.warn(msg)
-              println(msg)
-            }
-            val hash = CacheHelper.computeEntityHash("", node)
-            _node_hash_memo(key)(n) = hash
-            hash
+            _node_hash_memo(key) = MutableMap.empty[Node, String]
+            getHashForNode(n, idx)
         }
-        case None =>
-          _node_hash_memo(key) = MutableMap.empty[Node, String]
-          getHashForNode(n)
-      }
+    }
   }
 
   /** Checks if two (error) nodes have equal position
@@ -374,13 +380,13 @@ object ViperCacheHelper {
     } else {
       // If the nodes are not equal ...
       logger.trace(s"curr = ${curr.toOneLinerStr()}; curr.subnodes = ${curr.subnodes.map(_.toOneLinerStr())}")
-      curr.subnodes.foreach { node: Node =>
+      curr.subnodes.zipWithIndex.foreach { case (node, idx) =>
         // Go through all the node's children and recursively compute the path to the sought node from there
         computeAccessPath(nodeToFind, node) match {
           case Some(access_path) =>
             // If a path is returned, the right subnodes was found. Compute hash of current node
             // and append it to the path list.
-            val hash = getHashForNode(node)
+            val hash = getHashForNode(node, idx)
             logger.trace(s" (${node.toOneLinerStr()} -> ${hash.hashCode.toHexString})")
             return Some(hash :: access_path)
           case None => None
@@ -403,7 +409,7 @@ object ViperCacheHelper {
     }
   }
 
-  private def str(n: Node)(implicit key: String) = s"(${n.toOneLinerStr()} -> ${getHashForNode(n).hashCode.toHexString})"
+  private def str(n: Node, idx: Int)(implicit key: String) = s"(${n.toOneLinerStr()} -> ${getHashForNode(n, idx).hashCode.toHexString})"
 
   /** Finds a node in a program by traversing the provided accessPath
     * */
@@ -416,14 +422,15 @@ object ViperCacheHelper {
     logger.trace(s"looking for last node on access path ${accessPath.map(ViperCacheHelper.hex)}...")
 
     // start at root and traverse path node (hash) by node (hash)
-    var curr: Node = p
+    // the second element indicates the node's index in the list of children of its parent
+    var curr: (Node, Int) = (p, 0) // the root is by definition at index 0
     accessPath.foreach(hash => {
-      logger.trace(s" ... curr = ${str(curr)}")
-      logger.trace(s" ... considering hash ${hex(hash)} among subnodes ${curr.subnodes.map(str)}...")
+      logger.trace(s" ... curr = ${str(curr._1, curr._2)}")
+      logger.trace(s" ... considering hash ${hex(hash)} among subnodes ${curr._1.subnodes.zipWithIndex.map{ case (subnode, subIdx) => str(subnode, subIdx)}}...")
 
       // In the list of the current node's children, find the one who's hash matches the hash
       // specified by the accesspath.
-      curr.subnodes.find { sub => getHashForNode(sub) == hash } match {
+      curr._1.subnodes.zipWithIndex.find { case (sub, subIdx) => getHashForNode(sub, subIdx) == hash } match {
         case Some(hashed_subnode) =>
           // hash corresponds to a subnode of curr.
           curr = hashed_subnode
@@ -434,9 +441,9 @@ object ViperCacheHelper {
     })
 
     // If path traversal successful check that found node and old node's classes match
-    if (curr.getClass == oldNode.getClass) {
-      logger.trace(s" ==> found node: (${curr.toOneLinerStr()} -> ${getHashForNode(curr).hashCode.toHexString})")
-      Some(curr)
+    if (curr._1.getClass == oldNode.getClass) {
+      logger.trace(s" ==> found node: (${curr._1.toOneLinerStr()} -> ${getHashForNode(curr._1, curr._2).hashCode.toHexString})")
+      Some(curr._1)
     } else {
       logger.trace(s" ==> node not found!")
       None

@@ -1,0 +1,6 @@
+method wrong_assertion_false_when_cached() {
+    var x: Int := 5
+    assert x == 5 // Wrong cached error reported here
+    x := 3
+    assert x == 5 // Error here
+}

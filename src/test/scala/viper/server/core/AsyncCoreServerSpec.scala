@@ -15,7 +15,7 @@ import org.scalatest.flatspec.AsyncFlatSpec
 import viper.server.core.ViperCoreServerUtils.getMessagesFuture
 import viper.server.utility.AstGenerator
 import viper.server.vsi.{JobNotFoundException, VerJobId}
-import viper.silver.ast.Program
+import viper.silver.ast.{HasLineColumn, Program}
 import viper.silver.logger.SilentLogger
 import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessage, OverallSuccessMessage}
 
@@ -36,12 +36,17 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
   private val files = List(empty_viper_file, correct_viper_file, ver_error_file)
 
   private val ast_gen = new AstGenerator(SilentLogger().get)
-  private val asts = files.map(ast_gen.generateViperAst(_).get)
 
-  private def getAstByFileName(file: String): Program =
-    (files zip asts collect {
-      case (f, ast) if f==file => ast
-    }).last
+  // lazy collection of ASTs that have been parsed so far
+  private var asts: Map[String, Program] = Map.empty
+  private def getAstByFileName(file: String): Program = {
+    def genAst(f: String): Program = {
+      val prog = ast_gen.generateViperAst(f).get
+      asts += f -> prog
+      prog
+    }
+    asts.getOrElse(file, genAst(file))
+  }
 
   def verifySiliconWithoutCaching(server: ViperCoreServer, vprFile: String): VerJobId = {
     val silicon_without_caching: SiliconConfig = SiliconConfig(List("--disableCaching"))
@@ -57,7 +62,7 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
                  afterStop: (ViperCoreServer, VerificationExecutionContext) => Future[Assertion] = (_, _) => Future.successful(assert(true))): Future[Assertion] = {
     // create a new execution context for each ViperCoreServer instance which keeps the tests independent since
     val executionContext = new DefaultVerificationExecutionContext()
-    val server_args: Array[String] = Array()
+    val server_args: Array[String] = Array() // Array("--logLevel", "TRACE")
     val core = new ViperCoreServer(server_args)(executionContext)
     core.start()
     // execute testCode
@@ -141,6 +146,48 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
             case efm: EntityFailureMessage => efm
           }
           assert(efms.length === 1 && efms.last.cached)
+      }
+    })
+  })
+
+  it should s"report the same file location if the error is cached as when it's first verified - Issue #23" in withServer({ (core, context) =>
+    val file = "src/test/resources/viper/issues/00023.vpr"
+    val jid1 = verifySiliconWithCaching(core, file)
+    val firstVerification = ViperCoreServerUtils.getMessagesFuture(core, jid1)(context) map {
+      messages: List[Message] =>
+        val ofms = messages collect {
+          case ofm: OverallFailureMessage => ofm
+        }
+        val efms = messages collect {
+          case efm: EntityFailureMessage => efm
+        }
+        // first verification thus cached flag should not be set:
+        assert(efms.length === 1 && !efms.last.cached)
+        assert(efms.head.result.errors.length === 1)
+        val lineNr = efms.head.result.errors.head.pos match {
+          case lc: HasLineColumn => lc.line
+          case _ => fail("error should have positional information")
+        }
+        assert(lineNr == 5)
+        assert(ofms.length === 1)
+        // list of errors should not be empty:
+        assert(ofms.head.result.errors.nonEmpty)
+    }
+    // verify same file again and check whether result comes from cache and the same line is reported:
+    firstVerification flatMap (_ => {
+      val jid2 = verifySiliconWithCaching(core, file)
+      getMessagesFuture(core, jid2)(context) map {
+        messages: List[Message] =>
+          val efms: List[EntityFailureMessage] = messages collect {
+            case efm: EntityFailureMessage => efm
+          }
+          assert(efms.length === 1 && efms.last.cached)
+          assert(efms.head.result.errors.length === 1)
+          val lineNr = efms.head.result.errors.head.pos match {
+            case lc: HasLineColumn => lc.line
+            case _ => fail("error should have positional information")
+          }
+          assert(lineNr == 5)
       }
     })
   })
