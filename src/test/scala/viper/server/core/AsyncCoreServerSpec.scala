@@ -6,6 +6,9 @@
 
 package viper.server.core
 
+import java.io.File
+import java.nio.file.Paths
+
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
@@ -22,7 +25,6 @@ import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessa
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
-
 import scala.language.postfixOps
 
 
@@ -62,7 +64,10 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
                  afterStop: (ViperCoreServer, VerificationExecutionContext) => Future[Assertion] = (_, _) => Future.successful(assert(true))): Future[Assertion] = {
     // create a new execution context for each ViperCoreServer instance which keeps the tests independent since
     val executionContext = new DefaultVerificationExecutionContext()
-    val server_args: Array[String] = /* Array() */ Array("--logLevel", "TRACE")
+    val logFile = Paths.get("logs", s"viperserver_journal_${System.currentTimeMillis()}.log").toFile
+    logFile.getParentFile.mkdirs
+    logFile.createNewFile()
+    val server_args: Array[String] = /* Array() */ Array("--logLevel", "TRACE", "--logFile", logFile.getAbsolutePath)
     val core = new ViperCoreServer(server_args)(executionContext)
     core.start()
     // execute testCode

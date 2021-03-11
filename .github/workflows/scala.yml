@@ -89,7 +89,7 @@ jobs:
           uses: actions/upload-artifact@v2
           with:
             name: TestLogs
-            path: /tmp
+            path: viperServer/logs
 
       - name: Assemble the fat JAR file
         run: |
