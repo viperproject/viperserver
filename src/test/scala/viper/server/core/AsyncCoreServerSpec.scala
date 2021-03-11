@@ -6,7 +6,6 @@
 
 package viper.server.core
 
-import java.io.File
 import java.nio.file.Paths
 
 import akka.actor.{Actor, ActorSystem, Props}
@@ -108,10 +107,10 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
     val jid = verifySiliconWithCaching(core, correct_viper_file)
     assert(jid != null)
     assert(jid.id >= 0)
-    val messages_future = ViperCoreServerUtils.getMessagesFuture(core, jid)(context) map { messages => assert(true) }
+    val messages_future = ViperCoreServerUtils.getMessagesFuture(core, jid)(context) map { _ => Succeeded }
     assert(messages_future != null)
     messages_future
-  }, (core, context) => {
+  }, (core, _) => {
     // verify after calling `stop()` should fail:
     assertThrows[IllegalStateException] {
       verifySiliconWithCaching(core, correct_viper_file)
@@ -288,16 +287,18 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
             outcome = Some(true)
           case _: OverallFailureMessage =>
             outcome = Some(false)
-          case m =>
+          case _ =>
         }
       case ClientActor.ReportOutcome =>
         sender() ! outcome
       case ClientActor.Terminate =>
         executionContext.actorSystem.terminate()
+      case Success =>
+        // Success is sent when the stream is completed
     }
   }
 
-  it should s"be able to verify multiple programs with caching disabled and retrieve results via `streamMessages()" in withServer({ (core, context) =>
+  it should s"be able to verify multiple programs with caching disabled and retrieve results via `streamMessages()`" in withServer({ (core, context) =>
     val test_actors = 0 to 2 map ((i: Int) => actor_system.actorOf(ClientActor.props(i, context)))
     val jids = files.map(file => verifySiliconWithoutCaching(core, file))
     // stream messages to actors
