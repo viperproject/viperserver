@@ -31,7 +31,7 @@ jobs:
     # we enforce here that the nightly build job only runs in the main repo:
     if: (github.event_name == 'schedule' && github.repository == 'viperproject/viperserver') || (github.event_name != 'schedule')
     runs-on: ubuntu-latest
-    container: viperproject/viperserver-base:v1
+    container: viperproject/viperserver:v1
     steps:
       - name: Checkout ViperServer
         uses: actions/checkout@v2
@@ -107,7 +107,7 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: viperserver
-          path: viperServer/target/scala-2.13/viper.jar
+          path: viperServer/target/scala-2.13/viperserver.jar
 
       - name: Test ViperServer
         run: sbt test
@@ -115,7 +115,7 @@ jobs:
 
 
   create-nightly-release:
-    # this job creates a new nightly pre-release, set viper.jar as artifacts, and deletes old releases
+    # this job creates a new nightly pre-release, set viperserver.jar as artifacts, and deletes old releases
     if: (github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'nightly') || github.event_name == 'schedule'
     needs: [build-and-test]
     runs-on: ubuntu-latest
@@ -153,13 +153,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: deploy/viper.jar
+          asset_path: deploy/viperserver.jar
           asset_name: viperserver.jar
           asset_content_type: application/octet-stream
 
 
   create-stable-release:
-    # this job creates a stable draft-release and set viper.jar as artifacts
+    # this job creates a stable draft-release and set viperserver.jar as artifacts
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'stable'
     needs: [build-and-test]
     runs-on: ubuntu-latest
@@ -194,6 +194,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: deploy/viper.jar
+          asset_path: deploy/viperserver.jar
           asset_name: viperserver.jar
           asset_content_type: application/octet-stream

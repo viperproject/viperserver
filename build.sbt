@@ -44,7 +44,7 @@ lazy val server = (project in file("."))
         Test / parallelExecution := false,
 
         // Assembly settings
-        assembly / assemblyJarName := "viper.jar",                      // JAR filename
+        assembly / assemblyJarName := "viperserver.jar",                // JAR filename
         assembly / mainClass := Some("viper.server.ViperServerRunner"), // Define JAR's entry point
         assembly / test := {},                                          // Prevent testing before packaging
         assembly / assemblyMergeStrategy := {
