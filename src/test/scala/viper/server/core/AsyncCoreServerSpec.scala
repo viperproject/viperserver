@@ -152,6 +152,7 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
 
   it should s"report the same file location if the error is cached as when it's first verified - Issue #23" in withServer({ (core, context) =>
     val file = "src/test/resources/viper/issues/00023.vpr"
+    val lineNrOfExpectedVerificationError = 9
     val jid1 = verifySiliconWithCaching(core, file)
     val firstVerification = ViperCoreServerUtils.getMessagesFuture(core, jid1)(context) map {
       messages: List[Message] =>
@@ -168,7 +169,7 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
           case lc: HasLineColumn => lc.line
           case _ => fail("error should have positional information")
         }
-        assert(lineNr == 5)
+        assert(lineNr == lineNrOfExpectedVerificationError)
         assert(ofms.length === 1)
         // list of errors should not be empty:
         assert(ofms.head.result.errors.nonEmpty)
@@ -187,7 +188,7 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
             case lc: HasLineColumn => lc.line
             case _ => fail("error should have positional information")
           }
-          assert(lineNr == 5)
+          assert(lineNr == lineNrOfExpectedVerificationError)
       }
     })
   })
