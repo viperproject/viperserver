@@ -86,10 +86,10 @@ jobs:
           sbt test
 
       - name: Upload log files
-          uses: actions/upload-artifact@v2
-          with:
-            name: TestLogs
-            path: viperServer/logs
+        uses: actions/upload-artifact@v2
+        with:
+          name: TestLogs
+          path: viperServer/logs
 
       - name: Assemble the fat JAR file
         run: |
