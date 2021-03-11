@@ -62,7 +62,7 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
                  afterStop: (ViperCoreServer, VerificationExecutionContext) => Future[Assertion] = (_, _) => Future.successful(assert(true))): Future[Assertion] = {
     // create a new execution context for each ViperCoreServer instance which keeps the tests independent since
     val executionContext = new DefaultVerificationExecutionContext()
-    val server_args: Array[String] = Array() // Array("--logLevel", "TRACE")
+    val server_args: Array[String] = /* Array() */ Array("--logLevel", "TRACE")
     val core = new ViperCoreServer(server_args)(executionContext)
     core.start()
     // execute testCode
