@@ -15,6 +15,7 @@ RUN apt-get update && \
         git \
         gnupg2 \
         locales \
+        zip \
     && \
     rm -rf /var/lib/apt/lists/*
 
