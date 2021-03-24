@@ -235,17 +235,21 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
   it should s"run getMessagesFuture() to get Seq[Message] containing the expected verification result" in withServer({ (core, context) =>
     val jid = verifySiliconWithoutCaching(core, ver_error_file)
     getMessagesFuture(core, jid)(context) map { msgs =>
-      msgs.last match {
+      val res = msgs.last match {
         case _: OverallFailureMessage => Succeeded
         case m => fail(s"expected failure message but got $m")
       }
+      println("run getMessagesFuture() to get Seq[Message] containing the expected verification result is done")
+      res
     }
   })
 
   it should s"be able to verify multiple programs with caching disabled and retrieve results" in withServer({ (core, context) =>
+    println("be able to verify multiple programs with caching disabled and retrieve results")
     val jobIds = files.map(file => (file, verifySiliconWithoutCaching(core, file)))
     val filesAndMessages = jobIds map { case (f, id) => (f, ViperCoreServerUtils.getMessagesFuture(core, id)(context)) }
     val resultFutures = filesAndMessages map { case (f, fut) => fut.map(msgs => {
+      println(s"messages for $f: ${msgs.mkString(",")}")
       msgs.last match {
         case _: OverallSuccessMessage => assert(f != ver_error_file)
         case _: OverallFailureMessage => assert(f == ver_error_file)
@@ -253,10 +257,14 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
       }
     })}
     // map resultFuture to a single assertion:
-    Future.sequence(resultFutures).map(_ => Succeeded)
+    Future.sequence(resultFutures).map(_ => {
+      println("be able to verify multiple programs with caching disabled and retrieve results is done")
+      Succeeded
+    })
   })
 
   it should s"be able to verify multiple programs with caching enabled and retrieve results" in withServer({ (core, context) =>
+    println("be able to verify multiple programs with caching enabled and retrieve results")
     val jobIds = files.map(file => (file, verifySiliconWithCaching(core, file)))
     val filesAndMessages = jobIds map { case (f, id) => (f, ViperCoreServerUtils.getMessagesFuture(core, id)(context)) }
     val resultFutures = filesAndMessages map { case (f, fut) => fut.map(msgs => {
