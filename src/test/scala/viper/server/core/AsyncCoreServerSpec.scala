@@ -81,7 +81,6 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
     val testName = currentTestName match {
       case Some(name) => {
         core.logger.get.debug(s"server started for test case '$name'")
-        println(s"server started for test case '$name'")
         name
       }
       case None => throw new Exception("no test name")
@@ -103,7 +102,6 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
       .flatMap(_ => afterStop(core, executionContext))(executionContext)
       .transform(res => {
         core.logger.get.debug(s"test case '$testName' is done")
-        println(s"test case '$testName' is done")
         res
       })(executionContext)
   }
@@ -270,7 +268,7 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
     val jobIds = files.map(file => (file, verifySiliconWithoutCaching(core, file)))
     val filesAndMessages = jobIds map { case (f, id) => (f, ViperCoreServerUtils.getMessagesFuture(core, id)(context)) }
     val resultFutures = filesAndMessages map { case (f, fut) => fut.map(msgs => {
-      println(s"messages for $f: ${msgs.mkString(",")}")
+      core.logger.get.debug(s"messages for $f: ${msgs.mkString(",")}")
       msgs.last match {
         case _: OverallSuccessMessage => assert(f != ver_error_file)
         case _: OverallFailureMessage => assert(f == ver_error_file)
@@ -285,7 +283,7 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
     val jobIds = files.map(file => (file, verifySiliconWithCaching(core, file)))
     val filesAndMessages = jobIds map { case (f, id) => (f, ViperCoreServerUtils.getMessagesFuture(core, id)(context)) }
     val resultFutures = filesAndMessages map { case (f, fut) => fut.map(msgs => {
-      println(s"messages for $f: ${msgs.mkString(",")}")
+      core.logger.get.debug(s"messages for $f: ${msgs.mkString(",")}")
       msgs.last match {
         case _: OverallSuccessMessage => assert(f != ver_error_file)
         case _: OverallFailureMessage => assert(f == ver_error_file)
