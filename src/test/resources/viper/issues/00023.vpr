@@ -1,0 +1,10 @@
+// Any copyright is dedicated to the Public Domain.
+// http://creativecommons.org/publicdomain/zero/1.0/
+
+// Beware of changes: unit tests check line information of verification errors!
+method wrong_assertion_false_when_cached() {
+    var x: Int := 5
+    assert x == 5 // Wrong cached error reported here
+    x := 3
+    assert x == 5 // Error here
+}

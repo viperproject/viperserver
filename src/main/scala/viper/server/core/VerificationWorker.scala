@@ -139,10 +139,12 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
 
     temp_result match {
       case Some(Success) =>
+        _frontend.logger.debug(s"Verification successful (members: ${_ast.members.map(_.name).mkString(", ")})")
         _frontend.reporter report OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime)
       // TODO: Think again about where to detect and trigger SymbExLogging
       case Some(f@Failure(_)) =>
-          // Cached errors will be reported as soon as they are retrieved from the cache.
+        // Cached errors will be reported as soon as they are retrieved from the cache.
+        _frontend.logger.debug(s"Verification has failed (errors: ${f.errors.map(_.readableMessage).mkString("\n")}; members: ${_ast.members.map(_.name).mkString(", ")})")
         _frontend.reporter report OverallFailureMessage(_frontend.getVerifierName,
                                                         System.currentTimeMillis() - _frontend.startTime,
                                                         Failure(f.errors.filter { e => !e.cached }))
@@ -283,6 +285,9 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
           case _ =>
             return None
         }
+      case AbortedExceptionally(cause) =>
+        _frontend.logger.debug(s"Backend aborted exceptionally - this error is not attributed to any program member", cause)
+        return None
       case e =>
         throw new Exception("Error with unexpected type found: " + e)
     }
