@@ -125,6 +125,7 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
   }
 
   override def stop(): Future[List[String]] = {
+    println("Stopping ViperCoreServer")
     logger.get.info(s"Stopping ViperCoreServer")
     super.stop()
   }

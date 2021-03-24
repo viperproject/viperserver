@@ -265,6 +265,7 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
 
   it should s"be able to verify multiple programs with caching enabled and retrieve results" in withServer({ (core, context) =>
     println("be able to verify multiple programs with caching enabled and retrieve results")
+    core.logger.get.debug("be able to verify multiple programs with caching enabled and retrieve results")
     val jobIds = files.map(file => (file, verifySiliconWithCaching(core, file)))
     val filesAndMessages = jobIds map { case (f, id) => (f, ViperCoreServerUtils.getMessagesFuture(core, id)(context)) }
     val resultFutures = filesAndMessages map { case (f, fut) => fut.map(msgs => {
@@ -276,7 +277,11 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
       }
     })}
     // map resultFuture to a single assertion:
-    Future.sequence(resultFutures).map(_ => Succeeded)
+    Future.sequence(resultFutures).map(_ => {
+      println("be able to verify multiple programs with caching enabled and retrieve results is done")
+      core.logger.get.debug("be able to verify multiple programs with caching enabled and retrieve results is done")
+      Succeeded
+    })
   })
 
   object ClientActor {
