@@ -36,7 +36,7 @@ jobs:
       - name: Checkout ViperServer
         uses: actions/checkout@v2
         with:
-          path: viperServer
+          path: viperserver
       - name: Checkout Silver
         uses: actions/checkout@v2
         with:
@@ -80,7 +80,7 @@ jobs:
         working-directory: carbon
       - name: Create ViperServers's sym links
         run: ln --symbolic ../silver; ln --symbolic ../silicon; ln --symbolic ../carbon
-        working-directory: viperServer
+        working-directory: viperserver
 
       - name: Set sbt cache variables
         run: echo "SBT_OPTS=-Dsbt.global.base=sbt-cache/.sbtboot -Dsbt.boot.directory=sbt-cache/.boot -Dsbt.ivy.home=sbt-cache/.ivy" >> $GITHUB_ENV
@@ -90,35 +90,49 @@ jobs:
         uses: actions/cache@v2
         with:
           path: |
-            viperServer/sbt-cache/.sbtboot
-            viperServer/sbt-cache/.boot
-            viperServer/sbt-cache/.ivy/cache
-          # <x>/project/target and <x>/target, where <x> is e.g. 'viperServer', are intentionally not
+            viperserver/sbt-cache/.sbtboot
+            viperserver/sbt-cache/.boot
+            viperserver/sbt-cache/.ivy/cache
+          # <x>/project/target and <x>/target, where <x> is e.g. 'viperserver', are intentionally not
           # included as several occurrences of NoSuchMethodError exceptions have been observed during CI runs. It seems
           # like sbt is unable to correctly compute source files that require a recompilation. Therefore, we have
           # disabled caching of compiled source files altogether
           key: ${{ runner.os }}-sbt-no-precompiled-sources-${{ hashFiles('**/build.sbt') }}
 
-      - name: Assemble ViperServer
-        run: sbt "set test in assembly := {}" clean assembly
-        working-directory: viperServer
+      - name: Assemble ViperServer skinny JARs
+        run: sbt stage
+        working-directory: viperserver
 
-      - name: Upload ViperServer artifact
+      - name: Zip skinny JARs
+        run: zip -r ../../../../viperserver-skinny-jars.zip ./*
+        working-directory: viperserver/target/universal/stage/lib
+
+      - name: Upload ViperServer skinny JARs
         uses: actions/upload-artifact@v2
         with:
-          name: viperserver
-          path: viperServer/target/scala-2.13/viperserver.jar
+          name: viperserver-skinny-jars
+          path: viperserver/viperserver-skinny-jars.zip
+
+      - name: Assemble ViperServer fat JAR
+        run: sbt "set test in assembly := {}" clean assembly
+        working-directory: viperserver
+
+      - name: Upload ViperServer fat JAR
+        uses: actions/upload-artifact@v2
+        with:
+          name: viperserver-fat-jar
+          path: viperserver/target/scala-2.13/viperserver.jar
 
       - name: Test ViperServer
         run: sbt test
-        working-directory: viperServer
+        working-directory: viperserver
 
       - name: Upload log files
         if: ${{ failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: TestLogs
-          path: viperServer/logs
+          path: viperserver/logs
 
 
   create-nightly-release:
@@ -127,10 +141,16 @@ jobs:
     needs: [build-and-test]
     runs-on: ubuntu-latest
     steps:
-      - name: Download ViperServer artifact
+      - name: Download ViperServer skinny JARs
         uses: actions/download-artifact@v2
         with:
-          name: viperserver
+          name: viperserver-skinny-jars
+          path: deploy
+
+      - name: Download ViperServer fat JAR
+        uses: actions/download-artifact@v2
+        with:
+          name: viperserver-fat-jar
           path: deploy
 
       - name: Download version file
@@ -154,14 +174,24 @@ jobs:
           body_path: versions.txt
           keep_num: 1 # keep the previous nightly release such that there are always two
 
-      - name: Upload ViperServer artifact
+      - name: Upload ViperServer skinny jars
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: deploy/viperserver-skinny-jars.zip
+          asset_name: viperserver-skinny-jars
+          asset_content_type: application/zip
+
+      - name: Upload ViperServer fat jar artifact
         uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: deploy/viperserver.jar
-          asset_name: viperserver.jar
+          asset_name: viperserver-fat-jar
           asset_content_type: application/octet-stream
 
 
@@ -171,10 +201,16 @@ jobs:
     needs: [build-and-test]
     runs-on: ubuntu-latest
     steps:
-      - name: Download ViperServer artifact
+      - name: Download ViperServer skinny JARs
         uses: actions/download-artifact@v2
         with:
-          name: viperserver
+          name: viperserver-skinny-jars
+          path: deploy
+
+      - name: Download ViperServer fat JAR
+        uses: actions/download-artifact@v2
+        with:
+          name: viperserver-fat-jar
           path: deploy
 
       - name: Download version file
@@ -195,12 +231,22 @@ jobs:
           draft: true
           prerelease: false
 
-      - name: Upload ViperServer artifact
+      - name: Upload ViperServer skinny jars
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: deploy/viperserver-skinny-jars.zip
+          asset_name: viperserver-skinny-jars
+          asset_content_type: application/zip
+
+      - name: Upload ViperServer fat jar
         uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: deploy/viperserver.jar
-          asset_name: viperserver.jar
+          asset_name: viperserver-fat-jar
           asset_content_type: application/octet-stream
