@@ -12,7 +12,7 @@ import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
 import org.scalatest.exceptions.TestFailedException
-import org.scalatest.{Assertion, Succeeded}
+import org.scalatest.{Assertion, FutureOutcome, Succeeded}
 import org.scalatest.flatspec.AsyncFlatSpec
 import viper.server.core.ViperCoreServerUtils.getMessagesFuture
 import viper.server.utility.AstGenerator
@@ -58,6 +58,14 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
     server.verify(vprFile, silicon_with_caching, getAstByFileName(vprFile))
   }
 
+  var currentTestName: Option[String] = None
+  override def withFixture(test: NoArgAsyncTest): FutureOutcome = {
+    currentTestName = Some(test.name)
+    val res = super.withFixture(test)
+    currentTestName = None
+    res
+  }
+
   /** loan-fixture taking care of starting and stopping a core server */
   def withServer(testCode: (ViperCoreServer, VerificationExecutionContext) => Future[Assertion],
                  afterStop: (ViperCoreServer, VerificationExecutionContext) => Future[Assertion] = (_, _) => Future.successful(assert(true))): Future[Assertion] = {
@@ -69,6 +77,16 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
     val server_args: Array[String] = /* Array() */ Array("--logLevel", "TRACE", "--logFile", logFile.getAbsolutePath)
     val core = new ViperCoreServer(server_args)(executionContext)
     core.start()
+
+    val testName = currentTestName match {
+      case Some(name) => {
+        core.logger.get.debug(s"server started for test case '$name'")
+        println(s"server started for test case '$name'")
+        name
+      }
+      case None => throw new Exception("no test name")
+    }
+
     // execute testCode
     val testFuture = testCode(core, executionContext)
     // if successful, try to stop core server
@@ -81,7 +99,13 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
       }
     })(executionContext)
     // run afterStop if testWithShutdownFuture was successful:
-    testWithShutdownFuture.flatMap(_ => afterStop(core, executionContext))(executionContext)
+    testWithShutdownFuture
+      .flatMap(_ => afterStop(core, executionContext))(executionContext)
+      .transform(res => {
+        core.logger.get.debug(s"test case '$testName' is done")
+        println(s"test case '$testName' is done")
+        res
+      })(executionContext)
   }
 
   /* vvvvvvvvvvvvvvvvvvvvvvv */
@@ -235,17 +259,14 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
   it should s"run getMessagesFuture() to get Seq[Message] containing the expected verification result" in withServer({ (core, context) =>
     val jid = verifySiliconWithoutCaching(core, ver_error_file)
     getMessagesFuture(core, jid)(context) map { msgs =>
-      val res = msgs.last match {
+      msgs.last match {
         case _: OverallFailureMessage => Succeeded
         case m => fail(s"expected failure message but got $m")
       }
-      println("run getMessagesFuture() to get Seq[Message] containing the expected verification result is done")
-      res
     }
   })
 
   it should s"be able to verify multiple programs with caching disabled and retrieve results" in withServer({ (core, context) =>
-    println("be able to verify multiple programs with caching disabled and retrieve results")
     val jobIds = files.map(file => (file, verifySiliconWithoutCaching(core, file)))
     val filesAndMessages = jobIds map { case (f, id) => (f, ViperCoreServerUtils.getMessagesFuture(core, id)(context)) }
     val resultFutures = filesAndMessages map { case (f, fut) => fut.map(msgs => {
@@ -257,15 +278,10 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
       }
     })}
     // map resultFuture to a single assertion:
-    Future.sequence(resultFutures).map(_ => {
-      println("be able to verify multiple programs with caching disabled and retrieve results is done")
-      Succeeded
-    })
+    Future.sequence(resultFutures).map(_ => Succeeded)
   })
 
   it should s"be able to verify multiple programs with caching enabled and retrieve results" in withServer({ (core, context) =>
-    println("be able to verify multiple programs with caching enabled and retrieve results")
-    core.logger.get.debug("be able to verify multiple programs with caching enabled and retrieve results")
     val jobIds = files.map(file => (file, verifySiliconWithCaching(core, file)))
     val filesAndMessages = jobIds map { case (f, id) => (f, ViperCoreServerUtils.getMessagesFuture(core, id)(context)) }
     val resultFutures = filesAndMessages map { case (f, fut) => fut.map(msgs => {
@@ -277,11 +293,7 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
       }
     })}
     // map resultFuture to a single assertion:
-    Future.sequence(resultFutures).map(_ => {
-      println("be able to verify multiple programs with caching enabled and retrieve results is done")
-      core.logger.get.debug("be able to verify multiple programs with caching enabled and retrieve results is done")
-      Succeeded
-    })
+    Future.sequence(resultFutures).map(_ => Succeeded)
   })
 
   object ClientActor {
