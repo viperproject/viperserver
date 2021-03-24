@@ -268,6 +268,7 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
     val jobIds = files.map(file => (file, verifySiliconWithCaching(core, file)))
     val filesAndMessages = jobIds map { case (f, id) => (f, ViperCoreServerUtils.getMessagesFuture(core, id)(context)) }
     val resultFutures = filesAndMessages map { case (f, fut) => fut.map(msgs => {
+      println(s"messages for $f: ${msgs.mkString(",")}")
       msgs.last match {
         case _: OverallSuccessMessage => assert(f != ver_error_file)
         case _: OverallFailureMessage => assert(f == ver_error_file)
