@@ -299,9 +299,15 @@ object ViperCacheHelper {
   protected def hex(h: String): String = h.hashCode.toHexString
 
   /**
-    * This method is used for computing unique-ish hashes of AST nodes. `idx` represents
-    * the node's index as child of the parent node. `idx` should be included in the hash
-    * calculations to avoid having the same hash for two children of the same parent.
+    * This method is used for computing unique-ish hashes of AST nodes. The hash should
+    * allow us to identify the same node in a later AST such that verification results
+    * can be reused. Structural equality on the other hand is too weak as two identical
+    * statements in a method would be equal / result in the same hash (e.g. see
+    * test/resources/viper/issues/00023.vpr). To mitigate this issue, a node's position in
+    * the AST is considered in addition to its children. We do so by including a node's index
+    * in its parent's children list in the hash calculations. This index is passed as `idx`
+    * argument. This avoids having the same hash for two (structurally equivalent) children
+    * of the same parent.
     *
     * It is important that the hash depends only on the part of the AST node
     *  that will **not** be cached. Otherwise, we do not have the guarantee
