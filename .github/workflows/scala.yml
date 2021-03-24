@@ -113,6 +113,13 @@ jobs:
         run: sbt test
         working-directory: viperServer
 
+      - name: Upload log files
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: TestLogs
+          path: viperServer/logs
+
 
   create-nightly-release:
     # this job creates a new nightly pre-release, set viperserver.jar as artifacts, and deletes old releases

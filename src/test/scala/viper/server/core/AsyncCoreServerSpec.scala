@@ -6,6 +6,8 @@
 
 package viper.server.core
 
+import java.nio.file.Paths
+
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
@@ -15,14 +17,13 @@ import org.scalatest.flatspec.AsyncFlatSpec
 import viper.server.core.ViperCoreServerUtils.getMessagesFuture
 import viper.server.utility.AstGenerator
 import viper.server.vsi.{JobNotFoundException, VerJobId}
-import viper.silver.ast.Program
+import viper.silver.ast.{HasLineColumn, Program}
 import viper.silver.logger.SilentLogger
 import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessage, OverallSuccessMessage}
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
-
 import scala.language.postfixOps
 
 
@@ -36,12 +37,17 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
   private val files = List(empty_viper_file, correct_viper_file, ver_error_file)
 
   private val ast_gen = new AstGenerator(SilentLogger().get)
-  private val asts = files.map(ast_gen.generateViperAst(_).get)
 
-  private def getAstByFileName(file: String): Program =
-    (files zip asts collect {
-      case (f, ast) if f==file => ast
-    }).last
+  // lazy collection of ASTs that have been parsed so far
+  private var asts: Map[String, Program] = Map.empty
+  private def getAstByFileName(file: String): Program = {
+    def genAst(f: String): Program = {
+      val prog = ast_gen.generateViperAst(f).get
+      asts += f -> prog
+      prog
+    }
+    asts.getOrElse(file, genAst(file))
+  }
 
   def verifySiliconWithoutCaching(server: ViperCoreServer, vprFile: String): VerJobId = {
     val silicon_without_caching: SiliconConfig = SiliconConfig(List("--disableCaching"))
@@ -57,7 +63,10 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
                  afterStop: (ViperCoreServer, VerificationExecutionContext) => Future[Assertion] = (_, _) => Future.successful(assert(true))): Future[Assertion] = {
     // create a new execution context for each ViperCoreServer instance which keeps the tests independent since
     val executionContext = new DefaultVerificationExecutionContext()
-    val server_args: Array[String] = Array()
+    val logFile = Paths.get("logs", s"viperserver_journal_${System.currentTimeMillis()}.log").toFile
+    logFile.getParentFile.mkdirs
+    logFile.createNewFile()
+    val server_args: Array[String] = /* Array() */ Array("--logLevel", "TRACE", "--logFile", logFile.getAbsolutePath)
     val core = new ViperCoreServer(server_args)(executionContext)
     core.start()
     // execute testCode
@@ -80,7 +89,6 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
   behavior of "ViperCoreServer"
 
   /* ^^^^^^^^^^^^^^^^^^^^^^^ */
-
   it should s"be able to verify a single program with caching disabled" in withServer({ (core, context) =>
     val jid = verifySiliconWithoutCaching(core, ver_error_file)
     assert(jid != null)
@@ -99,10 +107,10 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
     val jid = verifySiliconWithCaching(core, correct_viper_file)
     assert(jid != null)
     assert(jid.id >= 0)
-    val messages_future = ViperCoreServerUtils.getMessagesFuture(core, jid)(context) map { messages => assert(true) }
+    val messages_future = ViperCoreServerUtils.getMessagesFuture(core, jid)(context) map { _ => Succeeded }
     assert(messages_future != null)
     messages_future
-  }, (core, context) => {
+  }, (core, _) => {
     // verify after calling `stop()` should fail:
     assertThrows[IllegalStateException] {
       verifySiliconWithCaching(core, correct_viper_file)
@@ -114,7 +122,7 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
     ViperCoreServerUtils.getMessagesFuture(core, wrong_jid)(context).failed.transform({
       case JobNotFoundException => Succeeded
       case ex => throw new TestFailedException(s"unexpected exception occurred ($ex)", 0)
-    }, ex => throw new TestFailedException("expected an exception but none occurred ($ex)", 0))
+    }, ex => throw new TestFailedException(s"expected an exception but none occurred ($ex)", 0))
   })
 
   it should s"be able to eventually produce an OverallFailureMessage @$ver_error_file and retrieve the cached results upon requesting to verify the same AST" in withServer({ (core, context) =>
@@ -127,11 +135,11 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
         val efms = messages collect {
           case efm: EntityFailureMessage => efm
         }
+        // first verification thus cached flag should not be set:
+        assert(efms.length === 1 && !efms.last.cached)
         assert(ofms.length === 1)
         // list of errors should not be empty:
         assert(ofms.head.result.errors.nonEmpty)
-        // first verification thus cached flag should not be set:
-        assert(efms.length === 1 && !efms.last.cached)
     }
     // verify same file again and check whether result comes from cache:
     firstVerification flatMap (_ => {
@@ -141,10 +149,50 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
           val efms: List[EntityFailureMessage] = messages collect {
             case efm: EntityFailureMessage => efm
           }
-          //        println(ViperCache)
-          //        println(efms.last)
           assert(efms.length === 1 && efms.last.cached)
-        //          ofms.last.result.errors.collect { case a: AbstractError => a.cached }.length === 1)
+      }
+    })
+  })
+
+  it should s"report the same file location if the error is cached as when it's first verified - Issue #23" in withServer({ (core, context) =>
+    val file = "src/test/resources/viper/issues/00023.vpr"
+    val lineNrOfExpectedVerificationError = 9
+    val jid1 = verifySiliconWithCaching(core, file)
+    val firstVerification = ViperCoreServerUtils.getMessagesFuture(core, jid1)(context) map {
+      messages: List[Message] =>
+        val ofms = messages collect {
+          case ofm: OverallFailureMessage => ofm
+        }
+        val efms = messages collect {
+          case efm: EntityFailureMessage => efm
+        }
+        // first verification thus cached flag should not be set:
+        assert(efms.length === 1 && !efms.last.cached)
+        assert(efms.head.result.errors.length === 1)
+        val lineNr = efms.head.result.errors.head.pos match {
+          case lc: HasLineColumn => lc.line
+          case _ => fail("error should have positional information")
+        }
+        assert(lineNr == lineNrOfExpectedVerificationError)
+        assert(ofms.length === 1)
+        // list of errors should not be empty:
+        assert(ofms.head.result.errors.nonEmpty)
+    }
+    // verify same file again and check whether result comes from cache and the same line is reported:
+    firstVerification flatMap (_ => {
+      val jid2 = verifySiliconWithCaching(core, file)
+      getMessagesFuture(core, jid2)(context) map {
+        messages: List[Message] =>
+          val efms: List[EntityFailureMessage] = messages collect {
+            case efm: EntityFailureMessage => efm
+          }
+          assert(efms.length === 1 && efms.last.cached)
+          assert(efms.head.result.errors.length === 1)
+          val lineNr = efms.head.result.errors.head.pos match {
+            case lc: HasLineColumn => lc.line
+            case _ => fail("error should have positional information")
+          }
+          assert(lineNr == lineNrOfExpectedVerificationError)
       }
     })
   })
@@ -159,11 +207,11 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
         val efms = messages collect {
           case efm: EntityFailureMessage => efm
         }
+        // first verification thus cached flag should not be set:
+        assert(efms.length === 1 && !efms.last.cached)
         assert(ofms.length === 1)
         // list of errors should not be empty:
         assert(ofms.head.result.errors.nonEmpty)
-        // first verification thus cached flag should not be set:
-        assert(efms.length === 1 && !efms.last.cached)
     }
     // flush cache
     val cacheFlushFuture = firstVerification.map(_ => core.flushCache())
@@ -186,22 +234,22 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
 
   it should s"run getMessagesFuture() to get Seq[Message] containing the expected verification result" in withServer({ (core, context) =>
     val jid = verifySiliconWithoutCaching(core, ver_error_file)
-    getMessagesFuture(core, jid)(context) map {
-      messages: List[Message] =>
-//        println(messages)
-        Succeeded
+    getMessagesFuture(core, jid)(context) map { msgs =>
+      val res = msgs.last match {
+        case _: OverallFailureMessage => Succeeded
+        case m => fail(s"expected failure message but got $m")
+      }
+      println("run getMessagesFuture() to get Seq[Message] containing the expected verification result is done")
+      res
     }
   })
 
   it should s"be able to verify multiple programs with caching disabled and retrieve results" in withServer({ (core, context) =>
-    // this test cases regularly fails with a stack overflow exception because AST transformations do not seem to terminate.
-    // this problem only seems to occur when verifying multiple files simultaneously
-    // TODO fix to use all 3 files
-    val files = Vector(correct_viper_file)
+    println("be able to verify multiple programs with caching disabled and retrieve results")
     val jobIds = files.map(file => (file, verifySiliconWithoutCaching(core, file)))
     val filesAndMessages = jobIds map { case (f, id) => (f, ViperCoreServerUtils.getMessagesFuture(core, id)(context)) }
     val resultFutures = filesAndMessages map { case (f, fut) => fut.map(msgs => {
-      println(s"future completed for $f")
+      println(s"messages for $f: ${msgs.mkString(",")}")
       msgs.last match {
         case _: OverallSuccessMessage => assert(f != ver_error_file)
         case _: OverallFailureMessage => assert(f == ver_error_file)
@@ -209,20 +257,17 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
       }
     })}
     // map resultFuture to a single assertion:
-    // Future.sequence(resultFutures).map(_ => Succeeded)
-    // to not forget about the issue mentioned above:
-    Future.sequence(resultFutures).map(results => assert(results.length == 3))
+    Future.sequence(resultFutures).map(_ => {
+      println("be able to verify multiple programs with caching disabled and retrieve results is done")
+      Succeeded
+    })
   })
 
   it should s"be able to verify multiple programs with caching enabled and retrieve results" in withServer({ (core, context) =>
-    // this test cases regularly fails with a stack overflow exception because AST transformations do not seem to terminate.
-    // this problem only seems to occur when verifying multiple files simultaneously
-    // TODO fix to use all 3 files
-    val files = Vector(correct_viper_file)
+    println("be able to verify multiple programs with caching enabled and retrieve results")
     val jobIds = files.map(file => (file, verifySiliconWithCaching(core, file)))
     val filesAndMessages = jobIds map { case (f, id) => (f, ViperCoreServerUtils.getMessagesFuture(core, id)(context)) }
     val resultFutures = filesAndMessages map { case (f, fut) => fut.map(msgs => {
-      println(s"future completed for $f")
       msgs.last match {
         case _: OverallSuccessMessage => assert(f != ver_error_file)
         case _: OverallFailureMessage => assert(f == ver_error_file)
@@ -230,9 +275,7 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
       }
     })}
     // map resultFuture to a single assertion:
-    // Future.sequence(resultFutures).map(_ => Succeeded)
-    // to not forget about the issue mentioned above:
-    Future.sequence(resultFutures).map(results => assert(results.length == 3))
+    Future.sequence(resultFutures).map(_ => Succeeded)
   })
 
   object ClientActor {
@@ -252,20 +295,18 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
             outcome = Some(true)
           case _: OverallFailureMessage =>
             outcome = Some(false)
-          case m =>
+          case _ =>
         }
       case ClientActor.ReportOutcome =>
         sender() ! outcome
       case ClientActor.Terminate =>
         executionContext.actorSystem.terminate()
+      case Success =>
+        // Success is sent when the stream is completed
     }
   }
 
-  it should s"be able to verify multiple programs with caching disabled and retrieve results via `streamMessages()" in withServer({ (core, context) =>
-    // this test cases regularly fails with a stack overflow exception because AST transformations do not seem to terminate.
-    // this problem only seems to occur when verifying multiple files simultaneously
-    // TODO fix to use all 3 files
-    val files = Vector(correct_viper_file)
+  it should s"be able to verify multiple programs with caching disabled and retrieve results via `streamMessages()`" in withServer({ (core, context) =>
     val test_actors = 0 to 2 map ((i: Int) => actor_system.actorOf(ClientActor.props(i, context)))
     val jids = files.map(file => verifySiliconWithoutCaching(core, file))
     // stream messages to actors
@@ -291,25 +332,33 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
       assert(outcome.contains(file != ver_error_file))
     })
     // map assertionsFuture to a single assertion:
-    // assertionsFuture.map(_ => Succeeded)
-    // to not forget about the issue mentioned above:
-    assertionsFuture.map(assertions => assert(assertions.length == 3))
+    assertionsFuture.map(_ => Succeeded)
   })
 
-// the following test case fails as it is currently not possible to start 3 simultaneous verification jobs
-//  it should s"be able to start a new verification after maximum capacity was exceeded but earlier verifications have ended" in withServer({ (core, context) =>
-//    // start 3 jobs:
-//    val jids = files.map(file => verifySiliconWithoutCaching(core, file))
-//    // IDs should all be positive:
-//    assert(jids.forall(jid => jid.id >= 0))
-//    // 4th job will fail since capacity is exceeded (ID will be negative)
-//    val spillJid = verifySiliconWithoutCaching(core, correct_viper_file)
-//    assert(spillJid.id < 0)
-//    // wait for complete of first verification job and try again:
-//    val firstJobCompleted = ViperCoreServerUtils.getMessagesFuture(core, jids.head)(context)
-//    firstJobCompleted.map(_ => {
-//      val newJid = verifySiliconWithoutCaching(core, correct_viper_file)
-//      assert(newJid.id >= 0)
-//    })
-//  })
+  it should s"be able to start a new verification after maximum capacity was exceeded but earlier verifications have ended" in withServer({ (core, context) =>
+    // start 3 jobs:
+    val jids = files.map(file => verifySiliconWithoutCaching(core, file))
+    // IDs should all be positive:
+    assert(jids.forall(jid => jid.id >= 0))
+    // 4th job will fail since capacity is exceeded (ID will be negative)
+    val spillJid = verifySiliconWithoutCaching(core, correct_viper_file)
+    assert(spillJid.id < 0)
+    // wait for complete of first verification job and try again:
+    val firstJobCompleted = ViperCoreServerUtils.getMessagesFuture(core, jids.head)(context)
+    firstJobCompleted.flatMap(_ => {
+      val newJid = verifySiliconWithoutCaching(core, correct_viper_file)
+      assert(newJid.id >= 0)
+      ViperCoreServerUtils.getMessagesFuture(core, newJid)(context)
+    }.map(msgs => {
+      msgs.last match {
+        case _: OverallSuccessMessage => succeed
+        case _: OverallFailureMessage => fail(s"unexpected failure")
+        case msg => fail(s"unexpected message: $msg")
+      }
+    })).flatMap(_ => {
+      // wait for completion of remaining two verification:
+      val otherFutures = jids.tail.map(jid => ViperCoreServerUtils.getMessagesFuture(core, jid)(context))
+      Future.sequence(otherFutures).map(_ => Succeeded)
+    })
+  })
 }

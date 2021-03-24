@@ -15,6 +15,7 @@ import viper.silver.verifier.{AbstractError, VerificationResult, Failure => Veri
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.util.Success
 
 object ViperCoreServerUtils {
 
@@ -32,6 +33,8 @@ object ViperCoreServerUtils {
         messages = messages :+ m
       case SeqActor.Result =>
         sender() ! messages
+      case Success =>
+        // Success is sent when the stream is completed
     }
   }
 
