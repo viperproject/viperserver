@@ -181,7 +181,7 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: deploy/viperserver-skinny-jars.zip
-          asset_name: viperserver-skinny-jars
+          asset_name: viperserver-skinny-jars.zip
           asset_content_type: application/zip
 
       - name: Upload ViperServer fat jar artifact
@@ -191,7 +191,7 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: deploy/viperserver.jar
-          asset_name: viperserver-fat-jar
+          asset_name: viperserver.jar
           asset_content_type: application/octet-stream
 
 
@@ -238,7 +238,7 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: deploy/viperserver-skinny-jars.zip
-          asset_name: viperserver-skinny-jars
+          asset_name: viperserver-skinny-jars.zip
           asset_content_type: application/zip
 
       - name: Upload ViperServer fat jar
@@ -248,5 +248,5 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: deploy/viperserver.jar
-          asset_name: viperserver-fat-jar
+          asset_name: viperserver.jar
           asset_content_type: application/octet-stream
