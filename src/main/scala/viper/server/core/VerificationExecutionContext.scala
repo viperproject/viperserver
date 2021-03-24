@@ -69,6 +69,7 @@ class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_Syste
   override def submit(r: Runnable): java_concurrent.Future[_] = context.submit(r)
 
   override def terminate(timeoutMSec: Long = 1000): Unit = {
+    println("DefaultVerificationExecutionContext terminate")
     executorService.shutdown()
     executorService.awaitTermination(timeoutMSec, TimeUnit.MILLISECONDS)
     val oldSystem = actorSystem
