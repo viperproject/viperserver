@@ -54,7 +54,7 @@ trait VerificationServer extends Post {
   implicit val ast_id_fact: Int => AstJobId = AstJobId.apply
   implicit val ver_id_fact: Int => VerJobId = VerJobId.apply
 
-  protected var ast_jobs: JobPool[AstJobId, AstHandle[AST]] = _
+  protected var ast_jobs: JobPool[AstJobId, AstHandle[Option[AST]]] = _
   protected var ver_jobs: JobPool[VerJobId, VerHandle] = _
 
   var isRunning: Boolean = false
@@ -72,9 +72,9 @@ trait VerificationServer extends Post {
   }
 
   protected def initializeProcess[S <: JobId, T <: JobHandle : ClassTag]
-                      (pool: JobPool[S, T],
-                      task_fut: Future[MessageStreamingTask[_]],
-                      prev_job_id_maybe: Option[AstJobId] = None): S = {
+      (pool: JobPool[S, T],
+      task_maybe_fut: Future[Option[MessageStreamingTask[_]]],
+      prev_job_id_maybe: Option[AstJobId] = None): S = {
 
     if (!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
@@ -84,76 +84,84 @@ trait VerificationServer extends Post {
 
     /** Ask the pool to book a new job using the above function
       * to construct Future[JobHandle] and Promise[AST] later on. */
-    pool.bookNewJob((new_jid: S) => task_fut.flatMap((task: MessageStreamingTask[_]) => {
+    pool.bookNewJob((new_jid: S) => task_maybe_fut.flatMap((task_maybe: Option[MessageStreamingTask[_]]) => {
+      task_maybe match {
+        case None =>
+          /** If there's no task, that means their prerequisite tasks haven't produced usable artifacts.
+            * The sole purpose of this task is hence to hold the identifier of its predecessor.
+            * We should remove this task from the job pool. */
+          pool.discardJob(new_jid)
+          new_jid match {
+            case _: VerJobId =>
+              Future.successful(VerHandle(null, null, null, prev_job_id_maybe))
+          }
+        case Some(task) =>
+          implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
 
+          /** What we really want here is SourceQueueWithComplete[Envelope]
+            * Publisher[Envelope] might be needed to create a stream later on,
+            * but the publisher and the queue are synchronized are should be viewed
+            * as different representation of the same concept.
+            */
+          val (queue, publisher) = Source.queue[Envelope](10000, OverflowStrategy.backpressure)
+            .toMat(Sink.asPublisher(false))(Keep.both).run()
+
+          /** This actor will be responsible for managing ONE queue,
+            * whereas the JobActor can manage multiple tasks, all of which are related to some pipeline,
+            * e.g.   [Text] ---> [AST] ---> [VerificationResult]
+            *        '--- Task I ----'                         |
+            *                    '---------- Task II ----------'
+            **/
+          val message_actor = system.actorOf(QueueActor.props(queue), s"${pool.tag}--message_actor--${new_jid.id}")
+          task.setQueueActor(message_actor)
+
+          val job_actor = system.actorOf(JobActor.props(new_jid), s"${pool.tag}_job_actor_${new_jid}")
+
+          /** Register cleanup task. */
+          queue.watchCompletion().onComplete(_ => {
+            pool.discardJob(new_jid)
+            /** FIXME: if the job actors are meant to be reused from one phase to another (not implemented yet),
+              * FIXME: then they should be stopped only after the **last** job is completed in the pipeline. */
+            job_actor ! PoisonPill
+          })
+
+          (job_actor ? (new_jid match {
+            case _: AstJobId =>
+              VerificationProtocol.ConstructAst(task, queue, publisher, executor)
+            case _: VerJobId =>
+              VerificationProtocol.Verify(task, queue, publisher,
+                /** TODO: Use factories for specializing the messages.
+                  * TODO: Clearly, there should be a clean separation between concrete job types
+                  * TODO: (AST Construction, Verification) and generic types (JobHandle). */
+                prev_job_id_maybe match {
+                  case Some(prev_job_id: AstJobId) =>
+                    Some(prev_job_id)
+                  case Some(prev_job_id) =>
+                    throw new IllegalArgumentException(s"cannot map ${prev_job_id.toString} to expected type AstJobId")
+                  case None =>
+                    None
+                }, executor)
+          })).mapTo[T]
+      }
       /** TODO avoid hardcoded parameters */
-      implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-
-      /** What we really want here is SourceQueueWithComplete[Envelope]
-        * Publisher[Envelope] might be needed to create a stream later on,
-        * but the publisher and the queue are synchronized are should be viewed
-        * as different representation of the same concept.
-        */
-      val (queue, publisher) = Source.queue[Envelope](10000, OverflowStrategy.backpressure)
-        .toMat(Sink.asPublisher(false))(Keep.both).run()
-
-      /** This actor will be responsible for managing ONE queue,
-        * whereas the JobActor can manage multiple tasks, all of which are related to some pipeline,
-        * e.g.   [Text] ---> [AST] ---> [VerificationResult]
-        *        '--- Task I ----'                         |
-        *                    '---------- Task II ----------'
-        **/
-      val message_actor = system.actorOf(QueueActor.props(queue), s"${pool.tag}--message_actor--${new_jid.id}")
-      task.setQueueActor(message_actor)
-
-      val job_actor = system.actorOf(JobActor.props(new_jid), s"${pool.tag}_job_actor_${new_jid}")
-
-      /** Register cleanup task. */
-      queue.watchCompletion().onComplete(_ => {
-        pool.discardJob(new_jid)
-        /** FIXME: if the job actors are meant to be reused from one phase to another (not implemented yet),
-          * FIXME: then they should be stopped only after the **last** job is completed in the pipeline. */
-        job_actor ! PoisonPill
-      })
-
-      (job_actor ? (new_jid match {
-        case _: AstJobId =>
-          VerificationProtocol.ConstructAst(task, queue, publisher, executor)
-        case _: VerJobId =>
-          VerificationProtocol.Verify(task, queue, publisher,
-            /** TODO: Use factories for specializing the messages.
-              * TODO: Clearly, there should be a clean separation between concrete job types
-              * TODO: (AST Construction, Verification) and generic types (JobHandle). */
-            prev_job_id_maybe match {
-              case Some(prev_job_id: AstJobId) =>
-                Some(prev_job_id)
-              case Some(prev_job_id) =>
-                throw new IllegalArgumentException(s"cannot map ${prev_job_id.toString} to expected type AstJobId")
-              case None =>
-                None
-            }, executor)
-      })).mapTo[T]
 
     }).recover({
       case e: AstConstructionException =>
         // If the AST construction phase failed, remove the verification job handle
         // from the corresponding pool.
+        val msg = s"AST construction job ${prev_job_id_maybe.get} resulted in a failure: $e"
+        println(msg)
         pool.discardJob(new_jid)
-        new_jid match {
-          case _: VerJobId =>
-            // FIXME perhaps return None instead of nulls here.
-            VerHandle(null, null, null, prev_job_id_maybe)
-        }
     }).mapTo[T])
   }
 
-  protected def initializeAstConstruction(task: MessageStreamingTask[AST]): AstJobId = {
+  protected def initializeAstConstruction(task: MessageStreamingTask[Option[AST]]): AstJobId = {
     if (!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
 
     if (ast_jobs.newJobsAllowed) {
-      initializeProcess(ast_jobs, Future.successful(task))
+      initializeProcess(ast_jobs, Future.successful(Some(task)))
     } else {
       AstJobId(-1) // Process Management running  at max capacity.
     }
@@ -163,13 +171,14 @@ trait VerificationServer extends Post {
     *
     * As such, it accepts an instance of a VerificationTask, which it will pass to the JobActor.
     */
-  protected def initializeVerificationProcess(task_fut: Future[MessageStreamingTask[Unit]], ast_job_id_maybe: Option[AstJobId]): VerJobId = {
+  protected def initializeVerificationProcess(task_maybe_fut: Future[Option[MessageStreamingTask[Unit]]],
+                                              ast_job_id_maybe: Option[AstJobId]): VerJobId = {
     if (!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
 
     if (ver_jobs.newJobsAllowed) {
-      initializeProcess(ver_jobs, task_fut, ast_job_id_maybe)
+      initializeProcess(ver_jobs, task_maybe_fut, ast_job_id_maybe)
     } else {
       VerJobId(-1)  // Process Management running  at max capacity.
     }

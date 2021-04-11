@@ -42,7 +42,7 @@ class ViperHttpServer(_args: Array[String])(executor: VerificationExecutionConte
 
     port = config.port.getOrElse(ibm.Socket.findFreePort)
     super.start(config.maximumActiveJobs())
-    println(s"ViperServer online at http://localhost:$port}")
+    println(s"ViperServer online at http://localhost:$port")
   }
 
   def setRoutes(): Route = {
