@@ -30,11 +30,12 @@ class AstGenerator(private val _logger: Logger,
   def generateViperAst(vpr_file_path: String): Option[Program] = {
 
     if (!validateViperFile(vpr_file_path)) {
+      _logger.error(s"No such file: `$vpr_file_path``")
       throw new NoSuchFileException(vpr_file_path)
     }
 
     val args: Array[String] = Array(vpr_file_path)
-    _logger.info(s"Parsing Viper file ...")
+    _logger.info(s"Parsing `$vpr_file_path` ...")
 
     _frontend.execute(args)
     if (_frontend.program.isDefined) {
@@ -43,7 +44,7 @@ class AstGenerator(private val _logger: Logger,
     if (_frontend.errors.isEmpty) {
       Some(_frontend.translationResult)
     } else {
-      _logger.error(s"An error occurred while translating ${_frontend.errors}")
+      _logger.info(s"Errors occurred while translating `$vpr_file_path`: ${_frontend.errors}")
       None
     }
   }

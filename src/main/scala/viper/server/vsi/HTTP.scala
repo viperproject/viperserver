@@ -180,6 +180,7 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
               }
               val resulting_source = ver_source.prepend(ast_source)
               complete(unpackMessages(resulting_source))
+
             case Failure(error) =>
               complete(verificationRequestRejection(id, error))
           }
