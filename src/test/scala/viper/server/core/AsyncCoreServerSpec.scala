@@ -101,6 +101,7 @@ class AsyncCoreServerSpec extends AsyncFlatSpec {
     testWithShutdownFuture
       .flatMap(_ => afterStop(core, executionContext))(executionContext)
       .transform(res => {
+        executionContext.terminate(60 * 1000) // 1min
         core.logger.get.debug(s"test case '$testName' is done")
         res
       })(executionContext)
