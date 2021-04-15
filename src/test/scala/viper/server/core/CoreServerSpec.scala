@@ -47,6 +47,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
   private val empty_viper_file = "src/test/resources/viper/empty.vpr"
   private val correct_viper_file = "src/test/resources/viper/sum_method.vpr"
   private val ver_error_file = "src/test/resources/viper/verification_error.vpr"
+  private val execution_context_terminate_timeout_ms = 1000 // 1 sec
 
   private val files = List(empty_viper_file, correct_viper_file, ver_error_file)
 
@@ -123,10 +124,17 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       })(verificationContext)
     val res = Await.result(finalFut, Duration.Inf)
     val startTime = System.currentTimeMillis()
-    verificationContext.terminate(60 * 1000) // 1min - rather high such that a potential timeout becomes clearly visible
-    val terminateDuration = System.currentTimeMillis() - startTime
-    core.logger.get.debug(s"terminating VerificationExecutionContext took ${terminateDuration}ms")
-    res
+    // terminate context with a larger timeout such that we can distinguish a timeout from terminate taking quite long
+    verificationContext.terminate(10 * execution_context_terminate_timeout_ms)
+    val terminateDurationMs = System.currentTimeMillis() - startTime
+    core.logger.get.debug(s"terminating VerificationExecutionContext took ${terminateDurationMs}ms")
+    res match {
+      case Succeeded => {
+        // check whether timeout has been exceeded and fail test accordingly:
+        assert(terminateDurationMs < execution_context_terminate_timeout_ms)
+      }
+      case _ => res // forward failed assertion
+    }
   }
 
   /* vvvvvvvvvvvvvvvvvvvvvvv */

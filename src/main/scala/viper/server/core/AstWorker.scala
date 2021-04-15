@@ -23,12 +23,12 @@ case class ServerCrashException(e: Throwable) extends Exception(e)
 
 
 class AstWorker(val arg_list: List[String],
-                val logger: Logger)(override val executor: VerificationExecutionContext) extends MessageReportingTask[Program] {
+                override val logger: Logger)(override val executor: VerificationExecutionContext) extends MessageReportingTask[Program] {
 
   private def constructAst(): Program = {
     val file: String = arg_list.last
 
-    val reporter = new ActorReporter("AstGenerationReporter")
+    val reporter = new ActorReporter("AstGenerationReporter", logger)
     val astGen = new AstGenerator(logger, reporter)
 
     val ast_option: Option[Program] = try {

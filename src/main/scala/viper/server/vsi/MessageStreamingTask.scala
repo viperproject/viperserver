@@ -13,6 +13,7 @@ import akka.actor.ActorRef
 import akka.pattern.ask
 import akka.stream.QueueOfferResult
 import akka.util.Timeout
+import ch.qos.logback.classic.Logger
 import viper.server.core.VerificationExecutionContext
 
 import scala.concurrent.{Await, Future, Promise}
@@ -31,7 +32,7 @@ import scala.util.Try
   *  The first serves the purpose of running the task concurrently. The second allows to
   *  communicate from the verification process to the server.
   * */
-abstract class MessageStreamingTask[T]() extends Callable[T] with Post {
+abstract class MessageStreamingTask[T] extends Callable[T] with Post {
 
   private lazy val artifactPromise = Promise[T]()
   lazy val artifact: Future[T] = artifactPromise.future
@@ -51,7 +52,7 @@ abstract class MessageStreamingTask[T]() extends Callable[T] with Post {
     * which  will eventually indicate whether or not the offer was successful. This method is
     * blocking, as it waits for the successful completion of such an offer.
     * */
-  protected def enqueueMessage(msg: Envelope)(implicit executor: VerificationExecutionContext): Unit = {
+  protected def enqueueMessage(msg: Envelope, logger: Logger)(implicit executor: VerificationExecutionContext): Unit = {
     implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
     // answer is a future that will resolve with the actor's response to the BackendReport request
     val answer = (q_actor ? TaskProtocol.BackendReport(msg)).mapTo[Future[QueueOfferResult]]
@@ -64,7 +65,9 @@ abstract class MessageStreamingTask[T]() extends Callable[T] with Post {
     } catch {
       case ex: Exception =>
         // print exception such that one sees that something went wrong:
-        println(s"exception in enqueueMessage occurred: $ex")
+        val errorMsg = s"exception in enqueueMessage occurred: $ex"
+        println(errorMsg)
+        logger.error(errorMsg)
         // rethrow exception:
         throw ex
     }

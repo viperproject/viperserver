@@ -29,7 +29,7 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
 
 case class ViperEnvelope(m: Message) extends Envelope
 
-class VerificationWorker(private val logger: Logger,
+class VerificationWorker(override val logger: Logger,
                          private val command: List[String],
                          private val program: Program)
                         (override val executor: VerificationExecutionContext)
@@ -61,15 +61,15 @@ class VerificationWorker(private val logger: Logger,
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
-          backend = new ViperBackend(new SiliconFrontend(new ActorReporter("silicon"), logger), program)
+          backend = new ViperBackend(new SiliconFrontend(new ActorReporter("silicon", logger), logger), program)
           backend.execute(args)
         case "carbon" :: args =>
           logger.info("Creating new Carbon verification backend.")
-          backend = new ViperBackend(new CarbonFrontend(new ActorReporter("carbon"), logger), program)
+          backend = new ViperBackend(new CarbonFrontend(new ActorReporter("carbon", logger), logger), program)
           backend.execute(args)
         case custom :: args =>
           logger.info(s"Creating new verification backend based on class $custom.")
-          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(custom)).get, program)
+          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(custom, logger)).get, program)
           backend.execute(args)
         case args =>
           logger.error("invalid arguments: ${args.toString}",
