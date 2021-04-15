@@ -50,11 +50,10 @@ object ViperCoreServerUtils {
 
     val actor = executor.actorSystem.actorOf(SeqActor.props())
     val complete_future = core.streamMessages(jid, actor).getOrElse(Future.failed(JobNotFoundException))
-    val res: Future[List[Message]] = complete_future.flatMap(_ => {
+    complete_future.flatMap(_ => {
       implicit val askTimeout: Timeout = Timeout(core.config.actorCommunicationTimeout() milliseconds)
       (actor ? SeqActor.Result).mapTo[List[Message]]
     })
-    res
   }
 
   /** Get a Future containing only verification results.

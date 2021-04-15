@@ -32,7 +32,7 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
     * will result in an IllegalStateException.
     * */
   def start(): Unit = {
-    _config = new ViperConfig(_args)
+    _config = new ViperConfig(_args.toIndexedSeq)
     config.verify()
 
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
@@ -42,7 +42,7 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 
     super.start(config.maximumActiveJobs())
-    println(s"ViperCoreServer has started.")
+    logger.get.info(s"ViperCoreServer has started.")
   }
 
   def requestAst(arg_list: List[String]): AstJobId = {
@@ -77,7 +77,9 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
               new VerificationWorker(logger.get, args :+ programId, program)(executor)
             }).recover({
               case e: Throwable =>
-                println(s"### As exception has occurred while constructing Viper AST: $e")
+                val errorMsg = s"### As exception has occurred while constructing Viper AST: $e"
+                println(errorMsg)
+                logger.get.error(errorMsg)
                 throw e
             })
 
