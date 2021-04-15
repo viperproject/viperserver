@@ -99,6 +99,17 @@ jobs:
           # disabled caching of compiled source files altogether
           key: ${{ runner.os }}-sbt-no-precompiled-sources-${{ hashFiles('**/build.sbt') }}
 
+      - name: Test ViperServer
+        run: sbt test
+        working-directory: viperserver
+
+      - name: Upload log files
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: TestLogs
+          path: viperserver/logs
+
       - name: Assemble ViperServer skinny JARs
         run: sbt stage
         working-directory: viperserver
@@ -122,17 +133,6 @@ jobs:
         with:
           name: viperserver-fat-jar
           path: viperserver/target/scala-2.13/viperserver.jar
-
-      - name: Test ViperServer
-        run: sbt test
-        working-directory: viperserver
-
-      - name: Upload log files
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v2
-        with:
-          name: TestLogs
-          path: viperserver/logs
 
 
   create-nightly-release:
