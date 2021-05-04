@@ -220,7 +220,7 @@ trait VerificationServer extends Post {
                 Source.fromPublisher(ast_handle.publisher)
             }
             val resulting_source = ver_source.prepend(ast_source).map(e => unpack(e))
-            resulting_source.runWith(Sink.actorRef(clientActor, Success, Status.Failure))
+            resulting_source.runWith(Sink.actorRef(clientActor, Status.Success, Status.Failure))
 
             // FIXME This assumes that someone will actually complete the verification job queue.
             // FIXME Could we guarantee that the client won't forget to do this?
