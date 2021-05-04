@@ -12,6 +12,7 @@ import viper.server.ViperConfig
 import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
 import viper.silver.ast.Program
 import viper.silver.logger.ViperLogger
+import viper.server.core.AstConstructionFailureException
 
 import scala.concurrent.Future
 
@@ -70,22 +71,20 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
 
     ast_jobs.lookupJob(ast_id) match {
       case Some(handle_future) =>
-        val task_backend_fut =
-          handle_future.map((handle: AstHandle[Program]) => {
-            val art: Future[Program] = handle.artifact
-            art.map(program => {
-              new VerificationWorker(logger.get, args :+ programId, program)(executor)
-            }).recover({
+        val task_backend_maybe_fut: Future[Option[VerificationWorker]] =
+          handle_future.map((handle: AstHandle[Option[Program]]) => {
+            val program_maybe_fut: Future[Option[Program]] = handle.artifact
+            program_maybe_fut.map(_.map(new VerificationWorker(logger.get, args :+ programId, _)(executor))).recover({
               case e: Throwable =>
-                val errorMsg = s"### As exception has occurred while constructing Viper AST: $e"
-                println(errorMsg)
-                logger.get.error(errorMsg)
+                val msg = s"### An exception has occurred while constructing Viper AST: $e"
+                println(msg)
+                logger.get.error(msg)
                 throw e
             })
 
           }).flatten
 
-        initializeVerificationProcess(task_backend_fut, Some(ast_id))
+        initializeVerificationProcess(task_backend_maybe_fut, Some(ast_id))
 
       case None =>
         logger.get.error(s"Could not start verification process for non-existent $ast_id")
@@ -102,7 +101,7 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
 
     val args: List[String] = backend_config.toList
     val task_backend = new VerificationWorker(logger.get, args :+ programId, program)(executor)
-    val ver_id = initializeVerificationProcess(Future.successful(task_backend), None)
+    val ver_id = initializeVerificationProcess(Future.successful(Some(task_backend)), None)
 
     if (ver_id.id >= 0) {
       logger.get.info(s"Verification process #${ver_id.id} has successfully started.")
