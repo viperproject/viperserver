@@ -31,7 +31,7 @@ jobs:
     # we enforce here that the nightly build job only runs in the main repo:
     if: (github.event_name == 'schedule' && github.repository == 'viperproject/viperserver') || (github.event_name != 'schedule')
     runs-on: ubuntu-latest
-    container: viperproject/viperserver:v2
+    container: viperproject/viperserver:v3_z3_4.8.6
     steps:
       - name: Checkout ViperServer
         uses: actions/checkout@v2

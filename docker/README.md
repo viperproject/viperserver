@@ -2,7 +2,7 @@
 
 The Dockerfile creates a new docker container containing Java, sbt, and Z3.
 
-There is a `viperproject` user on hub.docker.com to publish the built container.
+There is a `viperproject` organization on hub.docker.com to publish the built container.
 
 ## Build docker image (replace \<tag\>)
 `docker build -t viperproject/viperserver:<tag> .`
