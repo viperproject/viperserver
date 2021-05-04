@@ -46,6 +46,7 @@ trait VerificationServer extends Post {
 
   implicit val executor: VerificationExecutionContext
   implicit val system: ActorSystem = executor.actorSystem
+  implicit def askTimeout: Timeout
 
   protected var _termActor: ActorRef = _
 
@@ -94,8 +95,6 @@ trait VerificationServer extends Post {
               Future.successful(VerHandle(null, null, null, prev_job_id_maybe))
           }
         case Some(task) =>
-          implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-
           /** What we really want here is SourceQueueWithComplete[Envelope]
             * Publisher[Envelope] might be needed to create a stream later on,
             * but the publisher and the queue are synchronized are should be viewed
@@ -144,7 +143,7 @@ trait VerificationServer extends Post {
       /** TODO avoid hardcoded parameters */
 
     }).recover({
-      case _: AstConstructionException =>
+      case e: AstConstructionException =>
         // If the AST construction phase failed, remove the verification job handle
         // from the corresponding pool.
         val msg = s"AST construction job ${prev_job_id_maybe.get} resulted in a failure: $e"

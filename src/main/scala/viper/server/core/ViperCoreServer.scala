@@ -8,13 +8,15 @@ package viper.server.core
 
 import akka.Done
 import akka.actor.ActorRef
+import akka.util.Timeout
 import viper.server.ViperConfig
 import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
 import viper.silver.ast.Program
 import viper.silver.logger.ViperLogger
-import viper.server.core.AstConstructionFailureException
 
+import scala.concurrent.duration._
 import scala.concurrent.Future
+import scala.language.postfixOps
 
 class ViperCoreServer(val _args: Array[String])(implicit val executor: VerificationExecutionContext) extends VerificationServer with ViperPost {
 
@@ -23,6 +25,8 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
   // --- VCS : Configuration ---
   protected var _config: ViperConfig = _
   final def config: ViperConfig = _config
+
+  override lazy val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
 
   protected var _logger: ViperLogger = _
   final def logger: ViperLogger = _logger
