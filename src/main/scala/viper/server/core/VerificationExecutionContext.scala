@@ -53,7 +53,7 @@ class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_Syste
       private val mCount = new AtomicInteger(1)
       override def newThread(runnable: Runnable): Thread = {
         val threadName = s"$threadNamePrefix-${mCount.getAndIncrement()}"
-        new Thread(null, runnable, threadName, threadStackSize)
+        new ViperServerThread(null, runnable, threadName, threadStackSize)
       }
     })
 
@@ -85,5 +85,16 @@ class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_Syste
       // set new actor system:
       system = Some(ActorSystem(actorSystemName))
     })(this)
+  }
+}
+
+class ViperServerThread(group: ThreadGroup, target: Runnable, name: String, stackSize: Long) extends Thread(group, target, name, stackSize) {
+  override def interrupt(): Unit = {
+    try {
+      throw new RuntimeException("interrupting ViperServerThread")
+    } catch {
+      case e => e.printStackTrace()
+    }
+    super.interrupt()
   }
 }
