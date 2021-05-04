@@ -103,6 +103,42 @@ jobs:
         run: sbt test
         working-directory: viperserver
 
+      - name: Test ViperServer
+        run: sbt test
+        working-directory: viperserver
+
+      - name: Test ViperServer
+        run: sbt test
+        working-directory: viperserver
+
+      - name: Test ViperServer
+        run: sbt test
+        working-directory: viperserver
+
+      - name: Test ViperServer
+        run: sbt test
+        working-directory: viperserver
+
+      - name: Test ViperServer
+        run: sbt test
+        working-directory: viperserver
+
+      - name: Test ViperServer
+        run: sbt test
+        working-directory: viperserver
+
+      - name: Test ViperServer
+        run: sbt test
+        working-directory: viperserver
+
+      - name: Test ViperServer
+        run: sbt test
+        working-directory: viperserver
+
+      - name: Test ViperServer
+        run: sbt test
+        working-directory: viperserver
+
       - name: Upload log files
         if: ${{ failure() }}
         uses: actions/upload-artifact@v2
