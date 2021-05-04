@@ -22,8 +22,8 @@ import viper.silver.logger.SilentLogger
 import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessage, OverallSuccessMessage}
 
 import scala.concurrent.duration._
-import scala.concurrent.{Await, Future}
-import scala.util.{Failure, Success}
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.util.{Failure, Success, Try}
 import scala.language.postfixOps
 
 /**
@@ -307,7 +307,8 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
         }
       })}
       // map resultFuture to a single assertion:
-      Future.sequence(resultFutures).map(_ => Succeeded)
+      // Future.sequence(resultFutures).map(_ => Succeeded)
+      waitForAll(resultFutures).map(_ => Succeeded)
     })
 
     s"be able to verify multiple programs with caching enabled and retrieve results" in withServer({ (core, context) =>
@@ -323,7 +324,8 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
         }
       })}
       // map resultFuture to a single assertion:
-      Future.sequence(resultFutures).map(_ => Succeeded)
+      // Future.sequence(resultFutures).map(_ => Succeeded)
+      waitForAll(resultFutures).map(_ => Succeeded)
     })
 
     object ClientActor {
@@ -369,13 +371,14 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
         streamDoneFuture.map(_ => actor)
       }
       // streamState futures should eventually be resolved
-      val allVerificationsFuture = Future.sequence(streamDones)
+      val allVerificationsFuture = waitForAll(streamDones) // Future.sequence(streamDones)
       val outcomesFuture = allVerificationsFuture.flatMap(actors => {
         val outcomeFutures = actors.map(actor => {
           implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
           (actor ? ClientActor.ReportOutcome).mapTo[Option[Boolean]]
         })
-        Future.sequence(outcomeFutures)
+        // Future.sequence(outcomeFutures)
+        waitForAll(outcomeFutures)
       })
       val assertionsFuture = outcomesFuture.map(_.zip(files) map { case (outcome, file) =>
         assert(outcome.contains(file != ver_error_file))
@@ -408,8 +411,32 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       })).flatMap(_ => {
         // wait for completion of remaining two verification:
         val otherFutures = jids.tail.map(jid => ViperCoreServerUtils.getMessagesFuture(core, jid)(context))
-        Future.sequence(otherFutures).map(_ => Succeeded)
+        // Future.sequence(otherFutures).map(_ => Succeeded)
+        waitForAll(otherFutures).map(_ => Succeeded)
       })
+    })
+  }
+
+  private def waitForAll[T](futures: Seq[Future[T]])(implicit executionContext: ExecutionContext): Future[Seq[T]] = {
+    def futureToFutureTry[T](f: Future[T]): Future[Try[T]] =
+      f.transform(Success(_))
+
+    // make sure all futures do not fail:
+    val tryFutures = futures.map(futureToFutureTry)
+    val res = Future.sequence(tryFutures)
+    res.transform({
+      case Success(successfulTries: Seq[Try[T]]) =>
+        val fails: Option[Try[Seq[T]]] = successfulTries.collectFirst({
+          case Failure(f) => {
+            println(s"waitForAll: at least one future has failed $f")
+            Failure(f)
+          }
+        })
+        val successes = successfulTries.collect({
+          case Success(x) => x
+        })
+        fails.getOrElse(Success(successes))
+      case Failure(_) => throw new RuntimeException("this case should never occur")
     })
   }
 }
