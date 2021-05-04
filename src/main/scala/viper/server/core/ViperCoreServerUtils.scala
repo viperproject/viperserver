@@ -10,6 +10,7 @@ import akka.actor.{Actor, Props}
 import akka.pattern.ask
 import akka.util.Timeout
 import viper.server.vsi.{JobNotFoundException, VerJobId}
+import viper.silver.logger.ViperLogger
 import viper.silver.reporter.{EntityFailureMessage, Message}
 import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 
@@ -21,17 +22,23 @@ object ViperCoreServerUtils {
 
   private object SeqActor {
     case object Result
-    def props(): Props = Props(new SeqActor())
+    def props(jid: VerJobId, logger: ViperLogger): Props = Props(new SeqActor(jid, logger))
   }
 
-  class SeqActor() extends Actor {
+  class SeqActor(jid: VerJobId, logger: ViperLogger) extends Actor {
 
     var messages: List[Message] = List()
 
     override def receive: PartialFunction[Any, Unit] = {
       case m: Message =>
+        val logMsg = s"SeqActor(JID ${jid.id}) received message $m"
+        println(logMsg)
+        logger.get.trace(logMsg)
         messages = messages :+ m
       case SeqActor.Result =>
+        val logMsg = s"SeqActor(JID ${jid.id}) returning all messages: ${messages.mkString(", ")}"
+        println(logMsg)
+        logger.get.trace(logMsg)
         sender() ! messages
       case Success =>
         // Success is sent when the stream is completed
@@ -48,7 +55,7 @@ object ViperCoreServerUtils {
   def getMessagesFuture(core: ViperCoreServer, jid: VerJobId)(implicit executor: VerificationExecutionContext): Future[List[Message]] = {
     import scala.language.postfixOps
 
-    val actor = executor.actorSystem.actorOf(SeqActor.props())
+    val actor = executor.actorSystem.actorOf(SeqActor.props(jid, core.logger))
     val complete_future = core.streamMessages(jid, actor).getOrElse(Future.failed(JobNotFoundException))
     complete_future.flatMap(_ => {
       implicit val askTimeout: Timeout = Timeout(core.config.actorCommunicationTimeout() milliseconds)
