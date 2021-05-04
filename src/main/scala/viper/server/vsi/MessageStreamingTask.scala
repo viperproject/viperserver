@@ -41,8 +41,10 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
   }
 
   private var q_actor: ActorRef = _
+  private var hasEnded: Boolean = false
 
   final def setQueueActor(actor: ActorRef): Unit = {
+    assert(q_actor == null)
     q_actor = actor
   }
 
@@ -53,6 +55,8 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
     * blocking, as it waits for the successful completion of such an offer.
     * */
   protected def enqueueMessage(msg: Envelope, logger: Logger)(implicit executor: VerificationExecutionContext): Unit = {
+    assert(!hasEnded)
+    logger.trace(s"enqueueMessage: $msg")
     implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
     // answer is a future that will resolve with the actor's response to the BackendReport request
     val answer = (q_actor ? TaskProtocol.BackendReport(msg)).mapTo[Future[QueueOfferResult]]
@@ -79,7 +83,10 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
     *
     * @param success indicates whether or not the task has ended as successfully.
     * */
-  protected def registerTaskEnd(success: Boolean): Unit = {
+  protected def registerTaskEnd(success: Boolean, logger: Logger): Unit = {
+    assert(!hasEnded)
+    hasEnded = true
+    logger.trace(s"registerTaskEnd: $success")
     try {
       throw new RuntimeException("MessageStreamingTask: registerTaskEnd")
     } catch {

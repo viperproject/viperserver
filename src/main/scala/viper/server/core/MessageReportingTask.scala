@@ -8,7 +8,6 @@ package viper.server.core
 
 import ch.qos.logback.classic.Logger
 import viper.server.vsi.MessageStreamingTask
-import viper.silver.ast.Program
 import viper.silver.reporter.{EntityFailureMessage, EntitySuccessMessage, Message, Reporter}
 
 trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
@@ -18,6 +17,10 @@ trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
 
   protected def enqueueMessage(msg: Message): Unit = {
     super.enqueueMessage(pack(msg), logger)(executor)
+  }
+
+  protected def registerTaskEnd(success: Boolean): Unit = {
+    super.registerTaskEnd(success, logger)
   }
 
   // Implementation of the Reporter interface used by the backend.
