@@ -80,6 +80,11 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
     * @param success indicates whether or not the task has ended as successfully.
     * */
   protected def registerTaskEnd(success: Boolean): Unit = {
+    try {
+      throw new RuntimeException("MessageStreamingTask: registerTaskEnd")
+    } catch {
+      case e => e.printStackTrace()
+    }
     q_actor ! TaskProtocol.FinalBackendReport(success)
   }
 }
