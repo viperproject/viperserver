@@ -28,7 +28,7 @@ class AstWorker(val arg_list: List[String],
   private def constructAst(): Program = {
     val file: String = arg_list.last
 
-    val reporter = new ActorReporter("AstGenerationReporter", logger)
+    val reporter = new ActorReporter("AstGenerationReporter")
     val astGen = new AstGenerator(logger, reporter)
 
     val ast_option: Option[Program] = try {

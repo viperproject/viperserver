@@ -22,7 +22,6 @@ class QueueActor(queue: SourceQueueWithComplete[Envelope]) extends Actor {
       val offer_status = queue.offer(msg)
       sender() ! offer_status
     case TaskProtocol.FinalBackendReport(_) =>
-      println(s"QueueActor: FinalBackendReport received")
       queue.complete()
       self ! PoisonPill
     case _ =>

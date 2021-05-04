@@ -33,7 +33,7 @@ class AstGenerator(private val _logger: Logger,
       throw new NoSuchFileException(vpr_file_path)
     }
 
-    val args: Array[String] = Array(vpr_file_path)
+    val args: Seq[String] = Seq(vpr_file_path)
     _logger.info(s"Parsing Viper file ...")
 
     _frontend.execute(args)

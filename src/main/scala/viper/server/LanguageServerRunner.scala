@@ -17,7 +17,7 @@ object LanguageServerRunner {
   private var _config: ViperConfig = _
 
   def main(args: Array[String]): Unit = {
-    _config = new ViperConfig(args)
+    _config = new ViperConfig(args.toSeq)
     _config.verify()
     val port = _config.port.getOrElse(0)
     runServer(port)

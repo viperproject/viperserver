@@ -10,7 +10,7 @@ import akka.Done
 import akka.actor.{ActorRef, ActorSystem, PoisonPill, Status}
 import akka.pattern.ask
 import akka.stream.scaladsl.{Keep, Sink, Source}
-import akka.stream.{ActorMaterializer, OverflowStrategy}
+import akka.stream.OverflowStrategy
 import akka.util.Timeout
 import viper.server.core.VerificationExecutionContext
 
@@ -46,7 +46,6 @@ trait VerificationServer extends Post {
 
   implicit val executor: VerificationExecutionContext
   implicit val system: ActorSystem = executor.actorSystem
-  implicit val materializer: ActorMaterializer = ActorMaterializer()
 
   protected var _termActor: ActorRef = _
 
@@ -134,7 +133,7 @@ trait VerificationServer extends Post {
       })).mapTo[T]
 
     }).recover({
-      case e: AstConstructionException =>
+      case _: AstConstructionException =>
         // If the AST construction phase failed, remove the verification job handle
         // from the corresponding pool.
         pool.discardJob(new_jid)
@@ -206,7 +205,7 @@ trait VerificationServer extends Post {
         }) flatMap {
           case (ast_handle_maybe: Option[AstHandle[AST]], ver_handle: VerHandle) =>
             val ver_source = ver_handle match {
-              case VerHandle(null, null, null, ast_id) =>
+              case VerHandle(null, null, null, _) =>
                 /** There were no messages produced during verification. */
                 Source.empty[Envelope]
               case _ =>
@@ -240,7 +239,6 @@ trait VerificationServer extends Post {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
     isRunning = false
-    println("VerificationServer.stop()")
     getInterruptFutureList().transform(r => {
       _termActor ! Terminator.Exit
       r match {
@@ -258,13 +256,6 @@ trait VerificationServer extends Post {
   protected def getInterruptFutureList(): Future[List[String]] = {
     implicit val askTimeout: Timeout = Timeout(1000 milliseconds)
     val handles = ver_jobs.jobHandles ++ ast_jobs.jobHandles
-    if (handles.nonEmpty) {
-      try {
-        throw new RuntimeException(s"interrupting non-empty jobs: ${handles.map(_._1).mkString(", ")}")
-      } catch {
-        case e => e.printStackTrace()
-      }
-    }
     val interrupt_future_list: List[Future[String]] = handles map {
       case (_, handle_future) =>
         handle_future.flatMap {

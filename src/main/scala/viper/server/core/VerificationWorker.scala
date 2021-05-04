@@ -16,8 +16,6 @@ import viper.silver.reporter.{Reporter, _}
 import viper.silver.verifier.{AbstractVerificationError, VerificationResult, _}
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.{ExecutionContext, Future}
-import scala.language.postfixOps
 
 class ViperServerException extends Exception
 case class ViperServerWrongTypeException(name: String) extends ViperServerException {
@@ -44,7 +42,7 @@ class VerificationWorker(override val logger: Logger,
         classOf[ch.qos.logback.classic.Logger])
       Some(constructor.newInstance(rep, logger))
     } catch {
-      case e: ClassNotFoundException => None
+      case _: ClassNotFoundException => None
     })
     match {
       case Some(instance) if instance.isInstanceOf[SilFrontend] =>
@@ -61,18 +59,18 @@ class VerificationWorker(override val logger: Logger,
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
-          backend = new ViperBackend(new SiliconFrontend(new ActorReporter("silicon", logger), logger), program)
+          backend = new ViperBackend(new SiliconFrontend(new ActorReporter("silicon"), logger), program)
           backend.execute(args)
         case "carbon" :: args =>
           logger.info("Creating new Carbon verification backend.")
-          backend = new ViperBackend(new CarbonFrontend(new ActorReporter("carbon", logger), logger), program)
+          backend = new ViperBackend(new CarbonFrontend(new ActorReporter("carbon"), logger), program)
           backend.execute(args)
         case custom :: args =>
           logger.info(s"Creating new verification backend based on class $custom.")
-          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(custom, logger)).get, program)
+          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(custom)).get, program)
           backend.execute(args)
         case args =>
-          logger.error("invalid arguments: ${args.toString}",
+          logger.error(s"invalid arguments: ${args.toString}",
             "You need to specify the verification backend, e.g., `silicon [args]`")
       }
     } catch {
@@ -99,10 +97,7 @@ class VerificationWorker(override val logger: Logger,
     }
   }
 
-  override def call(): Unit = {
-    // println(">>> VerificationWorker.call()")
-    run()
-  }
+  override def call(): Unit = run()
 }
 
 class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program) {

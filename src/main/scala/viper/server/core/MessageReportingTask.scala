@@ -16,7 +16,7 @@ trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
   def logger: Logger
 
   protected def enqueueMessage(msg: Message): Unit = {
-    super.enqueueMessage(pack(msg), logger)(executor)
+    super.enqueueMessage(pack(msg), logger)
   }
 
   protected def registerTaskEnd(success: Boolean): Unit = {
@@ -24,7 +24,7 @@ trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
   }
 
   // Implementation of the Reporter interface used by the backend.
-  class ActorReporter(tag: String, logger: Logger) extends Reporter {
+  class ActorReporter(tag: String) extends Reporter {
     val name = s"ViperServer_$tag"
 
     def report(msg: Message): Unit = {

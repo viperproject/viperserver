@@ -44,7 +44,7 @@ object Common {
       CompletableFuture.completedFuture(endingMatches)
     } else { // need to refresh endings and then compare
       Log.debug("Refreshing the viper file endings.")
-      refreshEndings().thenApply(a => {
+      refreshEndings().thenApply(_ => {
         if (areEndingsDefined) {
           println("Endings are defined!")
           viperFileEndings.foreach(s => s.drop(1))

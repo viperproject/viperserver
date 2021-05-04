@@ -307,11 +307,11 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case _ => JsString("<undefined>")
       }),
       "scopeStart" -> (obj.scope match {
-        case Some(s) => JsString(s.start.line + ":" + s.start.column)
+        case Some(s) => JsString(s"${s.start.line}:${s.start.column}")
         case _ => JsString("global")
       }),
       "scopeEnd" -> (obj.scope match {
-        case Some(s) if s.end.isDefined => JsString(s.end.get.line + ":" + s.end.get.column)
+        case Some(s) if s.end.isDefined => JsString(s"${s.end.get.line}:${s.end.get.column}")
         case _ => JsString("global")
       }))
   })
@@ -408,9 +408,9 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val jsonStreamingSupport: JsonEntityStreamingSupport = {
-    val start = ByteString("")
+    // val start = ByteString("")
     val between = ByteString("\n")
-    val end = ByteString("")
+    // val end = ByteString("")
 
     val compactArrayRendering: Flow[ByteString, ByteString, NotUsed] = Flow[ByteString].intersperse(between)
     // Method withFramingRendererFlow: Java DSL overrides Scala DSL. Who knows why? Use .asJava as a workaround.

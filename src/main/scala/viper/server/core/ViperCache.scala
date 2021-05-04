@@ -82,7 +82,7 @@ object ViperCache extends Cache {
     //create a new VerificationError that only differs in the Position of the offending Node
     //the cast is fine, because the offending Nodes are supposed to be ErrorNodes
     val updatedOffendingNode = updatePosition(error.error.offendingNode, offendingNode.get.pos).asInstanceOf[errors.ErrorNode]
-    val updatedReasonOffendingNode = updatePosition(error.error.reason.offendingNode, reasonOffendingNode.get.pos).asInstanceOf[errors.ErrorNode]
+    // val updatedReasonOffendingNode = updatePosition(error.error.reason.offendingNode, reasonOffendingNode.get.pos).asInstanceOf[errors.ErrorNode]
     //TODO: how to also update the position of error.error.reason.offendingNode?
     val updatedError = error.error.withNode(updatedOffendingNode).asInstanceOf[AbstractVerificationError]
     setCached(updatedError)

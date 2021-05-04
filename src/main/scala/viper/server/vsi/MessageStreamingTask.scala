@@ -54,7 +54,7 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
     * which  will eventually indicate whether or not the offer was successful. This method is
     * blocking, as it waits for the successful completion of such an offer.
     * */
-  protected def enqueueMessage(msg: Envelope, logger: Logger)(implicit executor: VerificationExecutionContext): Unit = {
+  protected def enqueueMessage(msg: Envelope, logger: Logger): Unit = {
     assert(!hasEnded)
     logger.trace(s"enqueueMessage: $msg")
     implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
@@ -87,11 +87,6 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
     assert(!hasEnded)
     hasEnded = true
     logger.trace(s"registerTaskEnd: $success")
-    try {
-      throw new RuntimeException("MessageStreamingTask: registerTaskEnd")
-    } catch {
-      case e => e.printStackTrace()
-    }
     q_actor ! TaskProtocol.FinalBackendReport(success)
   }
 }

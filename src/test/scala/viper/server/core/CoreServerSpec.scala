@@ -8,7 +8,7 @@ package viper.server.core
 
 import java.nio.file.Paths
 
-import akka.actor.{Actor, Props}
+import akka.actor.{Actor, Props, Status}
 import akka.pattern.ask
 import akka.util.Timeout
 import org.scalatest.exceptions.TestFailedException
@@ -22,7 +22,7 @@ import viper.silver.logger.SilentLogger
 import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessage, OverallSuccessMessage}
 
 import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 import scala.util.{Failure, Success, Try}
 import scala.language.postfixOps
 
@@ -86,6 +86,8 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
                  afterStop: (ViperCoreServer, VerificationExecutionContext) => Future[Assertion] = (_, _) => Future.successful(Succeeded)): Assertion = {
     // create a new execution context for each ViperCoreServer instance which keeps the tests independent since
     val verificationContext = new DefaultVerificationExecutionContext()
+    // note that using a single log file per unit test seems to work, however there is an overlap that not only the
+    // output of the current but also the next test case ends up in the following file:
     val logFile = Paths.get("logs", s"viperserver_journal_${System.currentTimeMillis()}.log").toFile
     logFile.getParentFile.mkdirs
     logFile.createNewFile()
@@ -329,36 +331,39 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     })
 
     object ClientActor {
-      case object Terminate
       case object ReportOutcome
-      def props(test_no: Int, executionContext: VerificationExecutionContext): Props = Props(new ClientActor(test_no)(executionContext))
+      def props(): Props = Props(new ClientActor())
     }
 
-    class ClientActor(private val test_no: Int)(executionContext: VerificationExecutionContext) extends Actor {
+    class ClientActor() extends Actor {
 
       private var outcome: Option[Boolean] = None
+      private val outcomePromise: Promise[Boolean] = Promise()
 
       override def receive: PartialFunction[Any, Unit] = {
         case m: Message =>
           m match {
-            case _: OverallSuccessMessage =>
-              outcome = Some(true)
-            case _: OverallFailureMessage =>
-              outcome = Some(false)
+            case _: OverallSuccessMessage => outcome = Some(true)
+            case _: OverallFailureMessage => outcome = Some(false)
             case _ =>
           }
         case ClientActor.ReportOutcome =>
-          sender() ! outcome
-        case ClientActor.Terminate =>
-          executionContext.actorSystem.terminate()
-        case Success =>
-        // Success is sent when the stream is completed
+          sender() ! outcomePromise.future
+        case Status.Success =>
+          // Success is sent when the stream is completed
+          if (outcome.isEmpty) {
+            // we should have received an overall message by now
+            outcomePromise.failure(new RuntimeException("expected to receive an overall verification message but received none so far"))
+          } else {
+            outcomePromise.success(outcome.get)
+          }
+        case Status.Failure(f) => outcomePromise.failure(f)
       }
     }
 
     s"be able to verify multiple programs with caching disabled and retrieve results via `streamMessages()`" in withServer({ (core, context) =>
       implicit val ctx: VerificationExecutionContext = context
-      val test_actors = 0 to 2 map ((i: Int) => context.actorSystem.actorOf(ClientActor.props(i, context)))
+      val test_actors = 0 to 2 map (_ => context.actorSystem.actorOf(ClientActor.props()))
       val jids = files.map(file => verifySiliconWithoutCaching(core, file))
       // stream messages to actors
       val jidsWithActors = jids zip test_actors
@@ -370,18 +375,18 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
         // as soon as stream completes, complete it with the actor
         streamDoneFuture.map(_ => actor)
       }
-      // streamState futures should eventually be resolved
+      // streamDones futures should eventually be resolved
       val allVerificationsFuture = waitForAll(streamDones) // Future.sequence(streamDones)
       val outcomesFuture = allVerificationsFuture.flatMap(actors => {
         val outcomeFutures = actors.map(actor => {
           implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-          (actor ? ClientActor.ReportOutcome).mapTo[Option[Boolean]]
+          (actor ? ClientActor.ReportOutcome).mapTo[Future[Boolean]].flatten
         })
         // Future.sequence(outcomeFutures)
         waitForAll(outcomeFutures)
       })
       val assertionsFuture = outcomesFuture.map(_.zip(files) map { case (outcome, file) =>
-        assert(outcome.contains(file != ver_error_file))
+        assert(outcome == (file != ver_error_file))
       })
       // map assertionsFuture to a single assertion:
       assertionsFuture.map(_ => Succeeded)

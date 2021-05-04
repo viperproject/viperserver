@@ -113,11 +113,6 @@ class ViperServerService(args: Array[String])(override implicit val executor: Ve
   }
 
   def stopVerification(jid: VerJobId): CFuture[Boolean] = {
-    try {
-      throw new RuntimeException("stopVerification")
-    } catch {
-      case e => e.printStackTrace()
-    }
     ver_jobs.lookupJob(jid) match {
       case Some(handle_future) =>
         handle_future.flatMap(handle => {
