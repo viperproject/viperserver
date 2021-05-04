@@ -1,4 +1,6 @@
-![Scala CI](https://github.com/viperproject/viperserver/workflows/Scala%20CI/badge.svg?branch=master)
+[![Test Status](https://github.com/viperproject/viperserver/actions/workflows/scala.yml/badge.svg?branch=master)](https://github.com/viperproject/viperserver/actions/workflows/scala.yml?query=branch%3Amaster)
+[![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](./LICENSE)
+
 
 # README #
 
