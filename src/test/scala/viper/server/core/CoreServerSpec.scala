@@ -146,7 +146,8 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       assert(jid != null)
       assert(jid.id >= 0)
       val messages_future = ViperCoreServerUtils.getMessagesFuture(core, jid)(context).map { _ => Succeeded }(context)
-      Future.successful(assert(messages_future != null))
+      assert(messages_future != null)
+      messages_future
     }, (core, _) => {
       // verify after calling `stop()` should fail:
       Future.successful(assertThrows[IllegalStateException] {

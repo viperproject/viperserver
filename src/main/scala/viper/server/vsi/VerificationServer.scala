@@ -241,6 +241,7 @@ trait VerificationServer extends Post {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
     isRunning = false
+    println("VerificationServer.stop()")
     getInterruptFutureList().transform(r => {
       _termActor ! Terminator.Exit
       r match {
@@ -257,8 +258,16 @@ trait VerificationServer extends Post {
     */
   protected def getInterruptFutureList(): Future[List[String]] = {
     implicit val askTimeout: Timeout = Timeout(1000 milliseconds)
-    val interrupt_future_list: List[Future[String]] = (ver_jobs.jobHandles ++ ast_jobs.jobHandles) map {
-      case (jid, handle_future) =>
+    val handles = ver_jobs.jobHandles ++ ast_jobs.jobHandles
+    if (handles.nonEmpty) {
+      try {
+        throw new RuntimeException(s"interrupting non-empty jobs: ${handles.map(_._1).mkString(", ")}")
+      } catch {
+        case e => e.printStackTrace()
+      }
+    }
+    val interrupt_future_list: List[Future[String]] = handles map {
+      case (_, handle_future) =>
         handle_future.flatMap {
           case AstHandle(actor, _, _, _) =>
             (actor ? VerificationProtocol.StopAstConstruction).mapTo[String]
