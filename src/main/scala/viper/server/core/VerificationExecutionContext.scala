@@ -93,7 +93,7 @@ class ViperServerThread(group: ThreadGroup, target: Runnable, name: String, stac
     try {
       throw new RuntimeException("interrupting ViperServerThread")
     } catch {
-      case e => e.printStackTrace()
+      case e => // e.printStackTrace()
     }
     super.interrupt()
   }
