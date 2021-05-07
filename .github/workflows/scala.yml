@@ -269,7 +269,7 @@ jobs:
   create-stable-release:
     # this job creates a stable draft-release and set viperserver.jar as artifacts
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'stable'
-    needs: [build-and-test]
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Download ViperServer skinny JARs
