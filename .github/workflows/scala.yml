@@ -169,24 +169,24 @@ jobs:
       - name: Download Z3 4.8.6 (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
         run: |
-          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-ubuntu-16.04.zip --output /z3.zip
-          unzip /z3.zip -d z3/
+          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-ubuntu-16.04.zip --output z3.zip
+          unzip z3.zip -d z3/
           echo "z3/z3-4.8.6-x64-ubuntu-16.04/bin" >> $GITHUB_PATH
         shell: bash
 
       - name: Download Z3 4.8.6 (macOS)
         if: startsWith(matrix.os, 'macos')
         run: |
-          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-osx-10.14.6.zip --output /z3.zip
-          unzip /z3.zip -d z3/
+          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-osx-10.14.6.zip --output z3.zip
+          unzip z3.zip -d z3/
           echo "z3/z3-4.8.6-x64-osx-10.14.6/bin" >> $GITHUB_PATH
         shell: bash
 
       - name: Download Z3 4.8.6 (Windows)
         if: startsWith(matrix.os, 'windows')
         run: |
-          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-win.zip --output /z3.zip
-          unzip /z3.zip -d z3/
+          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-win.zip --output z3.zip
+          unzip z3.zip -d z3/
           echo "z3/z3-4.8.6-x64-win/bin" >> $GITHUB_PATH
         shell: bash
 
