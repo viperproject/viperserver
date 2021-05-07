@@ -172,7 +172,9 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     })
 
     s"be able to verify a single program with weird program ID" in withServer({ (core, context) =>
-      // this test case checks that Silicon does not try to interpret programID and then fails because of an unexpected `:` character:
+      // this test case checks that Silicon does not try to interpret programID and then fails because of an
+      // unexpected `:` character.
+      // note that this used to fail only on Windows.
       val programID = """_programID_d:\a\gobra-ide\gobra-ide\gobra-ide\client\src\test\data\failing_post.go"""
       val silicon_without_caching: SiliconConfig = SiliconConfig(List("--disableCaching"))
       val jid = core.verify(programID, silicon_without_caching, getAstByFileName(ver_error_file))
