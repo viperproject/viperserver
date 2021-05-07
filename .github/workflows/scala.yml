@@ -203,7 +203,6 @@ jobs:
       - name: Test ViperServer
         run: java -Xss128m -cp viperserver-test.jar org.scalatest.run viper.server.core.CoreServerSpec
         working-directory: viperserver
-        shell: bash
 
 
   create-nightly-release:
