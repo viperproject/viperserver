@@ -160,6 +160,13 @@ jobs:
         with:
           path: viperserver
 
+      # we need to checkout the silicon repo to have access to the logback configuration file
+      - name: Checkout Silicon
+        uses: actions/checkout@v2
+        with:
+          repository: viperproject/silicon
+          path: silicon
+
       - name: Download ViperServer test fat JAR
         uses: actions/download-artifact@v2
         with:
@@ -204,7 +211,7 @@ jobs:
         run: z3 -version
 
       - name: Test ViperServer
-        run: java -Xss128m -cp viperserver-test.jar org.scalatest.run viper.server.core.CoreServerSpec
+        run: java -Xss128m -Dlogback.configurationFile=$GITHUB_WORKSPACE/silicon/src/main/resources/logback.xml -cp viperserver-test.jar org.scalatest.tools.Runner -R target/scala-2.13/test-classes -o
         working-directory: viperserver
 
 
