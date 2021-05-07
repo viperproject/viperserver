@@ -214,6 +214,7 @@ jobs:
       # thus, the test suites have to be explicitly mentioned
       - name: Test ViperServer
         run: java -Xss128m -Dlogback.configurationFile=$GITHUB_WORKSPACE/silicon/src/main/resources/logback.xml -cp viperserver-test.jar org.scalatest.tools.Runner -R viperserver-test.jar -o -s viper.server.core.AstGenerationTests -s viper.server.core.CoreServerSpec -s viper.server.core.ViperServerHttpSpec
+        shell: bash
         working-directory: viperserver
 
       - name: Upload log files
