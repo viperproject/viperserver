@@ -26,16 +26,12 @@ on:
 
 
 jobs:
-  build-and-test:
+  build:
     # build is the base job on which all other jobs depend
     # we enforce here that the nightly build job only runs in the main repo:
     if: (github.event_name == 'schedule' && github.repository == 'viperproject/viperserver') || (github.event_name != 'schedule')
-    strategy:
-      # tests should not be stopped when they fail on one of the OSes:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    container: viperproject/viperserver:v3_z3_4.8.6
     steps:
       - name: Checkout ViperServer
         uses: actions/checkout@v2
@@ -56,17 +52,6 @@ jobs:
         with:
           repository: viperproject/carbon
           path: carbon
-
-      - name: Install OpenJDK 11 and SBT
-        uses: olafurpg/setup-scala@v10
-        with:
-          java-version: openjdk@1.11
-
-      - name: Install Z3 4.8.6
-        uses: pavpanchekha/setup-z3@1.2.2
-        with:
-          version: 4.8.6
-          architecture: x64
 
       - name: Java Version
         run: java --version
@@ -126,39 +111,105 @@ jobs:
           path: viperserver/logs
 
       - name: Assemble ViperServer skinny JARs
-        if: startsWith(matrix.os, 'ubuntu')
         run: sbt stage
         working-directory: viperserver
 
       - name: Zip skinny JARs
-        if: startsWith(matrix.os, 'ubuntu')
         run: zip -r ../../../../viperserver-skinny-jars.zip ./*
         working-directory: viperserver/target/universal/stage/lib
 
       - name: Upload ViperServer skinny JARs
-        if: startsWith(matrix.os, 'ubuntu')
         uses: actions/upload-artifact@v2
         with:
           name: viperserver-skinny-jars
           path: viperserver/viperserver-skinny-jars.zip
 
       - name: Assemble ViperServer fat JAR
-        if: startsWith(matrix.os, 'ubuntu')
         run: sbt "set test in assembly := {}" clean assembly
         working-directory: viperserver
 
       - name: Upload ViperServer fat JAR
-        if: startsWith(matrix.os, 'ubuntu')
         uses: actions/upload-artifact@v2
         with:
           name: viperserver-fat-jar
           path: viperserver/target/scala-2.13/viperserver.jar
 
+      - name: Assemble ViperServer test fat JAR
+        run: sbt clean test:assembly
+        working-directory: viperserver
+
+      - name: Upload ViperServer test fat JAR
+        uses: actions/upload-artifact@v2
+        with:
+          name: viperserver-test-fat-jar
+          path: viperserver/target/scala-2.13/viperserver-test.jar
+
+
+  test:
+    needs: build
+    strategy:
+      # tests should not be stopped when they fail on one of the OSes:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # we need to checkout the repo to have access to the test files
+      - name: Checkout ViperServer
+        uses: actions/checkout@v2
+        with:
+          path: viperserver
+
+      - name: Download ViperServer test fat JAR
+        uses: actions/download-artifact@v2
+        with:
+          name: viperserver-test-fat-jar
+          path: viperserver
+
+      - name: Download Z3 4.8.6 (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-ubuntu-16.04.zip --output /z3.zip
+          unzip /z3.zip -d z3/
+          echo "z3/z3-4.8.6-x64-ubuntu-16.04/bin" >> $GITHUB_PATH
+        shell: bash
+
+      - name: Download Z3 4.8.6 (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-osx-10.14.6.zip --output /z3.zip
+          unzip /z3.zip -d z3/
+          echo "z3/z3-4.8.6-x64-osx-10.14.6/bin" >> $GITHUB_PATH
+        shell: bash
+
+      - name: Download Z3 4.8.6 (Windows)
+        if: startsWith(matrix.os, 'windows')
+        run: |
+          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-win.zip --output /z3.zip
+          unzip /z3.zip -d z3/
+          echo "z3/z3-4.8.6-x64-win/bin" >> $GITHUB_PATH
+        shell: bash
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v1.4.3
+        with:
+          java-version: '11'
+
+      - name: Java Version
+        run: java --version
+      - name: Z3 Version
+        run: z3 -version
+
+      - name: Test ViperServer
+        run: java -Xss128m -cp viperserver-test.jar org.scalatest.run viper.server.core.CoreServerSpec
+        working-directory: viperserver
+        shell: bash
+
 
   create-nightly-release:
     # this job creates a new nightly pre-release, set viperserver.jar as artifacts, and deletes old releases
     if: (github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'nightly') || github.event_name == 'schedule'
-    needs: build-and-test
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Download ViperServer skinny JARs
