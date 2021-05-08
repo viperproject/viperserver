@@ -50,14 +50,15 @@ jobs:
       # tests should not be stopped when they fail on one of the configurations:
       fail-fast: false
       matrix:
+        # note that the same names are also used in the `test` job and they have to match!
+        # also note that some steps depend on one name containing the term `release` and the other one not.
+        name: [latest-master, latest-release]
         include:
-          # note that the same names are also used in the `test` job and they have to match!
-          # also note that some steps depend on one name containing the term `release` and the other one not.
-          - name: "latest-master"
+          - name: latest-master
             silver-ref: "master"
             silicon-ref: "master"
             carbon-ref: "master"
-          - name: "latest-release"
+          - name: latest-release
             silver-ref: "v.21.01-release"
             silicon-ref: "v.21.01-release"
             carbon-ref: "v.21.01-release"
@@ -190,9 +191,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
-        include:
-          - name: "latest-master"
-          - name: "latest-release"
+        name: [latest-master, latest-release]
     runs-on: ${{ matrix.os }}
     steps:
       # we need to checkout the repo to have access to the test files
