@@ -25,6 +25,20 @@ on:
     - cron: '0 7 * * *' # run every day at 07:00 UTC
 
 
+# some remarks about the high-level structure of this CI script:
+# - build
+# `build` builds and tests ViperServer using sbt. It runs in two configurations, once using master branch of silver,
+# silicon, and carbon and a second time using the latest release tags (as specified in the matrix).
+# Both configurations produce a JAR that contains the ViperServer tests. However, only the second configuration produces
+# and uploads a version file describing the used commits of the dependencies as well as a skinny and fat JAR of
+# ViperServer (not containing any tests).
+# - test
+# `test` takes both ViperServer JARs that include tests and executes them on Ubuntu, macOS, and Windows.
+# - create-nightly-release, create-stable-release
+# both only take the JARs produced the release configuration of the `build` job and create a nightly release or a draft
+# of a stable release containing the JARs. Both can be triggered with a manual dispatch and the nightly job runs every
+# night.
+
 jobs:
   build:
     # build is the base job on which all other jobs depend
@@ -32,6 +46,21 @@ jobs:
     if: (github.event_name == 'schedule' && github.repository == 'viperproject/viperserver') || (github.event_name != 'schedule')
     runs-on: ubuntu-latest
     container: viperproject/viperserver:v3_z3_4.8.6
+    strategy:
+      # tests should not be stopped when they fail on one of the configurations:
+      fail-fast: false
+      matrix:
+        include:
+          # note that the same names are also used in the `test` job and they have to match!
+          # also note that some steps depend on one name containing the term `release` and the other one not.
+          - name: "latest-master"
+            silver-ref: "master"
+            silicon-ref: "master"
+            carbon-ref: "master"
+          - name: "latest-release"
+            silver-ref: "v.21.01-release"
+            silicon-ref: "v.21.01-release"
+            carbon-ref: "v.21.01-release"
     steps:
       - name: Checkout ViperServer
         uses: actions/checkout@v2
@@ -41,16 +70,19 @@ jobs:
         uses: actions/checkout@v2
         with:
           repository: viperproject/silver
+          ref: ${{ matrix.silver-ref }}
           path: silver
       - name: Checkout Silicon
         uses: actions/checkout@v2
         with:
           repository: viperproject/silicon
+          ref: ${{ matrix.silicon-ref }}
           path: silicon
       - name: Checkout Carbon
         uses: actions/checkout@v2
         with:
           repository: viperproject/carbon
+          ref: ${{ matrix.carbon-ref }}
           path: carbon
 
       - name: Java Version
@@ -66,6 +98,7 @@ jobs:
           echo "Silver: commit $(git -C silver rev-parse HEAD)" >> versions.txt
         # first line overwrites versions.txt in case it already exists, all other append to the file
       - name: Upload version file
+        if: contains(matrix.name, 'release')
         uses: actions/upload-artifact@v2
         with:
           name: versions.txt
@@ -107,28 +140,33 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: TestLogs
+          name: TestLogs-${{ matrix.name }}
           path: viperserver/logs
 
       - name: Assemble ViperServer skinny JARs
+        if: contains(matrix.name, 'release')
         run: sbt stage
         working-directory: viperserver
 
       - name: Zip skinny JARs
+        if: contains(matrix.name, 'release')
         run: zip -r ../../../../viperserver-skinny-jars.zip ./*
         working-directory: viperserver/target/universal/stage/lib
 
       - name: Upload ViperServer skinny JARs
+        if: contains(matrix.name, 'release')
         uses: actions/upload-artifact@v2
         with:
           name: viperserver-skinny-jars
           path: viperserver/viperserver-skinny-jars.zip
 
       - name: Assemble ViperServer fat JAR
+        if: contains(matrix.name, 'release')
         run: sbt "set test in assembly := {}" clean assembly
         working-directory: viperserver
 
       - name: Upload ViperServer fat JAR
+        if: contains(matrix.name, 'release')
         uses: actions/upload-artifact@v2
         with:
           name: viperserver-fat-jar
@@ -141,7 +179,7 @@ jobs:
       - name: Upload ViperServer test fat JAR
         uses: actions/upload-artifact@v2
         with:
-          name: viperserver-test-fat-jar
+          name: viperserver-test-${{ matrix.name }}-fat-jar
           path: viperserver/target/scala-2.13/viperserver-test.jar
 
 
@@ -152,6 +190,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
+        include:
+          - name: "latest-master"
+          - name: "latest-release"
     runs-on: ${{ matrix.os }}
     steps:
       # we need to checkout the repo to have access to the test files
@@ -161,6 +202,7 @@ jobs:
           path: viperserver
 
       # we need to checkout the silicon repo to have access to the logback configuration file
+      # as we do not use anything else except the logback config, we simply take the latest master branch (in all configurations)
       - name: Checkout Silicon
         uses: actions/checkout@v2
         with:
@@ -170,7 +212,7 @@ jobs:
       - name: Download ViperServer test fat JAR
         uses: actions/download-artifact@v2
         with:
-          name: viperserver-test-fat-jar
+          name: viperserver-test-${{ matrix.name }}-fat-jar
           path: viperserver
 
       - name: Download Z3 4.8.6 (Ubuntu)
@@ -221,7 +263,7 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: TestLogs-${{ runner.os }}
+          name: TestLogs-${{ matrix.name }}-${{ runner.os }}
           path: viperserver/logs
 
 
