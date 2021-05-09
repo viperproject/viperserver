@@ -29,15 +29,14 @@ on:
 # - build
 # `build` builds and tests ViperServer using sbt. It runs in two configurations, once using master branch of silver,
 # silicon, and carbon and a second time using a particular tag or commit (as specified in the matrix).
-# Both configurations produce a JAR that contains the ViperServer tests. However, only the second configuration produces
-# and uploads a version file describing the used commits of the dependencies as well as a skinny and fat JAR of
-# ViperServer (not containing any tests).
 # - test
 # `test` takes both ViperServer JARs that include tests and executes them on Ubuntu, macOS, and Windows.
-# - create-nightly-release, create-stable-release
-# both only take the JARs produced the release configuration of the `build` job and create a nightly release or a draft
-# of a stable release containing the JARs. Both can be triggered with a manual dispatch and the nightly job runs every
-# night.
+# - create-nightly-release
+# takes the fat and skinny JARs produced by configuration `latest` during `build` job and creates a nightly release with
+# them. This job automatically runs every night.
+# - create-stable-release
+# takes the fat and skinny JARs produced by configuration `release` during `build` job and creates a draft release with
+# them.
 
 jobs:
   build:
@@ -50,8 +49,7 @@ jobs:
       # tests should not be stopped when they fail on one of the configurations:
       fail-fast: false
       matrix:
-        # note that the same names are also used in the `test` job and they have to match!
-        # also note that some steps depend on one name containing the term `release` and the other one not.
+        # note that the same names are also used in all other jobs and they have to match!
         name: [latest, release]
         include:
           - name: latest
@@ -100,10 +98,9 @@ jobs:
           echo "Silver: commit $(git -C silver rev-parse HEAD)" >> versions.txt
         # first line overwrites versions.txt in case it already exists, all other append to the file
       - name: Upload version file
-        if: contains(matrix.name, 'release')
         uses: actions/upload-artifact@v2
         with:
-          name: versions.txt
+          name: versions-${{ matrix.name }}.txt
           path: versions.txt
 
       # create symlinks between and to Viper dependencies:
@@ -146,32 +143,27 @@ jobs:
           path: viperserver/logs
 
       - name: Assemble ViperServer skinny JARs
-        if: contains(matrix.name, 'release')
         run: sbt stage
         working-directory: viperserver
 
       - name: Zip skinny JARs
-        if: contains(matrix.name, 'release')
         run: zip -r ../../../../viperserver-skinny-jars.zip ./*
         working-directory: viperserver/target/universal/stage/lib
 
       - name: Upload ViperServer skinny JARs
-        if: contains(matrix.name, 'release')
         uses: actions/upload-artifact@v2
         with:
-          name: viperserver-skinny-jars
+          name: viperserver-${{ matrix.name }}-skinny-jars
           path: viperserver/viperserver-skinny-jars.zip
 
       - name: Assemble ViperServer fat JAR
-        if: contains(matrix.name, 'release')
         run: sbt "set test in assembly := {}" clean assembly
         working-directory: viperserver
 
       - name: Upload ViperServer fat JAR
-        if: contains(matrix.name, 'release')
         uses: actions/upload-artifact@v2
         with:
-          name: viperserver-fat-jar
+          name: viperserver-${{ matrix.name }}-fat-jar
           path: viperserver/target/scala-2.13/viperserver.jar
 
       - name: Assemble ViperServer test fat JAR
@@ -272,23 +264,26 @@ jobs:
     if: (github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'nightly') || github.event_name == 'schedule'
     needs: test
     runs-on: ubuntu-latest
+    env:
+      # specifies that `latest` artifacts from `build` job should be used for nightly releases:
+      NAME: latest # has to match matrix.name in `build` job
     steps:
       - name: Download ViperServer skinny JARs
         uses: actions/download-artifact@v2
         with:
-          name: viperserver-skinny-jars
+          name: viperserver-${{ env.NAME }}-skinny-jars
           path: deploy
 
       - name: Download ViperServer fat JAR
         uses: actions/download-artifact@v2
         with:
-          name: viperserver-fat-jar
+          name: viperserver-${{ env.NAME }}-fat-jar
           path: deploy
 
       - name: Download version file
         uses: actions/download-artifact@v2
         with:
-          name: versions.txt
+          name: versions-${{ env.NAME }}.txt
 
       - name: Create release tag
         shell: bash
@@ -332,23 +327,26 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'stable'
     needs: test
     runs-on: ubuntu-latest
+    env:
+      # specifies that `release` artifacts from `build` job should be used for stable releases:
+      NAME: release # has to match matrix.name in `build` job
     steps:
       - name: Download ViperServer skinny JARs
         uses: actions/download-artifact@v2
         with:
-          name: viperserver-skinny-jars
+          name: viperserver-${{ env.NAME }}-skinny-jars
           path: deploy
 
       - name: Download ViperServer fat JAR
         uses: actions/download-artifact@v2
         with:
-          name: viperserver-fat-jar
+          name: viperserver-${{ env.NAME }}-fat-jar
           path: deploy
 
       - name: Download version file
         uses: actions/download-artifact@v2
         with:
-          name: versions.txt
+          name: versions-${{ env.NAME }}.txt
 
       - name: Create stable draft-release
         id: create_release
