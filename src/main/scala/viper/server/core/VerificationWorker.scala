@@ -27,8 +27,8 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
 
 case class ViperEnvelope(m: Message) extends Envelope
 
-class VerificationWorker(val programId: String,
-                         override val logger: Logger,
+class VerificationWorker(override val logger: Logger,
+                         private val programId: String,
                          private val command: List[String],
                          private val program: Program)
                         (override val executor: VerificationExecutionContext)

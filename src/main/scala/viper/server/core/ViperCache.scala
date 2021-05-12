@@ -13,7 +13,7 @@ import viper.server.vsi._
 import viper.silver.ast.{Add, And, AnonymousDomainAxiom, AnySetCardinality, AnySetContains, AnySetIntersection, AnySetMinus, AnySetSubset, AnySetUnion, Apply, Applying, Assert, Cached, CondExp, ConsInfo, CurrentPerm, Div, Domain, DomainFunc, DomainFuncApp, EmptyMultiset, EmptySeq, EmptySet, EpsilonPerm, EqCmp, Exhale, Exists, ExplicitMultiset, ExplicitSeq, ExplicitSet, FalseLit, Field, FieldAccess, FieldAccessPredicate, FieldAssign, Fold, ForPerm, Forall, FractionalPerm, FullPerm, FuncApp, Function, GeCmp, Goto, GtCmp, Hashable, If, Implies, Inhale, InhaleExhaleExp, IntLit, IntPermMul, Label, LabelledOld, LeCmp, Let, LocalVar, LocalVarAssign, LocalVarDecl, LocalVarDeclStmt, LtCmp, MagicWand, Method, MethodCall, Minus, Mod, Mul, NamedDomainAxiom, NeCmp, NewStmt, NoPerm, Node, Not, NullLit, Old, Or, Package, PermAdd, PermDiv, PermGeCmp, PermGtCmp, PermLeCmp, PermLtCmp, PermMinus, PermMul, PermSub, Position, Predicate, PredicateAccess, PredicateAccessPredicate, Program, RangeSeq, SeqAppend, SeqContains, SeqDrop, SeqIndex, SeqLength, SeqTake, SeqUpdate, Seqn, Sub, Trigger, TrueLit, Unfold, Unfolding, While, WildcardPerm}
 import viper.silver.utility.CacheHelper
 import viper.silver.verifier.errors._
-import viper.silver.verifier.{AbstractVerificationError, VerificationError, errors}
+import viper.silver.verifier.{AbstractVerificationError, ErrorReason, VerificationError, errors}
 
 import scala.annotation.tailrec
 import scala.collection.mutable.{Map => MutableMap}
@@ -80,12 +80,13 @@ object ViperCache extends Cache {
     }
 
     //create a new VerificationError that only differs in the Position of the offending Node
-    //the cast is fine, because the offending Nodes are supposed to be ErrorNodes
+    //the casts are fine, because the offending Nodes are supposed to be ErrorNodes
     val updatedOffendingNode = updatePosition(error.error.offendingNode, offendingNode.get.pos).asInstanceOf[errors.ErrorNode]
-    // val updatedReasonOffendingNode = updatePosition(error.error.reason.offendingNode, reasonOffendingNode.get.pos).asInstanceOf[errors.ErrorNode]
-    //TODO: how to also update the position of error.error.reason.offendingNode?
+    val updatedReasonOffendingNode = updatePosition(error.error.reason.offendingNode, reasonOffendingNode.get.pos).asInstanceOf[errors.ErrorNode]
     val updatedError = error.error.withNode(updatedOffendingNode).asInstanceOf[AbstractVerificationError]
-    setCached(updatedError)
+    val updatedReason = error.error.reason.withNode(updatedReasonOffendingNode).asInstanceOf[ErrorReason]
+    val updatedErrorAndReason = updatedError.withReason(updatedReason)
+    setCached(updatedErrorAndReason)
   }
 
   def setCached(error: AbstractVerificationError): AbstractVerificationError = {
