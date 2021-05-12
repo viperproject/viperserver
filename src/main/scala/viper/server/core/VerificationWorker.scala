@@ -27,10 +27,10 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
 
 case class ViperEnvelope(m: Message) extends Envelope
 
-class VerificationWorker(override val logger: Logger,
+class VerificationWorker(private val command: List[String],
                          private val programId: String,
-                         private val command: List[String],
-                         private val program: Program)
+                         private val program: Program,
+                         override val logger: Logger)
                         (override val executor: VerificationExecutionContext)
   extends MessageReportingTask[Unit] {
 

@@ -78,7 +78,7 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
         val task_backend_maybe_fut: Future[Option[VerificationWorker]] =
           handle_future.map((handle: AstHandle[Option[Program]]) => {
             val program_maybe_fut: Future[Option[Program]] = handle.artifact
-            program_maybe_fut.map(_.map(new VerificationWorker(logger.get, programId, args, _)(executor))).recover({
+            program_maybe_fut.map(_.map(new VerificationWorker(args, programId, _, logger.get)(executor))).recover({
               case e: Throwable =>
                 val msg = s"### An exception has occurred while constructing Viper AST: $e"
                 println(msg)
@@ -104,7 +104,7 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
     require(program != null && backend_config != null)
 
     val args: List[String] = backend_config.toList
-    val task_backend = new VerificationWorker(logger.get, programId, args, program)(executor)
+    val task_backend = new VerificationWorker(args, programId, program, logger.get)(executor)
     val ver_id = initializeVerificationProcess(Future.successful(Some(task_backend)), None)
 
     if (ver_id.id >= 0) {
