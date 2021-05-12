@@ -44,14 +44,36 @@ lazy val server = (project in file("."))
         Test / parallelExecution := false,
 
         // Assembly settings
-        assembly / assemblyJarName := "viper.jar",                      // JAR filename
+        assembly / assemblyJarName := "viperserver.jar",                // JAR filename
         assembly / mainClass := Some("viper.server.ViperServerRunner"), // Define JAR's entry point
         assembly / test := {},                                          // Prevent testing before packaging
         assembly / assemblyMergeStrategy := {
-            case "logback.xml" => MergeStrategy.first
+            case LogbackConfigurationFilePattern() => MergeStrategy.first
             case PathList("viper", "silicon", "BuildInfo$.class") => MergeStrategy.first
             case x =>
                 val fallbackStrategy = (assembly / assemblyMergeStrategy).value
                 fallbackStrategy(x)
+        },
+
+        // Test settings
+        // [2020-10-12 MS]
+        //   When assembling a fat test JAR (test:assembly), the files under
+        //   src/test don't end up in the JAR if the next line is missing.
+        //   I'm not sure why that is, or why exactly the next line helps.
+        //   To be investigated.
+        // [2021-03-22 LA]
+        //  If the following line is missing, viperserver-test.jar will not even
+        //  be created.
+        inConfig(Test)(baseAssemblySettings),
+        Test / assembly / assemblyJarName := "viperserver-test.jar",
+        Test / assembly / test := {},
+        Test / assembly / assemblyMergeStrategy := {
+          case LogbackConfigurationFilePattern() => MergeStrategy.discard
+          case n if n.startsWith("LICENSE.txt") => MergeStrategy.discard
+          case x =>
+            val fallbackStrategy = (assembly / assemblyMergeStrategy).value
+            fallbackStrategy(x)
         }
     )
+
+lazy val LogbackConfigurationFilePattern = """logback.*?\.xml""".r

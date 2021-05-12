@@ -33,8 +33,8 @@ class AstGenerator(private val _logger: Logger,
       _logger.error(s"No such file: `$vpr_file_path``")
       throw new NoSuchFileException(vpr_file_path)
     }
-
-    val args: Array[String] = Array(vpr_file_path)
+    
+    val args: Seq[String] = Seq(vpr_file_path)
     _logger.info(s"Parsing `$vpr_file_path` ...")
 
     _frontend.execute(args)

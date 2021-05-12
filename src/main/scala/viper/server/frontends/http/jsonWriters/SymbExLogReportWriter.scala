@@ -47,7 +47,7 @@ object SymbExLogReportWriter {
       )
 
     // TODO: Are ID and bindings needed?
-    case MagicWandChunk(id, bindings, args, snap, perm) =>
+    case MagicWandChunk(_, _, args, snap, perm) =>
       JsObject(
         "type" -> JsString("basic_magic_wand_chunk"),
         "args" -> JsArray(args.map(TermWriter.toJSON).toVector),
@@ -105,7 +105,7 @@ object SymbExLogReportWriter {
     val pcs = record.pcs
 
     val store = JsArray(state.g.values.map({
-      case (v @ AbstractLocalVar(name), value) =>
+      case (AbstractLocalVar(name), value) =>
         JsObject(
           "name" -> JsString(name),
           "value" -> TermWriter.toJSON(value),

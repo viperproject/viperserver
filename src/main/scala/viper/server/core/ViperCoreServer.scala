@@ -8,13 +8,15 @@ package viper.server.core
 
 import akka.Done
 import akka.actor.ActorRef
+import akka.util.Timeout
 import viper.server.ViperConfig
 import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
 import viper.silver.ast.Program
 import viper.silver.logger.ViperLogger
-import viper.server.core.AstConstructionFailureException
 
+import scala.concurrent.duration._
 import scala.concurrent.Future
+import scala.language.postfixOps
 
 class ViperCoreServer(val _args: Array[String])(implicit val executor: VerificationExecutionContext) extends VerificationServer with ViperPost {
 
@@ -23,6 +25,8 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
   // --- VCS : Configuration ---
   protected var _config: ViperConfig = _
   final def config: ViperConfig = _config
+
+  override lazy val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
 
   protected var _logger: ViperLogger = _
   final def logger: ViperLogger = _logger
@@ -33,7 +37,7 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
     * will result in an IllegalStateException.
     * */
   def start(): Unit = {
-    _config = new ViperConfig(_args)
+    _config = new ViperConfig(_args.toIndexedSeq)
     config.verify()
 
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
@@ -43,7 +47,7 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 
     super.start(config.maximumActiveJobs())
-    println(s"ViperCoreServer has started.")
+    logger.get.info(s"ViperCoreServer has started.")
   }
 
   def requestAst(arg_list: List[String]): AstJobId = {
@@ -74,7 +78,7 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
         val task_backend_maybe_fut: Future[Option[VerificationWorker]] =
           handle_future.map((handle: AstHandle[Option[Program]]) => {
             val program_maybe_fut: Future[Option[Program]] = handle.artifact
-            program_maybe_fut.map(_.map(new VerificationWorker(logger.get, args :+ programId, _)(executor))).recover({
+            program_maybe_fut.map(_.map(new VerificationWorker(args, programId, _, logger.get)(executor))).recover({
               case e: Throwable =>
                 val msg = s"### An exception has occurred while constructing Viper AST: $e"
                 println(msg)
@@ -100,7 +104,7 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
     require(program != null && backend_config != null)
 
     val args: List[String] = backend_config.toList
-    val task_backend = new VerificationWorker(logger.get, args :+ programId, program)(executor)
+    val task_backend = new VerificationWorker(args, programId, program, logger.get)(executor)
     val ver_id = initializeVerificationProcess(Future.successful(Some(task_backend)), None)
 
     if (ver_id.id >= 0) {

@@ -49,8 +49,7 @@ case class VerHandle(job_actor: ActorRef,
 }
 
 class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: Int = 3)
-                                         (implicit val jid_fact: Int => S,
-                                          ctx: ExecutionContext) {
+                                         (implicit val jid_fact: Int => S) {
 
   private val _jobHandles: mutable.Map[S, Promise[T]] = mutable.Map()
   private val _jobExecutors: mutable.Map[S, () => Future[T]] = mutable.Map()

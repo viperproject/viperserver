@@ -7,10 +7,10 @@
 package viper.server.vsi
 
 import akka.Done
-import akka.actor.{ActorRef, ActorSystem, PoisonPill}
+import akka.actor.{ActorRef, ActorSystem, PoisonPill, Status}
 import akka.pattern.ask
 import akka.stream.scaladsl.{Keep, Sink, Source}
-import akka.stream.{ActorMaterializer, OverflowStrategy}
+import akka.stream.OverflowStrategy
 import akka.util.Timeout
 import viper.server.core.VerificationExecutionContext
 
@@ -18,7 +18,6 @@ import scala.concurrent.duration._
 import scala.concurrent.Future
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success}
-
 import scala.language.postfixOps
 
 
@@ -47,7 +46,7 @@ trait VerificationServer extends Post {
 
   implicit val executor: VerificationExecutionContext
   implicit val system: ActorSystem = executor.actorSystem
-  implicit val materializer: ActorMaterializer = ActorMaterializer()
+  implicit def askTimeout: Timeout
 
   protected var _termActor: ActorRef = _
 
@@ -96,8 +95,6 @@ trait VerificationServer extends Post {
               Future.successful(VerHandle(null, null, null, prev_job_id_maybe))
           }
         case Some(task) =>
-          implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-
           /** What we really want here is SourceQueueWithComplete[Envelope]
             * Publisher[Envelope] might be needed to create a stream later on,
             * but the publisher and the queue are synchronized are should be viewed
@@ -216,7 +213,7 @@ trait VerificationServer extends Post {
         }) flatMap {
           case (ast_handle_maybe: Option[AstHandle[AST]], ver_handle: VerHandle) =>
             val ver_source = ver_handle match {
-              case VerHandle(null, null, null, ast_id) =>
+              case VerHandle(null, null, null, _) =>
                 /** There were no messages produced during verification. */
                 Source.empty[Envelope]
               case _ =>
@@ -230,7 +227,7 @@ trait VerificationServer extends Post {
                 Source.fromPublisher(ast_handle.publisher)
             }
             val resulting_source = ver_source.prepend(ast_source).map(e => unpack(e))
-            resulting_source.runWith(Sink.actorRef(clientActor, Success))
+            resulting_source.runWith(Sink.actorRef(clientActor, Status.Success, Status.Failure))
 
             // FIXME This assumes that someone will actually complete the verification job queue.
             // FIXME Could we guarantee that the client won't forget to do this?
@@ -266,8 +263,9 @@ trait VerificationServer extends Post {
     */
   protected def getInterruptFutureList(): Future[List[String]] = {
     implicit val askTimeout: Timeout = Timeout(1000 milliseconds)
-    val interrupt_future_list: List[Future[String]] = (ver_jobs.jobHandles ++ ast_jobs.jobHandles) map {
-      case (jid, handle_future) =>
+    val handles = ver_jobs.jobHandles ++ ast_jobs.jobHandles
+    val interrupt_future_list: List[Future[String]] = handles map {
+      case (_, handle_future) =>
         handle_future.flatMap {
           case AstHandle(actor, _, _, _) =>
             (actor ? VerificationProtocol.StopAstConstruction).mapTo[String]

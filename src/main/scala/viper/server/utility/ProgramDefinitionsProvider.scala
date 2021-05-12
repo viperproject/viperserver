@@ -79,7 +79,7 @@ trait ProgramDefinitionsProvider {
               })
             } ++ t.axioms.flatMap { ax =>
               Definition(if (ax.isInstanceOf[NamedDomainAxiom]) ax.asInstanceOf[NamedDomainAxiom].name else "", "Axiom", ax.pos, Some(p)) +: (ax.pos match {
-                case ax_p: AbstractSourcePosition =>
+                case _: AbstractSourcePosition =>
                   ax.exp.deepCollect {
                     case scope:Scope with Positioned =>
                       scope.pos match {
@@ -100,13 +100,13 @@ trait ProgramDefinitionsProvider {
   }
 
   private def countInstances(p: Program): Map[String, Int] = p.members.groupBy({
-    case m: Method => "method"
-    case fu: Function => "function"
-    case p: Predicate => "predicate"
-    case d: Domain => "domain"
-    case fi: Field => "field"
+    case _: Method => "method"
+    case _: Function => "function"
+    case _: Predicate => "predicate"
+    case _: Domain => "domain"
+    case _: Field => "field"
     case _ => "other"
-  }).mapValues(_.size).toMap
+  }).view.mapValues(_.size).toMap
 
   def reportProgramStats(): Unit = {
     val prog = _frontend.program.get

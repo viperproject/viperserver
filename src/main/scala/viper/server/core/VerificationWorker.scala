@@ -9,15 +9,13 @@ package viper.server.core
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
 import viper.server.vsi.Envelope
-import viper.silicon.SiliconFrontend
+import viper.silicon.{Silicon, SiliconFrontend}
 import viper.silver.ast._
 import viper.silver.frontend.{DefaultStates, SilFrontend}
 import viper.silver.reporter.{Reporter, _}
 import viper.silver.verifier.{AbstractVerificationError, VerificationResult, _}
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.{ExecutionContext, Future}
-import scala.language.postfixOps
 
 class ViperServerException extends Exception
 case class ViperServerWrongTypeException(name: String) extends ViperServerException {
@@ -29,9 +27,10 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
 
 case class ViperEnvelope(m: Message) extends Envelope
 
-class VerificationWorker(private val logger: Logger,
-                         private val command: List[String],
-                         private val program: Program)
+class VerificationWorker(private val command: List[String],
+                         private val programId: String,
+                         private val program: Program,
+                         override val logger: Logger)
                         (override val executor: VerificationExecutionContext)
   extends MessageReportingTask[Unit] {
 
@@ -44,7 +43,7 @@ class VerificationWorker(private val logger: Logger,
         classOf[ch.qos.logback.classic.Logger])
       Some(constructor.newInstance(rep, logger))
     } catch {
-      case e: ClassNotFoundException => None
+      case _: ClassNotFoundException => None
     })
     match {
       case Some(instance) if instance.isInstanceOf[SilFrontend] =>
@@ -61,18 +60,18 @@ class VerificationWorker(private val logger: Logger,
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
-          backend = new ViperBackend(new SiliconFrontend(new ActorReporter("silicon"), logger), program)
+          backend = new ViperBackend(new SiliconFrontend(new ActorReporter("silicon"), logger), programId, program)
           backend.execute(args)
         case "carbon" :: args =>
           logger.info("Creating new Carbon verification backend.")
-          backend = new ViperBackend(new CarbonFrontend(new ActorReporter("carbon"), logger), program)
+          backend = new ViperBackend(new CarbonFrontend(new ActorReporter("carbon"), logger), programId, program)
           backend.execute(args)
         case custom :: args =>
           logger.info(s"Creating new verification backend based on class $custom.")
-          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(custom)).get, program)
+          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(custom)).get, programId, program)
           backend.execute(args)
         case args =>
-          logger.error("invalid arguments: ${args.toString}",
+          logger.error(s"invalid arguments: ${args.toString}",
             "You need to specify the verification backend, e.g., `silicon [args]`")
       }
     } catch {
@@ -99,16 +98,12 @@ class VerificationWorker(private val logger: Logger,
     }
   }
 
-  override def call(): Unit = {
-    // println(">>> VerificationWorker.call()")
-    run()
-  }
+  override def call(): Unit = run()
 }
 
-class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program) {
+class ViperBackend(private val _frontend: SilFrontend, private val programId: String, private val _ast: Program) {
 
   def backendName: String = _frontend.verifier.getClass.getName
-  def file: String = _frontend.config.file()
 
   override def toString: String = {
     if ( _frontend.verifier == null )
@@ -120,12 +115,13 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
   /** Run the backend verification functionality
     * */
   def execute(args: Seq[String]): Unit = {
-    val (head, tail) = args.splitAt(args.length-1)
-    val fileless_args = head ++ Seq("--ignoreFile") ++ tail
+    // --ignoreFile is not enough as Silicon still tries to parse the provided filepath unless
+    // the following dummy file is used instead (see Silicon issue #552):
+    val argsWithDummyFilename = args ++ Seq("--ignoreFile", Silicon.dummyInputFilename)
     _frontend.setStartTime()
-    _frontend.setVerifier( _frontend.createVerifier(fileless_args.mkString(" ")) )
+    _frontend.setVerifier( _frontend.createVerifier(argsWithDummyFilename.mkString(" ")) )
 
-    if (!_frontend.prepare(fileless_args)) return
+    if (!_frontend.prepare(argsWithDummyFilename)) return
     _frontend.init( _frontend.verifier )
 
     val temp_result: Option[VerificationResult] = if (_frontend.config.disableCaching()) {
@@ -157,8 +153,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
     /** Top level branch is here for the same reason as in
       * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
 
-    val file: String = _frontend.config.file()
-    val (transformed_prog, cached_results) = ViperCache.applyCache(backendName, file, real_program)
+    val (transformed_prog, cached_results) = ViperCache.applyCache(backendName, programId, real_program)
 
     // collect and report errors
     val all_cached_errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
@@ -225,7 +220,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
         _frontend.logger.debug(s"Obtained cacheable errors: $cacheable_errors")
 
         if (cacheable_errors.isDefined) {
-          ViperCache.update(backendName, file, m, transformed_prog, cacheable_errors.get) match {
+          ViperCache.update(backendName, programId, m, transformed_prog, cacheable_errors.get) match {
             case e :: es =>
               _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
             case Nil =>
@@ -234,7 +229,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
         }
       }
     } else {
-      _frontend.logger.debug(s"Inconsistent error splitting; no cache update for this verification attempt in $file.")
+      _frontend.logger.debug(s"Inconsistent error splitting; no cache update for this verification attempt with ProgramID $programId.")
     }
 
     // combine errors:

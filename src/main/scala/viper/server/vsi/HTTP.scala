@@ -70,7 +70,7 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
   override def start(active_jobs: Int): Unit = {
     ast_jobs = new JobPool("AST-pool", active_jobs)
     ver_jobs = new JobPool("Verification-pool", active_jobs)
-    bindingFuture = Http().bindAndHandle(setRoutes(), "localhost", port)
+    bindingFuture = Http().newServerAt("localhost", port).bindFlow(setRoutes())
     _termActor = system.actorOf(Terminator.props(ast_jobs, ver_jobs, Some(bindingFuture)), "terminator")
     isRunning = true
   }
@@ -165,7 +165,7 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
           })) {
             case Success((ast_handle_maybe, ver_handle)) =>
               val ver_source = ver_handle match {
-                case VerHandle(null, null, null, ast_id) =>
+                case VerHandle(null, null, null, _) =>
                   /** There were no messages produced during verification. */
                   Source.empty[Envelope]
                 case _ =>

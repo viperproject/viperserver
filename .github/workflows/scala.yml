@@ -1,111 +1,382 @@
-name: Check, Build, Test, Publish Nightly
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2011-2020 ETH Zurich.
+
+name: Build, Test, and Publish
 
 on:
-  push:
-  pull_request:
+  push: # run this workflow on every push
+  pull_request: # run this workflow on every pull_request
+  workflow_dispatch: # allow to manually trigger this workflow
+    inputs:
+      type:
+        description: 'Specifies whether a stable or nightly release should be triggered. Has to be "stable" or "nightly".'
+        required: true
+        default: 'stable'
+      tag_name:
+        description: 'Tag name for stable release. Ignored if a nightly release will be created.'
+        required: true
+      release_name:
+        description: 'Release title for stable release. Ignored if a nightly release will be created.'
+        required: true
+  schedule:
+    - cron: '0 7 * * *' # run every day at 07:00 UTC
+
+
+# some remarks about the high-level structure of this CI script:
+# - build
+# `build` builds and tests ViperServer using sbt. It runs in two configurations, once using master branch of silver,
+# silicon, and carbon and a second time using a particular tag or commit (as specified in the matrix).
+# - test
+# `test` takes both ViperServer JARs that include tests and executes them on Ubuntu, macOS, and Windows.
+# - create-nightly-release
+# takes the fat and skinny JARs produced by configuration `latest` during `build` job and creates a nightly release with
+# them. This job automatically runs every night.
+# - create-stable-release
+# takes the fat and skinny JARs produced by configuration `release` during `build` job and creates a draft release with
+# them.
 
 jobs:
-  check-headers:
-    runs-on: ubuntu-16.04
+  build:
+    # build is the base job on which all other jobs depend
+    # we enforce here that the nightly build job only runs in the main repo:
+    if: (github.event_name == 'schedule' && github.repository == 'viperproject/viperserver') || (github.event_name != 'schedule')
+    runs-on: ubuntu-latest
+    container: viperproject/viperserver:v3_z3_4.8.6
+    strategy:
+      # tests should not be stopped when they fail on one of the configurations:
+      fail-fast: false
+      matrix:
+        # note that the same names are also used in all other jobs and they have to match!
+        name: [latest, release]
+        include:
+          - name: latest
+            silver-ref: "master"
+            silicon-ref: "master"
+            carbon-ref: "master"
+          - name: release
+            # note that v.21.01-release does not work because silver PR #503 is not yet in there
+            silver-ref: "master"
+            silicon-ref: "master"
+            carbon-ref: "master"
     steps:
-      - name: Checkout ViperServer repo
-        uses: actions/checkout@v2
-      - name: Check license headers
-        uses: viperproject/check-license-header@v1
-        with:
-          path: ./
-          config: ./.github/license-check/config.json
-          strict: true
-
-  test:
-    runs-on: ubuntu-16.04
-    steps:
-      - name: Get Current Date
-        id: date
-        run: echo "::set-output name=DATE::$(date +'%Y-%m-%d')"
-
       - name: Checkout ViperServer
         uses: actions/checkout@v2
         with:
-          path: viperServer
+          path: viperserver
       - name: Checkout Silver
         uses: actions/checkout@v2
         with:
           repository: viperproject/silver
+          ref: ${{ matrix.silver-ref }}
           path: silver
       - name: Checkout Silicon
         uses: actions/checkout@v2
         with:
           repository: viperproject/silicon
+          ref: ${{ matrix.silicon-ref }}
           path: silicon
       - name: Checkout Carbon
         uses: actions/checkout@v2
         with:
           repository: viperproject/carbon
+          ref: ${{ matrix.carbon-ref }}
           path: carbon
-    
-      - name: Symbolically link Silver to Carbon
-        run: cd carbon; ln --symbolic ../silver
-      - name: Symbolically link Silver to Silicon
-        run: cd silicon; ln --symbolic ../silver
-      - name: Symbolically link Silver to ViperServer
-        run: cd viperServer; ln --symbolic ../silver
-      - name: Symbolically link Carbon to ViperServer
-        run: cd viperServer; ln --symbolic ../carbon
-      - name: Symbolically link Silicon to ViperServer
-        run: cd viperServer; ln --symbolic ../silicon
 
-      - name: Install Z3
-        env: 
-          Z3_VERSION: 4.8.9
-          Z3_PLATFORM: x64
-          Z3_OS: ubuntu-16.04
+      - name: Java Version
+        run: java --version
+      - name: Z3 Version
+        run: z3 -version
+
+      - name: Create version file
         run: |
-          export Z3=z3-$Z3_VERSION-$Z3_PLATFORM-$Z3_OS; 
-          curl -J -L https://github.com/Z3Prover/z3/releases/download/z3-$Z3_VERSION/$Z3.zip > z3.zip; 
-          unzip z3.zip; 
-          sudo ln -s $(pwd)/$Z3/bin/z3 /usr/bin/z3
-
-      - name: Set up JDK 15
-        uses: actions/setup-java@v1
+          echo "ViperServer: commit $(git -C viperserver rev-parse HEAD)" >> versions.txt
+          echo "Silicon: commit $(git -C silicon rev-parse HEAD)" >> versions.txt
+          echo "Carbon: commit $(git -C carbon rev-parse HEAD)" >> versions.txt
+          echo "Silver: commit $(git -C silver rev-parse HEAD)" >> versions.txt
+        # first line overwrites versions.txt in case it already exists, all other append to the file
+      - name: Upload version file
+        uses: actions/upload-artifact@v2
         with:
-          java-version: '15.0.1'
-          architecture: x64
+          name: versions-${{ matrix.name }}.txt
+          path: versions.txt
 
-      - name: Install SBT
-        run: |
-          echo "deb https://dl.bintray.com/sbt/debian /" | sudo tee -a /etc/apt/sources.list.d/sbt.list; 
-          curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x2EE0EA64E40A89B84B2DF73499E82A75642AC823" | sudo apt-key add; 
-          sudo apt-get update; sudo apt-get install sbt
-    
-      - name: test project
-        run: |
-          cd viperServer; 
-          export Z3_EXE="/usr/bin/z3"; 
-          env > print_dir.txt; 
-          sbt test
+      # create symlinks between and to Viper dependencies:
+      - name: Create Silicon's sym links
+        run: ln --symbolic ../silver
+        working-directory: silicon
+      - name: Create Carbon's sym links
+        run: ln --symbolic ../silver
+        working-directory: carbon
+      - name: Create ViperServers's sym links
+        run: ln --symbolic ../silver; ln --symbolic ../silicon; ln --symbolic ../carbon
+        working-directory: viperserver
+
+      - name: Set sbt cache variables
+        run: echo "SBT_OPTS=-Dsbt.global.base=sbt-cache/.sbtboot -Dsbt.boot.directory=sbt-cache/.boot -Dsbt.ivy.home=sbt-cache/.ivy" >> $GITHUB_ENV
+        # note that the cache path is relative to the directory in which sbt is invoked.
+
+      - name: Cache SBT
+        uses: actions/cache@v2
+        with:
+          path: |
+            viperserver/sbt-cache/.sbtboot
+            viperserver/sbt-cache/.boot
+            viperserver/sbt-cache/.ivy/cache
+          # <x>/project/target and <x>/target, where <x> is e.g. 'viperserver', are intentionally not
+          # included as several occurrences of NoSuchMethodError exceptions have been observed during CI runs. It seems
+          # like sbt is unable to correctly compute source files that require a recompilation. Therefore, we have
+          # disabled caching of compiled source files altogether
+          key: ${{ runner.os }}-sbt-no-precompiled-sources-${{ hashFiles('**/build.sbt') }}
+
+      - name: Test ViperServer
+        run: sbt test
+        working-directory: viperserver
 
       - name: Upload log files
         if: ${{ failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: TestLogs
-          path: viperServer/logs
+          name: TestLogs-${{ matrix.name }}
+          path: viperserver/logs
 
-      - name: Assemble the fat JAR file
+      - name: Assemble ViperServer skinny JARs
+        run: sbt stage
+        working-directory: viperserver
+
+      - name: Zip skinny JARs
+        run: zip -r ../../../../viperserver-skinny-jars.zip ./*
+        working-directory: viperserver/target/universal/stage/lib
+
+      - name: Upload ViperServer skinny JARs
+        uses: actions/upload-artifact@v2
+        with:
+          name: viperserver-${{ matrix.name }}-skinny-jars
+          path: viperserver/viperserver-skinny-jars.zip
+
+      - name: Assemble ViperServer fat JAR
+        run: sbt "set test in assembly := {}" clean assembly
+        working-directory: viperserver
+
+      - name: Upload ViperServer fat JAR
+        uses: actions/upload-artifact@v2
+        with:
+          name: viperserver-${{ matrix.name }}-fat-jar
+          path: viperserver/target/scala-2.13/viperserver.jar
+
+      - name: Assemble ViperServer test fat JAR
+        run: sbt clean test:assembly
+        working-directory: viperserver
+
+      - name: Upload ViperServer test fat JAR
+        uses: actions/upload-artifact@v2
+        with:
+          name: viperserver-test-${{ matrix.name }}-fat-jar
+          path: viperserver/target/scala-2.13/viperserver-test.jar
+
+
+  test:
+    needs: build
+    strategy:
+      # tests should not be stopped when they fail on one of the OSes:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+        name: [latest, release]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # we need to checkout the repo to have access to the test files
+      - name: Checkout ViperServer
+        uses: actions/checkout@v2
+        with:
+          path: viperserver
+
+      # we need to checkout the silicon repo to have access to the logback configuration file
+      # as we do not use anything else except the logback config, we simply take the latest master branch (in all configurations)
+      - name: Checkout Silicon
+        uses: actions/checkout@v2
+        with:
+          repository: viperproject/silicon
+          path: silicon
+
+      - name: Download ViperServer test fat JAR
+        uses: actions/download-artifact@v2
+        with:
+          name: viperserver-test-${{ matrix.name }}-fat-jar
+          path: viperserver
+
+      - name: Download Z3 4.8.6 (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu')
         run: |
-          cd viperServer; 
-          sbt assembly
-      
-      - name: Publish Nightly Artifact
+          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-ubuntu-16.04.zip --output z3.zip
+          unzip z3.zip -d z3/
+          echo "$GITHUB_WORKSPACE/z3/z3-4.8.6-x64-ubuntu-16.04/bin" >> $GITHUB_PATH
+          echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-4.8.6-x64-ubuntu-16.04/bin/z3" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Download Z3 4.8.6 (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-osx-10.14.6.zip --output z3.zip
+          unzip z3.zip -d z3/
+          echo "$GITHUB_WORKSPACE/z3/z3-4.8.6-x64-osx-10.14.6/bin" >> $GITHUB_PATH
+          echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-4.8.6-x64-osx-10.14.6/bin/z3" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Download Z3 4.8.6 (Windows)
+        if: startsWith(matrix.os, 'windows')
+        run: |
+          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-win.zip --output z3.zip
+          unzip z3.zip -d z3/
+          echo "$GITHUB_WORKSPACE/z3/z3-4.8.6-x64-win/bin" >> $GITHUB_PATH
+          echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-4.8.6-x64-win/bin/z3.exe" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v1.4.3
+        with:
+          java-version: '11'
+
+      - name: Java Version
+        run: java --version
+      - name: Z3 Version
+        run: z3 -version
+
+      # unfortunately, the JAR seems to be broken and discovering test suites (e.g. using `-w viper.server`) fails.
+      # thus, the test suites have to be explicitly mentioned
+      - name: Test ViperServer
+        run: java -Xss128m -Dlogback.configurationFile=$GITHUB_WORKSPACE/silicon/src/main/resources/logback.xml -cp viperserver-test.jar org.scalatest.tools.Runner -R viperserver-test.jar -o -s viper.server.core.AstGenerationTests -s viper.server.core.CoreServerSpec -s viper.server.core.ViperServerHttpSpec
+        shell: bash
+        working-directory: viperserver
+
+      - name: Upload log files
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: TestLogs-${{ matrix.name }}-${{ runner.os }}
+          path: viperserver/logs
+
+
+  create-nightly-release:
+    # this job creates a new nightly pre-release, set viperserver.jar as artifacts, and deletes old releases
+    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'nightly') || github.event_name == 'schedule'
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      # specifies that `latest` artifacts from `build` job should be used for nightly releases:
+      NAME: latest # has to match matrix.name in `build` job
+    steps:
+      - name: Download ViperServer skinny JARs
+        uses: actions/download-artifact@v2
+        with:
+          name: viperserver-${{ env.NAME }}-skinny-jars
+          path: deploy
+
+      - name: Download ViperServer fat JAR
+        uses: actions/download-artifact@v2
+        with:
+          name: viperserver-${{ env.NAME }}-fat-jar
+          path: deploy
+
+      - name: Download version file
+        uses: actions/download-artifact@v2
+        with:
+          name: versions-${{ env.NAME }}.txt
+
+      - name: Create release tag
+        shell: bash
+        run: echo "TAG_NAME=$(date +v-%Y-%m-%d-%H%M)" >> $GITHUB_ENV
+
+      - name: Create nightly release
+        id: create_release
+        uses: viperproject/create-nightly-release@v1
         env:
-          FILE: viperServer/target/scala-2.13/viper.jar
-          NIGHTLY_RELEASE_ID: 36021300
-          ARTIFACT_NAME: viper-nightly-${{ steps.date.outputs.DATE }}.jar
-        run: |
-          echo Publishing $FILE as $ARTIFACT_NAME ...;
-          curl -H "Accept: application/vnd.github.v3+json" \
-               -H "Content-Type: $(file -b --mime-type $FILE)" \
-               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-               --data-binary @$FILE \
-               "https://uploads.github.com/repos/${{ github.repository }}/releases/$NIGHTLY_RELEASE_ID/assets?name=$ARTIFACT_NAME"
+          # This token is provided by Actions, you do not need to create your own token
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          release_name: Nightly Release ${{ env.TAG_NAME }}
+          body_path: versions.txt
+          keep_num: 1 # keep the previous nightly release such that there are always two
+
+      - name: Upload ViperServer skinny jars
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: deploy/viperserver-skinny-jars.zip
+          asset_name: viperserver-skinny-jars.zip
+          asset_content_type: application/zip
+
+      - name: Upload ViperServer fat jar artifact
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: deploy/viperserver.jar
+          asset_name: viperserver.jar
+          asset_content_type: application/octet-stream
+
+
+  create-stable-release:
+    # this job creates a stable draft-release and set viperserver.jar as artifacts
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'stable'
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      # specifies that `release` artifacts from `build` job should be used for stable releases:
+      NAME: release # has to match matrix.name in `build` job
+    steps:
+      - name: Download ViperServer skinny JARs
+        uses: actions/download-artifact@v2
+        with:
+          name: viperserver-${{ env.NAME }}-skinny-jars
+          path: deploy
+
+      - name: Download ViperServer fat JAR
+        uses: actions/download-artifact@v2
+        with:
+          name: viperserver-${{ env.NAME }}-fat-jar
+          path: deploy
+
+      - name: Download version file
+        uses: actions/download-artifact@v2
+        with:
+          name: versions-${{ env.NAME }}.txt
+
+      - name: Create stable draft-release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          # This token is provided by Actions, you do not need to create your own token
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.event.inputs.tag_name }}
+          release_name: ${{ github.event.inputs.release_name }}
+          body_path: versions.txt
+          draft: true
+          prerelease: false
+
+      - name: Upload ViperServer skinny jars
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: deploy/viperserver-skinny-jars.zip
+          asset_name: viperserver-skinny-jars.zip
+          asset_content_type: application/zip
+
+      - name: Upload ViperServer fat jar
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: deploy/viperserver.jar
+          asset_name: viperserver.jar
+          asset_content_type: application/octet-stream

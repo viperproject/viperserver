@@ -19,7 +19,7 @@ import viper.server.vsi.VerJobId
 import viper.silver.ast.{Domain, Field, Function, Method, Predicate, SourcePosition}
 import viper.silver.reporter._
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
 
 class FileManager(file_uri: String) {
@@ -48,8 +48,6 @@ class FileManager(file_uri: String) {
   var symbolInformation: ArrayBuffer[SymbolInformation] = ArrayBuffer()
   var definitions: ArrayBuffer[lsp.Definition] = ArrayBuffer()
 
-  private var lines: Array[String] = Array()
-  private var wrongFormat: Boolean = false
   private var partialData: String = ""
 
   def resetDiagnostics(): Unit = {
@@ -68,8 +66,6 @@ class FileManager(file_uri: String) {
     is_verifying = true
     is_aborting = false
     state = Stopped
-    lines = Array()
-    wrongFormat = false
     if (partialData.length > 0) {
       Log.debug("Some unparsed output was detected:\n" + partialData)
       partialData = ""
@@ -176,11 +172,11 @@ class FileManager(file_uri: String) {
         defs.foreach(d => {
           val start = d.scope match {
             case Some(s) => new Position(s.start.line - 1, s.start.column - 1)
-            case None => null
+            case _ => null
           }
           val end = d.scope match {
             case Some(s) if s.end.isDefined => new Position(s.end.get.line - 1, s.end.get.column - 1)
-            case None => null
+            case _ => null
           }
           val range: Range = if(start != null && end != null) {
             new Range(start, end)
@@ -247,7 +243,7 @@ class FileManager(file_uri: String) {
       time = verificationTime
       completionHandler(0)
     case m: Message => Coordinator.client.notifyUnhandledViperServerMessage(m.toString, 2)
-    case e: Throwable =>
+    case e: Throwable => Log.debug("RelayActor received throwable: ", e)
     }
   }
 
@@ -270,7 +266,7 @@ class FileManager(file_uri: String) {
     }
   }
 
-  private def completionHandler(code: Int) {
+  private def completionHandler(code: Int): Unit = {
     try {
       Log.debug(s"completionHandler is called with code ${code}")
       if (is_aborting) {
