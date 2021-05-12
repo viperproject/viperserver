@@ -116,7 +116,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val programId: St
     * */
   def execute(args: Seq[String]): Unit = {
     // --ignoreFile is not enough as Silicon still tries to parse the provided filepath unless
-    // the following dummy file is used:
+    // the following dummy file is used instead (see Silicon issue #552):
     val argsWithDummyFilename = args ++ Seq("--ignoreFile", Silicon.dummyInputFilename)
     _frontend.setStartTime()
     _frontend.setVerifier( _frontend.createVerifier(argsWithDummyFilename.mkString(" ")) )
