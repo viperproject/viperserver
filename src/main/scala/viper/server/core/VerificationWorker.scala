@@ -150,7 +150,6 @@ class ViperBackend(private val _frontend: SilFrontend, private val _ast: Program
                                                         Failure(f.errors.filter { e => !e.cached }))
       case None =>
     }
-    _frontend.verifier.stop()
   }
 
   private def doCachedVerification(real_program: Program): Unit = {
