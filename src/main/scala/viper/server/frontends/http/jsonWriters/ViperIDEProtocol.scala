@@ -61,7 +61,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   implicit val position_writer: RootJsonFormat[Position] = lift(new RootJsonWriter[Position] {
     override def write(obj: Position): JsValue = JsObject(
       "file" -> (if (obj.file != null) {
-        //FIXME this hack is needed due to the following bug in Silver: https://github.com/viperproject/silver/issues/253
+        //FIXME This hack is needed due to the following bug in Silver: https://github.com/viperproject/silver/issues/253
+        //TODO  The bug has been fixed. Review if this is still needed.
         obj.file.toJson
       } else {
         JsString("<undefined>")
@@ -208,7 +209,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       "cached" -> obj.cached.toJson)
   })
 
-  implicit val astConstructionMessage_writer = lift(new RootJsonWriter[AstConstructionResultMessage] {
+  implicit val astConstructionMessage_writer: RootJsonFormat[AstConstructionResultMessage] = lift(new RootJsonWriter[AstConstructionResultMessage] {
     override def write(obj: AstConstructionResultMessage): JsValue = JsObject(
       "status" -> (obj match {
         case _: AstConstructionSuccessMessage =>
@@ -361,6 +362,17 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       "errors" -> JsArray(obj.errors.map(_.toJson).toVector))
   })
 
+  implicit val backendSubProcessReport_writer: RootJsonFormat[BackendSubProcessReport] = lift(new RootJsonWriter[BackendSubProcessReport] {
+    override def write(obj: BackendSubProcessReport) = JsObject(
+      "tool" -> JsString(obj.tool_signature),
+      "process_exe" -> JsString(obj.process_exe),
+      "phase" -> JsString(obj.phase.toString),
+      "pid" -> (obj.pid_maybe match {
+        case Some(pid) => JsNumber(pid)
+        case None => JsNull
+      }))
+  })
+
   implicit val dependency_writer: RootJsonFormat[Dependency] = lift(new RootJsonWriter[Dependency] {
     override def write(obj: Dependency) = JsObject(
       "name" -> JsString(obj.name),
@@ -400,6 +412,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case e: ExecutionTraceReport => e.toJson
         case x: ExceptionReport => x.toJson
         case i: InvalidArgumentsReport => i.toJson
+        case b: BackendSubProcessReport => b.toJson
         case r: ExternalDependenciesReport => r.toJson
         case f: WarningsDuringParsing => f.toJson
         case f: WarningsDuringTypechecking => f.toJson
