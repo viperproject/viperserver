@@ -269,13 +269,13 @@ jobs:
         name: [latest, release]
         include:
           - name: latest
-            win-tools-url: "http://viper.ethz.ch/downloads/ViperToolsLastReleaseWin.zip"
-            linux-tools-url: "http://viper.ethz.ch/downloads/ViperToolsLastReleaseLinux.zip"
-            mac-tools-url: "http://viper.ethz.ch/downloads/ViperToolsLastReleaseMac.zip"
-          - name: release
             win-tools-url: "http://viper.ethz.ch/downloads/ViperToolsNightlyWin.zip"
             linux-tools-url: "http://viper.ethz.ch/downloads/ViperToolsNightlyLinux.zip"
             mac-tools-url: "http://viper.ethz.ch/downloads/ViperToolsNightlyMac.zip"
+          - name: release
+            win-tools-url: "http://viper.ethz.ch/downloads/ViperToolsLastReleaseWin.zip"
+            linux-tools-url: "http://viper.ethz.ch/downloads/ViperToolsLastReleaseLinux.zip"
+            mac-tools-url: "http://viper.ethz.ch/downloads/ViperToolsLastReleaseMac.zip"
     runs-on: ubuntu-latest
     steps:
       - name: Install prerequisites
