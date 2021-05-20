@@ -20,7 +20,7 @@ object ViperServerRunner {
   var viperServerHttp: ViperHttpServer = _
 
   def main(args: Array[String]): Unit = {
-    val config = new ViperConfig(args)
+    val config = new ViperConfig(args.toIndexedSeq)
     val executor = new DefaultVerificationExecutionContext(threadPoolSize = Some(config.nThreads()))
     if (config.serverMode() == config.SERVER_MODE_LSP) {
       runLspServer(config)(executor)

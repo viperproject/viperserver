@@ -15,6 +15,7 @@ import org.scalatest.exceptions.TestFailedException
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.{Assertion, Outcome, Succeeded}
 import org.scalatest.wordspec.AnyWordSpec
+import viper.server.ViperConfig
 import viper.server.utility.AstGenerator
 import viper.server.vsi.{JobNotFoundException, VerJobId}
 import viper.silver.ast.{HasLineColumn, Program}
@@ -91,8 +92,8 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     val logFile = Paths.get("logs", s"viperserver_journal_${System.currentTimeMillis()}.log").toFile
     logFile.getParentFile.mkdirs
     logFile.createNewFile()
-    val server_args: Array[String] = Array("--logLevel", "TRACE", "--logFile", logFile.getAbsolutePath)
-    val core = new ViperCoreServer(server_args)(verificationContext)
+    val config = new ViperConfig(Array("--logLevel", "TRACE", "--logFile", logFile.getAbsolutePath))
+    val core = new ViperCoreServer(config)(verificationContext)
     core.start()
 
     val testName = currentTestName match {

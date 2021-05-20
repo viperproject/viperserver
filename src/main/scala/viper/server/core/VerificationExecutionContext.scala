@@ -49,7 +49,7 @@ class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_Syste
   protected lazy val nThreads: Int = threadPoolSize.getOrElse(
     Math.max(DefaultVerificationExecutionContext.minNumberOfThreads, Runtime.getRuntime.availableProcessors()))
   protected lazy val threadStackSize: Long = 128L * 1024L * 1024L // 128M seems to consistently be recommended by Silicon and Carbon
-  override def executorService: ExecutorService = Executors.newFixedThreadPool(
+  private lazy val service: ExecutorService = Executors.newFixedThreadPool(
     nThreads, new ThreadFactory {
 
       import java.util.concurrent.atomic.AtomicInteger
@@ -60,6 +60,7 @@ class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_Syste
         new Thread(null, runnable, threadName, threadStackSize)
       }
     })
+  override def executorService: ExecutorService = service
 
   private lazy val context: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(executorService)
 
