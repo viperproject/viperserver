@@ -11,7 +11,8 @@ import java.util.concurrent.{CompletableFuture => CFuture}
 import org.eclipse.lsp4j.jsonrpc.services.{JsonNotification, JsonRequest}
 import org.eclipse.lsp4j.services.{LanguageClient, LanguageClientAware}
 import org.eclipse.lsp4j.{DidChangeConfigurationParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentSymbolParams, InitializeParams, InitializeResult, InitializedParams, Location, Range, ServerCapabilities, SymbolInformation, TextDocumentPositionParams, TextDocumentSyncKind}
-import viper.server.core.DefaultVerificationExecutionContext
+import viper.server.ViperConfig
+import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp.LogLevel._
 import viper.server.frontends.lsp.VerificationState._
 
@@ -151,7 +152,7 @@ abstract class StandardReceiver extends LanguageClientAware {
   }
 }
 
-class CustomReceiver extends StandardReceiver {
+class CustomReceiver()(executor: VerificationExecutionContext) extends StandardReceiver {
 
   @JsonNotification(S2C_Commands.FileClosed)
   def onFileClosed(uri: String): Unit = {
@@ -186,8 +187,8 @@ class CustomReceiver extends StandardReceiver {
       } else {
         throw new Throwable("Unexpected Backend")
       }
-      val executor = new DefaultVerificationExecutionContext()
-      Coordinator.verifier = new ViperServerService(Array())(executor)
+      val config = new ViperConfig(Seq())
+      Coordinator.verifier = new ViperServerService(config)(executor)
       Coordinator.verifier.setReady(Coordinator.backend)
     } catch {
       case e: Throwable => Log.debug("Error handling swap backend request: " + e)

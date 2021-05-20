@@ -18,13 +18,11 @@ import scala.concurrent.duration._
 import scala.concurrent.Future
 import scala.language.postfixOps
 
-class ViperCoreServer(val _args: Array[String])(implicit val executor: VerificationExecutionContext) extends VerificationServer with ViperPost {
+class ViperCoreServer(val config: ViperConfig)(implicit val executor: VerificationExecutionContext) extends VerificationServer with ViperPost {
 
   override type AST = Program
 
   // --- VCS : Configuration ---
-  protected var _config: ViperConfig = _
-  final def config: ViperConfig = _config
 
   override lazy val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
 
@@ -37,9 +35,6 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
     * will result in an IllegalStateException.
     * */
   def start(): Unit = {
-    _config = new ViperConfig(_args.toIndexedSeq)
-    config.verify()
-
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
     println(s"Writing [level:${config.logLevel()}] logs into " +
       s"${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")

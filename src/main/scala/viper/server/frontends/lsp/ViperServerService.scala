@@ -12,6 +12,7 @@ import java.util.concurrent.{CompletableFuture => CFuture}
 import akka.actor.{PoisonPill, Props}
 import akka.pattern.ask
 import akka.util.Timeout
+import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCache, ViperCoreServer}
 import viper.server.frontends.lsp.VerificationState.Stopped
 import viper.server.utility.AstGenerator
@@ -24,8 +25,8 @@ import scala.compat.java8.FutureConverters._
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
-class ViperServerService(args: Array[String])(override implicit val executor: VerificationExecutionContext)
-  extends ViperCoreServer(args)(executor) with VerificationServer {
+class ViperServerService(config: ViperConfig)(override implicit val executor: VerificationExecutionContext)
+  extends ViperCoreServer(config)(executor) with VerificationServer {
 
   protected var timeout: Int = _
 
