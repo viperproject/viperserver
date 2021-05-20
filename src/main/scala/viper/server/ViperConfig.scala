@@ -70,12 +70,17 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
       + s"The port must be an integer in range [${ibm.Socket.MIN_PORT_NUMBER}-${ibm.Socket.MAX_PORT_NUMBER}]"
       + "If the option is omitted, an available port will be selected automatically."),
     validate = p => try {
-      ibm.Socket.available(p)
+      if (p != 0) {
+        ibm.Socket.available(p)
+      } else {
+        true
+      }
     } catch {
       case e: Exception =>
         println(s"Invalid port $p: $e")
         false
     },
+    default = Some(0),
     noshort = false,
     hidden = false)
 

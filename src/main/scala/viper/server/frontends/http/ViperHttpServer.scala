@@ -37,7 +37,9 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
 
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 
-    port = config.port.getOrElse(ibm.Socket.findFreePort)
+    port = config.port.toOption
+      .flatMap(p => if (p == 0) None else Some(p)) // also search for a free port if the provided one is zero
+      .getOrElse(ibm.Socket.findFreePort)
     super.start(config.maximumActiveJobs())
     println(s"ViperServer online at http://localhost:$port")
   }
