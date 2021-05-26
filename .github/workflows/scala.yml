@@ -259,10 +259,94 @@ jobs:
           path: viperserver/logs
 
 
+  create-viper-tools:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    needs: test
+    strategy:
+      # tests should not be stopped when they fail on one of the OSes:
+      fail-fast: false
+      matrix:
+        name: [latest, release]
+        include:
+          - name: latest
+            win-tools-url: "http://viper.ethz.ch/downloads/ViperToolsNightlyWin.zip"
+            linux-tools-url: "http://viper.ethz.ch/downloads/ViperToolsNightlyLinux.zip"
+            mac-tools-url: "http://viper.ethz.ch/downloads/ViperToolsNightlyMac.zip"
+          - name: release
+            win-tools-url: "http://viper.ethz.ch/downloads/ViperToolsLastReleaseWin.zip"
+            linux-tools-url: "http://viper.ethz.ch/downloads/ViperToolsLastReleaseLinux.zip"
+            mac-tools-url: "http://viper.ethz.ch/downloads/ViperToolsLastReleaseMac.zip"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install prerequisites
+        run: sudo apt-get install zip unzip
+
+      - name: Download ViperServer fat JAR
+        uses: actions/download-artifact@v2
+        with:
+          name: viperserver-${{ matrix.name }}-fat-jar
+
+      - name: Download Viper Tools for Windows
+        run: curl --fail --silent --show-error ${{ matrix.win-tools-url }} --output ViperToolsWin.zip
+      - name: Unzip Viper Tools for Windows
+        run: unzip ViperToolsWin.zip -d OrigViperToolsWin
+      - name: Download Viper Tools for Linux
+        run: curl --fail --silent --show-error ${{ matrix.linux-tools-url }} --output ViperToolsLinux.zip
+      - name: Unzip Viper Tools for Linux
+        run: unzip ViperToolsLinux.zip -d OrigViperToolsLinux
+      - name: Download Viper Tools for macOS
+        run: curl --fail --silent --show-error ${{ matrix.mac-tools-url }} --output ViperToolsMac.zip
+      - name: Unzip Viper Tools for macOS
+        run: unzip ViperToolsMac.zip -d OrigViperToolsMac
+
+      - name: Create a fresh Viper Tools folder per platform
+        run: |
+          mkdir -p ViperToolsWin
+          mkdir -p ViperToolsLinux
+          mkdir -p ViperToolsMac
+
+      - name: Copy boogie from OrigViperTools to ViperTools
+        run: |
+          cp -R OrigViperToolsWin/boogie ViperToolsWin/boogie/
+          cp -R OrigViperToolsLinux/boogie ViperToolsLinux/boogie/
+          cp -R OrigViperToolsMac/boogie ViperToolsMac/boogie/
+
+      - name: Copy z3 from OrigViperTools to ViperTools
+        run: |
+          cp -R OrigViperToolsWin/z3 ViperToolsWin/z3/
+          cp -R OrigViperToolsLinux/z3 ViperToolsLinux/z3/
+          cp -R OrigViperToolsMac/z3 ViperToolsMac/z3/
+
+      - name: Copy ViperServer fat JAR to ViperTools
+        run: |
+          mkdir -p ViperToolsWin/server && cp viperserver.jar ViperToolsWin/server
+          mkdir -p ViperToolsLinux/server && cp viperserver.jar ViperToolsLinux/server
+          mkdir -p ViperToolsMac/server && cp viperserver.jar ViperToolsMac/server
+
+      - name: Create folder to store all ViperTools platform zip files
+        run: mkdir deploy
+        # note that we change into the tool folder to zip it. This avoids including the parent folder in the zip
+      - name: Zip ViperTools for Windows
+        run: zip -r ../deploy/ViperToolsWin.zip ./*
+        working-directory: ViperToolsWin
+      - name: Zip ViperTools for Linux
+        run: zip -r ../deploy/ViperToolsLinux.zip ./*
+        working-directory: ViperToolsLinux
+      - name: Zip ViperTools for macOS
+        run: zip -r ../deploy/ViperToolsMac.zip ./*
+        working-directory: ViperToolsMac
+
+      - name: Upload ViperTools zip files
+        uses: actions/upload-artifact@v2
+        with:
+          name: ViperTools-${{ matrix.name }}
+          path: deploy
+
+
   create-nightly-release:
     # this job creates a new nightly pre-release, set viperserver.jar as artifacts, and deletes old releases
     if: (github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'nightly') || github.event_name == 'schedule'
-    needs: test
+    needs: create-viper-tools
     runs-on: ubuntu-latest
     env:
       # specifies that `latest` artifacts from `build` job should be used for nightly releases:
@@ -278,6 +362,12 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: viperserver-${{ env.NAME }}-fat-jar
+          path: deploy
+
+      - name: Download ViperTools
+        uses: actions/download-artifact@v2
+        with:
+          name: ViperTools-${{ env.NAME }}
           path: deploy
 
       - name: Download version file
@@ -321,11 +411,41 @@ jobs:
           asset_name: viperserver.jar
           asset_content_type: application/octet-stream
 
+      - name: Upload ViperTools for Windows
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: deploy/ViperToolsWin.zip
+          asset_name: ViperToolsWin.zip
+          asset_content_type: application/zip
+
+      - name: Upload ViperTools for Ubuntu
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: deploy/ViperToolsLinux.zip
+          asset_name: ViperToolsLinux.zip
+          asset_content_type: application/zip
+
+      - name: Upload ViperTools for macOS
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: deploy/ViperToolsMac.zip
+          asset_name: ViperToolsMac.zip
+          asset_content_type: application/zip
+
 
   create-stable-release:
     # this job creates a stable draft-release and set viperserver.jar as artifacts
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'stable'
-    needs: test
+    needs: create-viper-tools
     runs-on: ubuntu-latest
     env:
       # specifies that `release` artifacts from `build` job should be used for stable releases:
@@ -341,6 +461,12 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: viperserver-${{ env.NAME }}-fat-jar
+          path: deploy
+
+      - name: Download ViperTools
+        uses: actions/download-artifact@v2
+        with:
+          name: ViperTools-${{ env.NAME }}
           path: deploy
 
       - name: Download version file
@@ -380,3 +506,33 @@ jobs:
           asset_path: deploy/viperserver.jar
           asset_name: viperserver.jar
           asset_content_type: application/octet-stream
+
+      - name: Upload ViperTools for Windows
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: deploy/ViperToolsWin.zip
+          asset_name: ViperToolsWin.zip
+          asset_content_type: application/zip
+
+      - name: Upload ViperTools for Ubuntu
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: deploy/ViperToolsLinux.zip
+          asset_name: ViperToolsLinux.zip
+          asset_content_type: application/zip
+
+      - name: Upload ViperTools for macOS
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: deploy/ViperToolsMac.zip
+          asset_name: ViperToolsMac.zip
+          asset_content_type: application/zip

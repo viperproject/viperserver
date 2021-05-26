@@ -28,19 +28,18 @@ import viper.silver.reporter.Message
 
 import scala.util.{Failure, Success, Try}
 
-class ViperHttpServer(_args: Array[String])(executor: VerificationExecutionContext)
-  extends ViperCoreServer(_args)(executor) with VerificationServerHttp {
+class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContext)
+  extends ViperCoreServer(config)(executor) with VerificationServerHttp {
 
   override def start(): Unit = {
-    _config = new ViperConfig(_args.toIndexedSeq)
-    config.verify()
-
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 
-    port = config.port.getOrElse(ibm.Socket.findFreePort)
+    port = config.port.toOption
+      .flatMap(p => if (p == 0) None else Some(p)) // also search for a free port if the provided one is zero
+      .getOrElse(ibm.Socket.findFreePort)
     super.start(config.maximumActiveJobs())
     println(s"ViperServer online at http://localhost:$port")
   }

@@ -15,6 +15,7 @@ import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
 
 trait VerificationExecutionContext extends ExecutionContext {
+  def executorService: ExecutorService
   def actorSystem: ActorSystem
   def submit(r: Runnable): java_concurrent.Future[_]
   /** terminate executor and actor system */
@@ -42,10 +43,13 @@ object DefaultVerificationExecutionContext {
   * use the provided verification execution context whenever an actor or any task requiring a separate thread is
   * executed.
   */
-class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_System", threadNamePrefix: String = "thread") extends VerificationExecutionContext {
-  protected lazy val nThreads: Int = Math.max(DefaultVerificationExecutionContext.minNumberOfThreads, Runtime.getRuntime.availableProcessors())
+class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_System",
+                                          threadNamePrefix: String = "thread",
+                                          threadPoolSize: Option[Int] = None) extends VerificationExecutionContext {
+  protected lazy val nThreads: Int = threadPoolSize.getOrElse(
+    Math.max(DefaultVerificationExecutionContext.minNumberOfThreads, Runtime.getRuntime.availableProcessors()))
   protected lazy val threadStackSize: Long = 128L * 1024L * 1024L // 128M seems to consistently be recommended by Silicon and Carbon
-  protected lazy val executorService: ExecutorService = Executors.newFixedThreadPool(
+  private lazy val service: ExecutorService = Executors.newFixedThreadPool(
     nThreads, new ThreadFactory {
 
       import java.util.concurrent.atomic.AtomicInteger
@@ -56,6 +60,7 @@ class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_Syste
         new Thread(null, runnable, threadName, threadStackSize)
       }
     })
+  override def executorService: ExecutorService = service
 
   private lazy val context: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(executorService)
 
