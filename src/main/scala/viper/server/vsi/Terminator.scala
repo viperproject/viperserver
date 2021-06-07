@@ -6,11 +6,11 @@
 
 package viper.server.vsi
 
-import akka.actor.{Actor, ActorSystem, Props}
+import akka.actor.{Actor, Props}
 import akka.http.scaladsl.Http
 import viper.server.core.VerificationExecutionContext
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 
 // --- Actor: Terminator ---
 
