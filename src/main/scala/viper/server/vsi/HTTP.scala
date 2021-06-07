@@ -18,7 +18,7 @@ import akka.stream.scaladsl.Source
 import akka.util.Timeout
 import viper.server.vsi.VerificationProtocol.StopVerification
 
-import scala.concurrent.Future
+import scala.concurrent.{Future, Promise}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
@@ -65,14 +65,25 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
 
   def setRoutes(): Route
 
+  private var stoppedPromise: Promise[Unit] = _
   var bindingFuture: Future[Http.ServerBinding] = _
 
+  /** The server has been stopped when `stopped` completes. Afterwards, the execution context can be terminated. */
   override def start(active_jobs: Int): Unit = {
     ast_jobs = new JobPool("AST-pool", active_jobs)
     ver_jobs = new JobPool("Verification-pool", active_jobs)
+    stoppedPromise = Promise()
     bindingFuture = Http().newServerAt("localhost", port).bindFlow(setRoutes())
+    bindingFuture.map(_.whenTerminationSignalIssued)
     _termActor = system.actorOf(Terminator.props(ast_jobs, ver_jobs, Some(bindingFuture)), "terminator")
     isRunning = true
+  }
+
+  /** The returned future is completed when the server is stopped.
+    * Afterwards, the execution context can be terminated.
+    * This function cannot be called before calling `start`. */
+  def stopped(): Future[Unit] = {
+    stoppedPromise.future
   }
 
   /** Implement VerificationServer- specific handling of server shutdown.
@@ -105,7 +116,9 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
       */
     path("exit") {
       get {
+        // note that `stop` internally uses the `_termActor` that unbinds the server's port and terminates the execution context
         onComplete(stop()) { err: Try[List[String]] =>
+          stoppedPromise.complete(err.map(_ => ()))
           complete( serverStopConfirmation(err) )
         }
       }

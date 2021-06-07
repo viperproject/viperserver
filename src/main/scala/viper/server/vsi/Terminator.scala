@@ -8,6 +8,7 @@ package viper.server.vsi
 
 import akka.actor.{Actor, ActorSystem, Props}
 import akka.http.scaladsl.Http
+import viper.server.core.VerificationExecutionContext
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -21,15 +22,17 @@ object Terminator {
   def props[R](ast_jobs: JobPool[AstJobId, AstHandle[R]],
                ver_jobs: JobPool[VerJobId, VerHandle],
                bindingFuture: Option[Future[Http.ServerBinding]] = None)
-            (implicit ctx: ExecutionContext, sys: ActorSystem): Props
-  = Props(new Terminator(ast_jobs, ver_jobs, bindingFuture)(ctx, sys))
+            (implicit ctx: VerificationExecutionContext): Props
+  = Props(new Terminator(ast_jobs, ver_jobs, bindingFuture)(ctx))
 }
 
 class Terminator[R](ast_jobs: JobPool[AstJobId, AstHandle[R]],
                     ver_jobs: JobPool[VerJobId, VerHandle],
                     bindingFuture: Option[Future[Http.ServerBinding]])
-                (implicit val ctx: ExecutionContext,
-                 implicit val sys: ActorSystem) extends Actor {
+                (implicit val ctx: VerificationExecutionContext) extends Actor {
+
+  // note that the execution context is NOT terminated such that clients
+  // have better control over when the execution context should be terminated
 
   override def receive: PartialFunction[Any, Unit] = {
     case Terminator.Exit =>
@@ -37,11 +40,7 @@ class Terminator[R](ast_jobs: JobPool[AstJobId, AstHandle[R]],
         case Some(future) =>
           future
             .flatMap(_.unbind()) // trigger unbinding from the port
-            .onComplete(_ => {
-              sys.terminate() // and shutdown when done
-            })
         case None =>
-          sys.terminate() // shutdown
       }
   }
 }

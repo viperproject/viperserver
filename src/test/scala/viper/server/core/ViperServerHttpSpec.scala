@@ -15,20 +15,30 @@ import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
 import akka.testkit.TestDuration
 import org.scalatest.wordspec.AnyWordSpec
 import org.scalatest.matchers.should.Matchers
-import viper.server.ViperServerRunner
+import org.scalatest.concurrent.TimeLimits
+import org.scalatest.time.{Seconds, Span}
+import viper.server.frontends.http.ViperHttpServer
+import viper.server.ViperConfig
 import viper.server.vsi.Requests._
 
+import scala.concurrent.Await
 import scala.concurrent.duration._
 
-class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteTest {
+class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteTest with TimeLimits {
 
   import scala.language.postfixOps
   implicit val jsonStreamingSupport: JsonEntityStreamingSupport = EntityStreamingSupport.json()
   implicit val requestTimeput: RouteTestTimeout = RouteTestTimeout(10.second dilated)
 
-  ViperServerRunner.main(Array())
+  private val verificationContext: VerificationExecutionContext = new DefaultVerificationExecutionContext()
+  private val viperServerHttp = {
+    val config = new ViperConfig(IndexedSeq())
+    val server = new ViperHttpServer(config)(verificationContext)
+    server.start()
+    server
+  }
 
-  private val _routsUnderTest = ViperServerRunner.viperServerHttp.routes()
+  private val _routsUnderTest = viperServerHttp.routes()
 
   def printRequestResponsePair(req: String, res: String): Unit = {
     println(s">>> ViperServer test request `$req` response in the following response: $res")
@@ -111,6 +121,13 @@ class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteT
         //printRequestResponsePair(s"GET, /exit", responseAs[String])
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
+      }
+    }
+
+    "should eventually stop" in {
+      failAfter(Span(10, Seconds)) {
+        Await.ready(viperServerHttp.stopped(), Duration.Inf)
+        verificationContext.terminate()
       }
     }
   }
