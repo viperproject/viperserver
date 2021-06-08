@@ -326,7 +326,20 @@ jobs:
 
       - name: Trigger Viper-IDE CI
         # TODO: change ref to "master"!
-        run: curl -u viper-admin:${{ secrets.VIPER_ADMIN_TOKEN }} -X POST -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/viperproject/viper-ide/actions/workflows/test.yml/dispatches -d '{"ref":"viper-tools-release", "inputs":{"type":"nightly","viperserver_tag_name":"${{ env.TAG_NAME }}","tag_name":"${{ env.TAG_NAME }}","release_name":"Nightly Release ${{ env.TAG_NAME }}"}}'
+        run: |
+          curl --request POST \
+          --user 'viper-admin:${{ secrets.VIPER_ADMIN_TOKEN }}' \
+          --header 'Accept: application/vnd.github.v3+json' \
+          --url 'https://api.github.com/repos/viperproject/viper-ide/actions/workflows/test.yml/dispatches' \
+          --data '{ \
+            "ref":"viper-tools-release", \
+            "inputs":{ \
+              "type":"nightly", \
+              "viperserver_tag_name":"${{ env.TAG_NAME }}", \
+              "tag_name":"${{ env.TAG_NAME }}", \
+              "release_name":"Nightly Release ${{ env.TAG_NAME }}" \
+            } \
+          }'
 
 
   create-stable-release:
