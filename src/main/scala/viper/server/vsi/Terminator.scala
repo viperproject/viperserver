@@ -31,9 +31,6 @@ class Terminator[R](ast_jobs: JobPool[AstJobId, AstHandle[R]],
                     bindingFuture: Option[Future[Http.ServerBinding]])
                 (implicit val ctx: VerificationExecutionContext) extends Actor {
 
-  // note that the execution context is NOT terminated such that clients
-  // have better control over when the execution context should be terminated
-
   override def receive: PartialFunction[Any, Unit] = {
     case Terminator.Exit =>
       bindingFuture match {
@@ -42,5 +39,7 @@ class Terminator[R](ast_jobs: JobPool[AstJobId, AstHandle[R]],
             .flatMap(_.unbind()) // trigger unbinding from the port
         case None =>
       }
+      // note that the execution context is NOT terminated such that clients
+      // have better control over when the execution context should be terminated
   }
 }
