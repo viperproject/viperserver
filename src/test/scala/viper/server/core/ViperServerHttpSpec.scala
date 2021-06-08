@@ -15,20 +15,30 @@ import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
 import akka.testkit.TestDuration
 import org.scalatest.wordspec.AnyWordSpec
 import org.scalatest.matchers.should.Matchers
-import viper.server.ViperServerRunner
+import org.scalatest.concurrent.TimeLimits
+import org.scalatest.time.{Seconds, Span}
+import viper.server.frontends.http.ViperHttpServer
+import viper.server.ViperConfig
 import viper.server.vsi.Requests._
 
+import scala.concurrent.Await
 import scala.concurrent.duration._
 
-class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteTest {
+class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteTest with TimeLimits {
 
   import scala.language.postfixOps
   implicit val jsonStreamingSupport: JsonEntityStreamingSupport = EntityStreamingSupport.json()
   implicit val requestTimeput: RouteTestTimeout = RouteTestTimeout(10.second dilated)
 
-  ViperServerRunner.main(Array())
+  private val verificationContext: VerificationExecutionContext = new DefaultVerificationExecutionContext()
+  private val viperServerHttp = {
+    val config = new ViperConfig(IndexedSeq())
+    val server = new ViperHttpServer(config)(verificationContext)
+    server.start()
+    server
+  }
 
-  private val _routsUnderTest = ViperServerRunner.viperServerHttp.routes()
+  private val _routesUnderTest = viperServerHttp.routes()
 
   def printRequestResponsePair(req: String, res: String): Unit = {
     println(s">>> ViperServer test request `$req` response in the following response: $res")
@@ -62,7 +72,7 @@ class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteT
 
   "ViperServer" should {
     s"start a verification process using `$tool` over a small Viper program" in {
-      Post("/verify", VerificationRequest(testSimpleViperCode_cmd)) ~> _routsUnderTest ~> check {
+      Post("/verify", VerificationRequest(testSimpleViperCode_cmd)) ~> _routesUnderTest ~> check {
         //printRequestResponsePair(s"POST, /verify, $testSimpleViperCode_cmd", responseAs[String])
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
@@ -71,7 +81,7 @@ class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteT
     }
 
     "respond with the result for process #0" in {
-      Get("/verify/0") ~> _routsUnderTest ~> check {
+      Get("/verify/0") ~> _routesUnderTest ~> check {
         //printRequestResponsePair(s"GET, /verify/0", responseAs[String])
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
@@ -80,7 +90,7 @@ class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteT
     }
 
     s"start another verification process using `$tool` on an empty file" in {
-      Post("/verify", VerificationRequest(testEmptyFile_cmd)) ~> _routsUnderTest ~> check {
+      Post("/verify", VerificationRequest(testEmptyFile_cmd)) ~> _routesUnderTest ~> check {
         //printRequestResponsePair(s"POST, /verify, $testEmptyFile_cmd", responseAs[String])
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
@@ -89,7 +99,7 @@ class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteT
     }
 
     "respond with the result for process #1" in {
-      Get("/verify/1") ~> _routsUnderTest ~> check {
+      Get("/verify/1") ~> _routesUnderTest ~> check {
         //printRequestResponsePair(s"GET, /verify/1", responseAs[String])
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
@@ -98,7 +108,7 @@ class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteT
     }
 
     s"start another verification process using `$tool` on an non-existent file" in {
-      Post("/verify", VerificationRequest(testNonExistingFile_cmd)) ~> _routsUnderTest ~> check {
+      Post("/verify", VerificationRequest(testNonExistingFile_cmd)) ~> _routesUnderTest ~> check {
         //printRequestResponsePair(s"POST, /verify, $testEmptyFile_cmd", responseAs[String])
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
@@ -107,10 +117,17 @@ class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteT
     }
 
     "stop all running executions and terminate self" in {
-      Get("/exit") ~> _routsUnderTest ~> check {
+      Get("/exit") ~> _routesUnderTest ~> check {
         //printRequestResponsePair(s"GET, /exit", responseAs[String])
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
+      }
+    }
+
+    "should eventually stop" in {
+      failAfter(Span(10, Seconds)) {
+        Await.ready(viperServerHttp.stopped(), Duration.Inf)
+        verificationContext.terminate()
       }
     }
   }

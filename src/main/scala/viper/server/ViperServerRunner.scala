@@ -15,6 +15,9 @@ import viper.server.core.{DefaultVerificationExecutionContext, VerificationExecu
 import viper.server.frontends.http.ViperHttpServer
 import viper.server.frontends.lsp.{Coordinator, CustomReceiver, IdeLanguageClient}
 
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
+
 object ViperServerRunner {
 
   var viperServerHttp: ViperHttpServer = _
@@ -25,22 +28,27 @@ object ViperServerRunner {
     if (config.serverMode() == config.SERVER_MODE_LSP) {
       runLspServer(config)(executor)
     } else if (config.serverMode() == config.SERVER_MODE_HTTP) {
-      startHttpServer(config)(executor)
+      runHttpServer(config)(executor)
     } else {
       throw new RuntimeException(s"unknown server mode ${config.serverMode()}")
     }
   }
 
   /**
-    * Start VCS in HTTP mode.
+    * Run VCS in HTTP mode.
     */
-  def startHttpServer(config: ViperConfig)(executor: VerificationExecutionContext): Unit = {
+  def runHttpServer(config: ViperConfig)(executor: VerificationExecutionContext): Unit = {
     viperServerHttp = new ViperHttpServer(config)(executor)
     viperServerHttp.start()
+    // wait until server has been stopped:
+    Await.ready(viperServerHttp.stopped(), Duration.Inf)
+    println("HTTP server has been stopped")
+    executor.terminate()
+    println("executor service has been shut down")
   }
 
   /**
-    * Start VCS in LSP mode.
+    * Run VCS in LSP mode.
     */
   private def runLspServer(config: ViperConfig)(executor: VerificationExecutionContext): Unit = {
     try {
