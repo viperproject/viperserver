@@ -327,7 +327,7 @@ jobs:
       - name: Trigger Viper-IDE CI
         # TODO: change ref to "master"!
         run: |
-          curl --request POST \
+          curl --fail --request POST \
           --user 'viper-admin:${{ secrets.VIPER_ADMIN_TOKEN }}' \
           --header 'Accept: application/vnd.github.v3+json' \
           --url 'https://api.github.com/repos/viperproject/viper-ide/actions/workflows/test.yml/dispatches' \
