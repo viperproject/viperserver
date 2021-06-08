@@ -262,7 +262,7 @@ jobs:
   create-nightly-release:
     # this job creates a new nightly pre-release, set viperserver.jar as artifacts, and deletes old releases
     if: (github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'nightly') || github.event_name == 'schedule'
-    needs: create-viper-tools
+    needs: test
     runs-on: ubuntu-latest
     env:
       # specifies that `latest` artifacts from `build` job should be used for nightly releases:
@@ -345,7 +345,7 @@ jobs:
   create-stable-release:
     # this job creates a stable draft-release and set viperserver.jar as artifacts
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'stable'
-    needs: create-viper-tools
+    needs: test
     runs-on: ubuntu-latest
     env:
       # specifies that `release` artifacts from `build` job should be used for stable releases:
