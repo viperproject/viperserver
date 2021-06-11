@@ -45,6 +45,9 @@ object ViperServerRunner {
     println("HTTP server has been stopped")
     executor.terminate()
     println("executor service has been shut down")
+    // the following `exit` call is required such that the server eventually terminates for `longDuration.vpr` in the
+    // test suite of viper-ide
+    System.exit(0)
   }
 
   /**
@@ -73,8 +76,12 @@ object ViperServerRunner {
       println("listener thread from server has stopped")
       executor.terminate()
       println("executor service has been shut down")
+      System.exit(0)
     } catch {
-      case e: IOException => println(s"IOException occurred: ${e.toString}")
+      case e: IOException => {
+        println(s"IOException occurred: ${e.toString}")
+        System.exit(1)
+      }
     }
   }
 
