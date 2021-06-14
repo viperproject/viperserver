@@ -289,6 +289,13 @@ jobs:
           name: versions-${{ env.NAME }}.txt
 
       - name: Check whether commits have changed
+          # the following command queries all releases (as JSON) and passes it to `jq` that performs the following
+          # filtering:
+          # 1. only consider prereleases (instead of stable releases)
+          # 2. extract body
+          # 3. check if $VERSIONS is contained in the release's body. $VERSIONS stores the file content of versions.txt
+          # 4. return 'true" if at least one release satisfies the criterion
+          # MATCHING_RELEASE is 'true' if a matching release has been found and thus no new release should be created
         run: |
           MATCHING_RELEASE=$( \
             curl --fail --silent \
@@ -296,15 +303,9 @@ jobs:
               --header 'Authorization: token ${{ secrets.GITHUB_TOKEN }}' \
               --url 'https://api.github.com/repos/viperproject/vs-verification-toolbox-release-testing/releases' \
             | \
-            jq --rawfile VERSIONS versions.txt \ # read versions.txt and store content in $VERSIONS
+            jq --rawfile VERSIONS versions.txt \
               'map(select(.prerelease == true) | .body | contains($VERSIONS)) | any')
-              # the filter above does the following:
-              # 1. only consider prereleases (instead of stable releases)
-              # 2. extract body
-              # 3. check if $VERSIONS is contained in the release's body
-              # 4. return 'true" if at least one release satisfies the criterion
           echo "MATCHING_RELEASE=$MATCHING_RELEASE" >> $GITHUB_ENV
-          # MATCHING_RELEASE is 'true' if a matching release has been found and thus no new release should be created
 
       - name: Create release tag
         if: env.MATCHING_RELEASE != 'true'
