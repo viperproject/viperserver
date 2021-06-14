@@ -301,7 +301,7 @@ jobs:
             curl --fail --silent \
               --header 'Accept: application/vnd.github.v3+json' \
               --header 'Authorization: token ${{ secrets.GITHUB_TOKEN }}' \
-              --url 'https://api.github.com/repos/viperproject/vs-verification-toolbox-release-testing/releases' \
+              --url 'https://api.github.com/repos/viperproject/viperserver/releases' \
             | \
             jq --rawfile VERSIONS versions.txt \
               'map(select(.prerelease == true) | .body | contains($VERSIONS)) | any')
