@@ -288,11 +288,32 @@ jobs:
         with:
           name: versions-${{ env.NAME }}.txt
 
+      - name: Check whether commits have changed
+          # the following command queries all releases (as JSON) and passes it to `jq` that performs the following
+          # filtering:
+          # 1. only consider prereleases (instead of stable releases)
+          # 2. extract body
+          # 3. check if $VERSIONS is contained in the release's body. $VERSIONS stores the file content of versions.txt
+          # 4. return 'true" if at least one release satisfies the criterion
+          # MATCHING_RELEASE is 'true' if a matching release has been found and thus no new release should be created
+        run: |
+          MATCHING_RELEASE=$( \
+            curl --fail --silent \
+              --header 'Accept: application/vnd.github.v3+json' \
+              --header 'Authorization: token ${{ secrets.GITHUB_TOKEN }}' \
+              --url 'https://api.github.com/repos/viperproject/viperserver/releases' \
+            | \
+            jq --rawfile VERSIONS versions.txt \
+              'map(select(.prerelease == true) | .body | contains($VERSIONS)) | any')
+          echo "MATCHING_RELEASE=$MATCHING_RELEASE" >> $GITHUB_ENV
+
       - name: Create release tag
+        if: env.MATCHING_RELEASE != 'true'
         shell: bash
         run: echo "TAG_NAME=$(date +v-%Y-%m-%d-%H%M)" >> $GITHUB_ENV
 
       - name: Create nightly release
+        if: env.MATCHING_RELEASE != 'true'
         id: create_release
         uses: viperproject/create-nightly-release@v1
         env:
@@ -305,6 +326,7 @@ jobs:
           keep_num: 1 # keep the previous nightly release such that there are always two
 
       - name: Upload ViperServer skinny jars
+        if: env.MATCHING_RELEASE != 'true'
         uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -315,6 +337,7 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload ViperServer fat jar artifact
+        if: env.MATCHING_RELEASE != 'true'
         uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -325,6 +348,7 @@ jobs:
           asset_content_type: application/octet-stream
 
       - name: Trigger Viper-IDE CI
+        if: env.MATCHING_RELEASE != 'true'
         run: |
           curl --fail --request POST \
           --user 'viper-admin:${{ secrets.VIPER_ADMIN_TOKEN }}' \
