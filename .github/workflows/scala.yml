@@ -288,17 +288,6 @@ jobs:
         with:
           name: versions-${{ env.NAME }}.txt
 
-      - name: Debug
-        run: |
-          curl --fail --silent \
-            --header 'Accept: application/vnd.github.v3+json' \
-            --header 'Authorization: token ${{ secrets.GITHUB_TOKEN }}' \
-            --url 'https://api.github.com/repos/viperproject/viperserver/releases' \
-          | \
-          jq --rawfile VERSIONS versions.txt \
-            'map(select(.prerelease == true) | .body)'
-          cat versions.txt
-
       - name: Check whether commits have changed
           # the following command queries all releases (as JSON) and passes it to `jq` that performs the following
           # filtering:
