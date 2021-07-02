@@ -7,7 +7,7 @@
 package viper.server.frontends.lsp
 
 import org.eclipse.lsp4j.{Diagnostic, Position, Range}
-import viper.silver.reporter.SymbolType
+import viper.silver.reporter.SymbolKind
 
 object VerificationSuccess extends Enumeration {
   type VerificationSuccess = Value
@@ -108,7 +108,7 @@ case class PlatformDependentURL (
               linux: Option[String])
 
 // scope == null means global scope
-case class Definition(definition_type: SymbolType, name: String, code_location: Position, scope: Range)
+case class Definition(definition_type: SymbolKind, name: String, code_location: Position, scope: Range)
 
 case class BackendOutput(
               typ: String,
