@@ -15,7 +15,7 @@ import spray.json.DefaultJsonProtocol
 import viper.server.vsi.{AstJobId, VerJobId}
 import viper.silicon.SymbLog
 import viper.silicon.state.terms.Term
-import viper.silver.ast.{Position => _, _}
+import viper.silver.ast._
 import viper.silver.reporter._
 import viper.silver.verifier.{ValueEntry, _}
 
@@ -59,8 +59,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: File): JsValue = JsString(obj.toAbsolutePath.toString)
   })
 
-  implicit val position_writer: RootJsonFormat[Position] = lift(new RootJsonWriter[Position] {
-    override def write(obj: Position): JsValue = JsObject(
+  implicit val sourcePosition_writer: RootJsonFormat[AbstractSourcePosition] = lift(new RootJsonWriter[AbstractSourcePosition] {
+    override def write(obj: AbstractSourcePosition): JsValue = JsObject(
       "file" -> (if (obj.file != null) {
         //FIXME This hack is needed due to the following bug in Silver: https://github.com/viperproject/silver/issues/253
         //TODO  The bug has been fixed. Review if this is still needed.
@@ -75,6 +75,14 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case _ =>
           JsString(s"<undefined>")
       }))
+  })
+
+  implicit val position_writer: RootJsonFormat[Position] = lift(new RootJsonWriter[Position] {
+    override def write(obj: Position): JsValue = obj match {
+      case NoPosition => JsString(obj.toString)
+      case sp: AbstractSourcePosition => sp.toJson
+      case hlc: HasLineColumn => JsString(s"${hlc.line}:${hlc.column}")
+    }
   })
 
   implicit val optionAny_writer: RootJsonFormat[Option[Any]] = lift(new RootJsonWriter[Option[Any]] {
@@ -98,7 +106,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         "type" -> JsString(entity_type),
         "name" -> JsString(obj.name),
         "position" -> (obj.pos match {
-          case src_pos: Position => src_pos.toJson
+          case src_pos: DefPosition => src_pos.toJson
           case no_pos => JsString(no_pos.toString)
         }))
     }
@@ -168,7 +176,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
             "tag" -> JsString(obj.fullId),
             "text" -> JsString(obj.readableMessage),
             "position" -> (obj.pos match {
-              case src_pos: Position => src_pos.toJson
+              case src_pos: DefPosition => src_pos.toJson
               case no_pos => JsString(no_pos.toString)
             }),
             "cached" -> JsBoolean(obj.cached),
@@ -178,7 +186,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
             "tag" -> JsString(obj.fullId),
             "text" -> JsString(obj.readableMessage),
             "position" -> (obj.pos match {
-              case src_pos: Position => src_pos.toJson
+              case src_pos: DefPosition => src_pos.toJson
               case no_pos => JsString(no_pos.toString)
             }),
             "cached" -> JsBoolean(obj.cached))
@@ -326,8 +334,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     }
   })
 
-  implicit val viperType_writer: RootJsonFormat[viper.silver.ast.Type] = lift(new RootJsonWriter[Type] {
-    override def write(obj: Type) = obj match {
+  implicit val viperType_writer: RootJsonFormat[ViperType] = lift(new RootJsonWriter[ViperType] {
+    override def write(obj: ViperType) = obj match {
       case atomic: AtomicType =>
         JsObject("kind" -> JsString("atomic"), "typename" -> atomic.toJson)
       case generic: GenericType =>
@@ -340,8 +348,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     }
   })
 
-  implicit val symbolType_writer: RootJsonFormat[SymbolType] = lift(new RootJsonWriter[SymbolType] {
-    override def write(obj: SymbolType) = obj match {
+  implicit val symbolType_writer: RootJsonFormat[SymbolKind] = lift(new RootJsonWriter[SymbolKind] {
+    override def write(obj: SymbolKind) = obj match {
       case typed_symbol: TypedSymbol =>
         JsObject("name" -> JsString(typed_symbol.name), "viperType" -> typed_symbol.viperType.toJson)
       case untyped_symbol =>
@@ -358,7 +366,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       "name" -> JsString(obj.name),
       "type" -> obj.typ.toJson,
       "location" -> (obj.location match {
-        case p:Position => p.toJson
+        case p:DefPosition => p.toJson
         case _ => JsString("<undefined>")
       }),
       "scopeStart" -> (obj.scope match {

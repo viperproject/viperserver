@@ -6,11 +6,11 @@
 
 package viper.server.utility
 
-import scala.language.postfixOps
-import viper.silver.ast.{AbstractSourcePosition, Declaration, Domain, Field, Function, LocalVarDecl, Method,
-  NamedDomainAxiom, Positioned, Predicate, Program, Scope, Typed}
+import viper.silver.ast.{AbstractSourcePosition, Declaration, Domain, Field, Function, LocalVarDecl, Method, NamedDomainAxiom, Positioned, Predicate, Program, Scope, Typed}
 import viper.silver.frontend.SilFrontend
 import viper.silver.reporter._
+
+import scala.language.postfixOps
 
 trait ProgramDefinitionsProvider {
   protected val _frontend: SilFrontend
