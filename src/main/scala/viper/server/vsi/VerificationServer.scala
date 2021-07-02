@@ -63,11 +63,12 @@ trait VerificationServer extends Post {
     * This function must be called before any other. Calling any other function before this one
     * will result in an IllegalStateException.
     * */
-  def start(active_jobs: Int): Unit = {
+  def start(active_jobs: Int): Future[Unit] = {
     ast_jobs = new JobPool("VSI-AST-pool", active_jobs)
     ver_jobs = new JobPool("VSI-Verification-pool", active_jobs)
     _termActor = system.actorOf(Terminator.props(ast_jobs, ver_jobs), "terminator")
     isRunning = true
+    Future.successful()
   }
 
   protected def initializeProcess[S <: JobId, T <: JobHandle : ClassTag]

@@ -34,7 +34,9 @@ class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteT
   private val viperServerHttp = {
     val config = new ViperConfig(IndexedSeq())
     val server = new ViperHttpServer(config)(verificationContext)
-    server.start()
+    val started = server.start()
+    // wait until server has been started:
+    Await.result(started, Duration.Inf)
     server
   }
 

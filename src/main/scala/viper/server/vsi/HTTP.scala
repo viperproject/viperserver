@@ -9,6 +9,7 @@ package viper.server.vsi
 import akka.NotUsed
 import akka.actor.PoisonPill
 import akka.http.scaladsl.Http
+import akka.http.scaladsl.Http.ServerBinding
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.marshalling.ToResponseMarshallable
 import akka.http.scaladsl.server.Directives._
@@ -68,15 +69,20 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
   private var stoppedPromise: Promise[Unit] = _
   var bindingFuture: Future[Http.ServerBinding] = _
 
-  /** The server has been stopped when `stopped` completes. Afterwards, the execution context can be terminated. */
-  override def start(active_jobs: Int): Unit = {
+  /** The server has been stopped when `stopped` completes. Afterwards, the execution context can be terminated.
+    * The returned future completes as soon as the server has been started. Before completion, `port` will be set
+    * to the port number selected by the HTTP server
+    */
+  override def start(active_jobs: Int): Future[Unit] = {
     ast_jobs = new JobPool("AST-pool", active_jobs)
     ver_jobs = new JobPool("Verification-pool", active_jobs)
     stoppedPromise = Promise()
     bindingFuture = Http().newServerAt("localhost", port).bindFlow(setRoutes())
-    bindingFuture.map(_.whenTerminationSignalIssued)
     _termActor = system.actorOf(Terminator.props(ast_jobs, ver_jobs, Some(bindingFuture)), "terminator")
-    isRunning = true
+    bindingFuture.map { serverBinding =>
+      port = serverBinding.localAddress.getPort
+      isRunning = true
+    }
   }
 
   /** The returned future is completed when the server is stopped.
