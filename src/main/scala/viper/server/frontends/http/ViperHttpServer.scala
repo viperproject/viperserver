@@ -6,7 +6,7 @@
 
 package viper.server.frontends.http
 
-import akka.NotUsed
+import akka.{Done, NotUsed}
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.marshalling.ToResponseMarshallable
 import akka.http.scaladsl.server.Directives._
@@ -31,7 +31,7 @@ import scala.util.{Failure, Success, Try}
 class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContext)
   extends ViperCoreServer(config)(executor) with VerificationServerHttp {
 
-  override def start(): Future[Unit] = {
+  override def start(): Future[Done] = {
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
@@ -40,6 +40,7 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
     port = config.port.toOption.getOrElse(0) // 0 causes HTTP server to automatically select a free port
     super.start(config.maximumActiveJobs()).map({ _ =>
       println(s"ViperServer online at http://localhost:$port")
+      Done
     })(executor)
   }
 

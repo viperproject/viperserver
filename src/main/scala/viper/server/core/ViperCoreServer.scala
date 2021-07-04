@@ -34,7 +34,7 @@ class ViperCoreServer(val config: ViperConfig)(implicit val executor: Verificati
     * This function must be called before any other. Calling any other function before this one
     * will result in an IllegalStateException.
     * */
-  def start(): Future[Unit] = {
+  def start(): Future[Done] = {
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
     println(s"Writing [level:${config.logLevel()}] logs into " +
       s"${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
@@ -43,6 +43,7 @@ class ViperCoreServer(val config: ViperConfig)(implicit val executor: Verificati
 
     super.start(config.maximumActiveJobs()) map { _ =>
       logger.get.info(s"ViperCoreServer has started.")
+      Done
     }
   }
 

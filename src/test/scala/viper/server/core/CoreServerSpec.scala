@@ -92,7 +92,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     val logFile = Paths.get("logs", s"viperserver_journal_${System.currentTimeMillis()}.log").toFile
     logFile.getParentFile.mkdirs
     logFile.createNewFile()
-    val config = new ViperConfig(Array("--logLevel", "TRACE", "--logFile", logFile.getAbsolutePath))
+    val config = new ViperConfig(Seq("--logLevel", "TRACE", "--logFile", logFile.getAbsolutePath))
     val testName = currentTestName match {
       case Some(name) => name
       case None => throw new Exception("no test name")
