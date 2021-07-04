@@ -15,6 +15,7 @@ import spray.json.DefaultJsonProtocol
 import viper.server.vsi.{AstJobId, VerJobId}
 import viper.silicon.SymbLog
 import viper.silicon.state.terms.Term
+import viper.silver.ast._
 import viper.silver.reporter._
 import viper.silver.verifier.{ValueEntry, _}
 
@@ -58,8 +59,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: File): JsValue = JsString(obj.toAbsolutePath.toString)
   })
 
-  implicit val position_writer: RootJsonFormat[Position] = lift(new RootJsonWriter[Position] {
-    override def write(obj: Position): JsValue = JsObject(
+  implicit val sourcePosition_writer: RootJsonFormat[AbstractSourcePosition] = lift(new RootJsonWriter[AbstractSourcePosition] {
+    override def write(obj: AbstractSourcePosition): JsValue = JsObject(
       "file" -> (if (obj.file != null) {
         //FIXME This hack is needed due to the following bug in Silver: https://github.com/viperproject/silver/issues/253
         //TODO  The bug has been fixed. Review if this is still needed.
@@ -74,6 +75,14 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case _ =>
           JsString(s"<undefined>")
       }))
+  })
+
+  implicit val position_writer: RootJsonFormat[Position] = lift(new RootJsonWriter[Position] {
+    override def write(obj: Position): JsValue = obj match {
+      case NoPosition => JsString(obj.toString)
+      case sp: AbstractSourcePosition => sp.toJson
+      case hlc: HasLineColumn => JsString(s"${hlc.line}:${hlc.column}")
+    }
   })
 
   implicit val optionAny_writer: RootJsonFormat[Option[Any]] = lift(new RootJsonWriter[Option[Any]] {
@@ -96,10 +105,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       JsObject(
         "type" -> JsString(entity_type),
         "name" -> JsString(obj.name),
-        "position" -> (obj.pos match {
-          case src_pos: Position => src_pos.toJson
-          case no_pos => JsString(no_pos.toString)
-        }))
+        "position" -> obj.pos.toJson
+      )
     }
   })
 
@@ -166,20 +173,14 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
           JsObject(
             "tag" -> JsString(obj.fullId),
             "text" -> JsString(obj.readableMessage),
-            "position" -> (obj.pos match {
-              case src_pos: Position => src_pos.toJson
-              case no_pos => JsString(no_pos.toString)
-            }),
+            "position" -> obj.pos.toJson,
             "cached" -> JsBoolean(obj.cached),
             "counterexample" -> e.counterexample.get.toJson)
         case _ =>
           JsObject(
             "tag" -> JsString(obj.fullId),
             "text" -> JsString(obj.readableMessage),
-            "position" -> (obj.pos match {
-              case src_pos: Position => src_pos.toJson
-              case no_pos => JsString(no_pos.toString)
-            }),
+            "position" -> obj.pos.toJson,
             "cached" -> JsBoolean(obj.cached))
       }
     }
@@ -295,18 +296,68 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: ProgramOutlineReport) = JsObject("members" -> JsArray(obj.members.map(_.toJson).toVector))
   })
 
+  implicit val viperAtomicType_writer: RootJsonFormat[viper.silver.ast.AtomicType] = lift(new RootJsonWriter[AtomicType] {
+    override def write(obj: AtomicType) = obj match {
+      case viper.silver.ast.Int => JsString("Int")
+      case viper.silver.ast.Bool => JsString("Bool")
+      case viper.silver.ast.Perm => JsString("Perm")
+      case viper.silver.ast.Ref => JsString("Ref")
+      case viper.silver.ast.InternalType => JsString("Internal")
+      case viper.silver.ast.Wand => JsString("Wand")
+      case viper.silver.ast.BackendType(boogieName, smtName) =>
+        JsObject("boogieName" -> JsString(boogieName), "smtName" -> JsString(smtName))
+    }
+  })
+
+  implicit val viperGenericType_writer: RootJsonFormat[viper.silver.ast.GenericType] = lift(new RootJsonWriter[GenericType] {
+    override def write(obj: GenericType) = if (obj.isConcrete) {
+      // If this is a concrete type instantiation, we serialize it concretely
+      obj match {
+        case col: CollectionType =>
+          JsObject("collection" -> JsString(col.genericName), "elements" -> col.elementType.toJson)
+        case MapType(keyType, valueType) =>
+          JsObject("collection" -> JsString("Map"), "keys" -> keyType.toJson, "values" -> valueType.toJson)
+        case DomainType(domainName, partialTypVarsMap) =>
+          JsObject("collection" -> JsString(domainName), "typeParams" -> JsArray(partialTypVarsMap.values.map(_.toJson).toVector))
+      }
+    } else {
+      // If this is not a concrete type instantiation, we serialize it generically
+      JsString(obj.genericName)
+    }
+  })
+
+  implicit val viperType_writer: RootJsonFormat[ViperType] = lift(new RootJsonWriter[ViperType] {
+    override def write(obj: ViperType) = obj match {
+      case atomic: AtomicType =>
+        JsObject("kind" -> JsString("atomic"), "typename" -> atomic.toJson)
+      case generic: GenericType =>
+        JsObject("kind" -> JsString("generic"), "typename" -> generic.toJson, "isConcrete" -> JsBoolean(generic.isConcrete))
+      case ext: ExtensionType =>
+        JsObject("kind" -> JsString("extension"), "typename" -> JsString(ext.toString()))
+      case weird_type =>
+        /** TODO: check why trait [[viper.silver.ast.Type]] is not sealed */
+        JsObject("kind" -> JsString("weird_type"), "typename" -> JsString(weird_type.toString()))
+    }
+  })
+
+  implicit val symbolType_writer: RootJsonFormat[SymbolKind] = lift(new RootJsonWriter[SymbolKind] {
+    override def write(obj: SymbolKind) = obj match {
+      case typed_symbol: TypedSymbol =>
+        JsObject("name" -> JsString(typed_symbol.name), "viperType" -> typed_symbol.viperType.toJson)
+      case untyped_symbol =>
+        JsObject("name" -> JsString(untyped_symbol.name))
+    }
+  })
+
   /** Legacy marshaller format. Using three different position types in one case class is ugly, but a valid
     * workaround for handling all cases of AST construction. If you want to try to improve/refactor, see
-    * [[ViperBackend.collectDefinitions]] for the usage Definition.
+    * [[viper.server.utility.ProgramDefinitionsProvider]] for the usage Definition.
     */
   implicit val definition_writer: RootJsonFormat[Definition] = lift(new RootJsonWriter[Definition] {
     override def write(obj: Definition) = JsObject(
       "name" -> JsString(obj.name),
-      "type" -> JsString(obj.typ),
-      "location" -> (obj.location match {
-        case p:Position => p.toJson
-        case _ => JsString("<undefined>")
-      }),
+      "type" -> obj.typ.toJson,
+      "location" -> obj.location.toJson,
       "scopeStart" -> (obj.scope match {
         case Some(s) => JsString(s"${s.start.line}:${s.start.column}")
         case _ => JsString("global")
