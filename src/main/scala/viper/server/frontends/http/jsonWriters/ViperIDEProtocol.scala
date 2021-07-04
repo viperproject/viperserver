@@ -105,10 +105,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       JsObject(
         "type" -> JsString(entity_type),
         "name" -> JsString(obj.name),
-        "position" -> (obj.pos match {
-          case src_pos: DefPosition => src_pos.toJson
-          case no_pos => JsString(no_pos.toString)
-        }))
+        "position" -> obj.pos.toJson
+      )
     }
   })
 
@@ -175,20 +173,14 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
           JsObject(
             "tag" -> JsString(obj.fullId),
             "text" -> JsString(obj.readableMessage),
-            "position" -> (obj.pos match {
-              case src_pos: DefPosition => src_pos.toJson
-              case no_pos => JsString(no_pos.toString)
-            }),
+            "position" -> obj.pos.toJson,
             "cached" -> JsBoolean(obj.cached),
             "counterexample" -> e.counterexample.get.toJson)
         case _ =>
           JsObject(
             "tag" -> JsString(obj.fullId),
             "text" -> JsString(obj.readableMessage),
-            "position" -> (obj.pos match {
-              case src_pos: DefPosition => src_pos.toJson
-              case no_pos => JsString(no_pos.toString)
-            }),
+            "position" -> obj.pos.toJson,
             "cached" -> JsBoolean(obj.cached))
       }
     }
@@ -365,10 +357,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: Definition) = JsObject(
       "name" -> JsString(obj.name),
       "type" -> obj.typ.toJson,
-      "location" -> (obj.location match {
-        case p:DefPosition => p.toJson
-        case _ => JsString("<undefined>")
-      }),
+      "location" -> obj.location.toJson,
       "scopeStart" -> (obj.scope match {
         case Some(s) => JsString(s"${s.start.line}:${s.start.column}")
         case _ => JsString("global")
