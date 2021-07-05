@@ -92,19 +92,18 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     val logFile = Paths.get("logs", s"viperserver_journal_${System.currentTimeMillis()}.log").toFile
     logFile.getParentFile.mkdirs
     logFile.createNewFile()
-    val config = new ViperConfig(Array("--logLevel", "TRACE", "--logFile", logFile.getAbsolutePath))
-    val core = new ViperCoreServer(config)(verificationContext)
-    core.start()
-
+    val config = new ViperConfig(Seq("--logLevel", "TRACE", "--logFile", logFile.getAbsolutePath))
     val testName = currentTestName match {
-      case Some(name) =>
-        core.logger.get.debug(s"server started for test case '$name'")
-        name
+      case Some(name) => name
       case None => throw new Exception("no test name")
     }
+    val core = new ViperCoreServer(config)(verificationContext)
+    val started = core.start().map({ _ =>
+      core.logger.get.debug(s"server started for test case '$testName'")
+    })(verificationContext)
 
     // execute testCode
-    val testFuture = testCode(core, verificationContext)
+    val testFuture = started.flatMap({_ => testCode(core, verificationContext)})(verificationContext)
     // if successful, try to stop core server
     // if unsuccessful, stop core server but return error of testFuture
     val testWithShutdownFuture = testFuture.transformWith(testRes => {

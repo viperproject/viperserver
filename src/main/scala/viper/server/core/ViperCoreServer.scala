@@ -34,15 +34,17 @@ class ViperCoreServer(val config: ViperConfig)(implicit val executor: Verificati
     * This function must be called before any other. Calling any other function before this one
     * will result in an IllegalStateException.
     * */
-  def start(): Unit = {
+  def start(): Future[Done] = {
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
     println(s"Writing [level:${config.logLevel()}] logs into " +
       s"${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
     ViperCache.initialize(logger.get, config.backendSpecificCache())
 
-    super.start(config.maximumActiveJobs())
-    logger.get.info(s"ViperCoreServer has started.")
+    super.start(config.maximumActiveJobs()) map { _ =>
+      logger.get.info(s"ViperCoreServer has started.")
+      Done
+    }
   }
 
   def requestAst(arg_list: List[String]): AstJobId = {

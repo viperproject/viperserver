@@ -33,9 +33,9 @@ class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteT
   private val verificationContext: VerificationExecutionContext = new DefaultVerificationExecutionContext()
   private val viperServerHttp = {
     val config = new ViperConfig(IndexedSeq())
-    val server = new ViperHttpServer(config)(verificationContext)
-    server.start()
-    server
+    new ViperHttpServer(config)(verificationContext)
+    // note that the server is not yet started but is just initialized
+    // the first test case will then actually start it
   }
 
   private val _routesUnderTest = viperServerHttp.routes()
@@ -71,6 +71,14 @@ class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteT
   private val testNonExistingFile_cmd = s"$tool --disableCaching ${nonExistingFile}"
 
   "ViperServer" should {
+    "eventually start" in {
+      failAfter(Span(10, Seconds)) {
+        val started = viperServerHttp.start()
+        // wait until server has been started:
+        Await.result(started, Duration.Inf)
+      }
+    }
+
     s"start a verification process using `$tool` over a small Viper program" in {
       Post("/verify", VerificationRequest(testSimpleViperCode_cmd)) ~> _routesUnderTest ~> check {
         //printRequestResponsePair(s"POST, /verify, $testSimpleViperCode_cmd", responseAs[String])

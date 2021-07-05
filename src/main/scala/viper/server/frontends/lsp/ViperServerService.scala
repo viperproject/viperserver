@@ -36,11 +36,12 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
 
   def setReady(backend: BackendProperties): Unit = {
     Coordinator.backend = backend
-    start()
-    is_ready = true
-    val param = BackendReadyParams("Silicon", false, true)
-    Coordinator.client.notifyBackendReady(param)
-    Log.info("The backend is ready for verification")
+    start() map { _ =>
+      is_ready = true
+      val param = BackendReadyParams("Silicon", false, true)
+      Coordinator.client.notifyBackendReady(param)
+      Log.info("The backend is ready for verification")
+    }
   }
 
   def setStopping(): Unit = {

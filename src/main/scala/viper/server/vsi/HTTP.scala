@@ -6,7 +6,7 @@
 
 package viper.server.vsi
 
-import akka.NotUsed
+import akka.{Done, NotUsed}
 import akka.actor.PoisonPill
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
@@ -65,24 +65,37 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
 
   def setRoutes(): Route
 
-  private var stoppedPromise: Promise[Unit] = _
+  private var stoppedPromise: Promise[Done] = _
   var bindingFuture: Future[Http.ServerBinding] = _
 
-  /** The server has been stopped when `stopped` completes. Afterwards, the execution context can be terminated. */
-  override def start(active_jobs: Int): Unit = {
+  /**
+    * The returned future completes as soon as the server has been started. Before completion, `port` will be set
+    * to the port number selected by the HTTP server.
+    * The returned future does NOT indicate when the server has stopped. Use the future returned by `stopped` instead.
+    */
+  override def start(active_jobs: Int): Future[Done] = {
     ast_jobs = new JobPool("AST-pool", active_jobs)
     ver_jobs = new JobPool("Verification-pool", active_jobs)
     stoppedPromise = Promise()
     bindingFuture = Http().newServerAt("localhost", port).bindFlow(setRoutes())
-    bindingFuture.map(_.whenTerminationSignalIssued)
     _termActor = system.actorOf(Terminator.props(ast_jobs, ver_jobs, Some(bindingFuture)), "terminator")
-    isRunning = true
+    bindingFuture.map { serverBinding =>
+      val newPort = serverBinding.localAddress.getPort
+      if (port == 0) {
+        assert(newPort != 0, s"HTTP server should have selected a non-zero port but did not")
+      } else {
+        assert(port == newPort, s"HTTP server has selected a different port although a non-zero port has been specified")
+      }
+      port = newPort
+      isRunning = true
+      Done
+    }
   }
 
   /** The returned future is completed when the server is stopped.
     * Afterwards, the execution context can be terminated.
     * This function cannot be called before calling `start`. */
-  def stopped(): Future[Unit] = {
+  def stopped(): Future[Done] = {
     stoppedPromise.future
   }
 
@@ -118,7 +131,7 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
       get {
         // note that `stop` internally uses the `_termActor` that unbinds the server's port and terminates the execution context
         onComplete(stop()) { err: Try[List[String]] =>
-          stoppedPromise.complete(err.map(_ => ()))
+          stoppedPromise.complete(err.map(_ => Done))
           complete( serverStopConfirmation(err) )
         }
       }
