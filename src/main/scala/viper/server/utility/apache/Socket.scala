@@ -55,14 +55,14 @@ object Socket {
       ds.setReuseAddress(true)
       return true
     } catch {
-      case e: IOException =>
+      case _: IOException =>
 
     } finally {
       if (ds != null) ds.close()
       if (ss != null) try
         ss.close()
       catch {
-        case e: IOException =>
+        case _: IOException =>
 
         /* should not be thrown */
       }

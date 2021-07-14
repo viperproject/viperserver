@@ -1,12 +1,10 @@
-/**
-  * This Source Code Form is subject to the terms of the Mozilla Public
-  * License, v. 2.0. If a copy of the MPL was not distributed with this
-  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
-  *
-  * Copyright (c) 2011-2019 ETH Zurich.
-  */
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) 2011-2020 ETH Zurich.
 
-package viper.server
+package viper.server.frontends.http.jsonWriters
 
 import akka.NotUsed
 import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSupport}
@@ -14,18 +12,19 @@ import akka.stream.scaladsl.Flow
 import akka.util.ByteString
 import edu.mit.csail.sdg.translator.A4Solution
 import spray.json.DefaultJsonProtocol
+import viper.server.vsi.{AstJobId, VerJobId}
 import viper.silicon.logger.SymbLog
 import viper.silicon.logger.writer.{SymbExLogReportWriter, TermWriter}
 import viper.silicon.state.terms.Term
-import viper.silver.reporter.{InvalidArgumentsReport, _}
-import viper.silver.verifier._
-
+import viper.silver.ast._
+import viper.silver.reporter._
+import viper.silver.verifier.{ValueEntry, _}
 
 object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
 
   import spray.json._
 
-  final case class VerificationRequestAccept(id: Int)
+  final case class VerificationRequestAccept(ast_id: AstJobId, ver_id: VerJobId)
   final case class VerificationRequestReject(msg: String)
   final case class ServerStopConfirmed(msg: String)
   final case class JobDiscardAccept(msg: String)
@@ -36,7 +35,12 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   final case class AlloyGenerationRequestComplete(solution: A4Solution)
 
 
-  implicit val verReqAccept_format: RootJsonFormat[VerificationRequestAccept] = jsonFormat1(VerificationRequestAccept.apply)
+  implicit val verReqAccept_writer: RootJsonFormat[VerificationRequestAccept] = lift(new RootJsonWriter[VerificationRequestAccept] {
+    override def write(obj: VerificationRequestAccept): JsValue = JsObject(
+      "ast_id" -> JsNumber(obj.ast_id.id),
+      "id" -> JsNumber(obj.ver_id.id)
+    )
+  })
   implicit val verReqReject_format: RootJsonFormat[VerificationRequestReject] = jsonFormat1(VerificationRequestReject.apply)
   implicit val serverStopConfirmed_format: RootJsonFormat[ServerStopConfirmed] = jsonFormat1(ServerStopConfirmed.apply)
   implicit val jobDiscardAccept_format: RootJsonFormat[JobDiscardAccept] = jsonFormat1(JobDiscardAccept.apply)
@@ -56,21 +60,30 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: File): JsValue = JsString(obj.toAbsolutePath.toString)
   })
 
+  implicit val sourcePosition_writer: RootJsonFormat[AbstractSourcePosition] = lift(new RootJsonWriter[AbstractSourcePosition] {
+    override def write(obj: AbstractSourcePosition): JsValue = JsObject(
+      "file" -> (if (obj.file != null) {
+        //FIXME This hack is needed due to the following bug in Silver: https://github.com/viperproject/silver/issues/253
+        //TODO  The bug has been fixed. Review if this is still needed.
+        obj.file.toJson
+      } else {
+        JsString("<undefined>")
+      }),
+      "start" -> JsString(s"${obj.line}:${obj.column}"),
+      "end" -> (obj.end match {
+        case Some(end_pos) =>
+          JsString(s"${end_pos.line}:${end_pos.column}")
+        case _ =>
+          JsString(s"<undefined>")
+      }))
+  })
+
   implicit val position_writer: RootJsonFormat[Position] = lift(new RootJsonWriter[Position] {
-    override def write(obj: Position): JsValue = JsObject(
-        "file" -> (if (obj.file != null) {
-          //FIXME this hack is needed due to the following bug in Silver: https://bitbucket.org/viperproject/silver/issues/232
-          obj.file.toJson
-        } else {
-          JsString("<undefined>")
-        }),
-        "start" -> JsString(s"${obj.line}:${obj.column}"),
-        "end" -> (obj.end match {
-          case Some(end_pos) =>
-            JsString(s"${end_pos.line}:${end_pos.column}")
-          case _ =>
-            JsString(s"<undefined>")
-        }))
+    override def write(obj: Position): JsValue = obj match {
+      case NoPosition => JsString(obj.toString)
+      case sp: AbstractSourcePosition => sp.toJson
+      case hlc: HasLineColumn => JsString(s"${hlc.line}:${hlc.column}")
+    }
   })
 
   implicit val optionAny_writer: RootJsonFormat[Option[Any]] = lift(new RootJsonWriter[Option[Any]] {
@@ -93,26 +106,89 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       JsObject(
         "type" -> JsString(entity_type),
         "name" -> JsString(obj.name),
-        "position" -> (obj.pos match {
-          case src_pos: Position => src_pos.toJson
-          case no_pos => JsString(no_pos.toString)
-        }))
+        "position" -> obj.pos.toJson
+      )
     }
   })
 
+  implicit val constantEntry_writer: RootJsonFormat[ConstantEntry] = lift(new RootJsonWriter[ConstantEntry] {
+    override def write(obj: ConstantEntry): JsValue = JsString(obj.value)
+  })
+
+  implicit val applicationEntry_writer: RootJsonFormat[ApplicationEntry] = lift(new RootJsonWriter[ApplicationEntry] {
+    override def write(obj: ApplicationEntry): JsValue = JsObject(
+      "name" -> JsString(obj.name),
+      "args" -> JsArray(obj.arguments.map(_.toJson).toVector)
+    )
+  })
+
+  implicit val modelValue_writer: RootJsonFormat[ValueEntry] = lift(new RootJsonWriter[ValueEntry] {
+    override def write(obj: ValueEntry): JsValue = obj match {
+      case c: ConstantEntry =>
+        JsObject(
+          "type" -> JsString("constant_entry"),
+          "value" -> c.toJson
+        )
+      case a: ApplicationEntry =>
+        JsObject(
+          "type" -> JsString("application_entry"),
+          "value" -> a.toJson
+        )
+    }
+  })
+
+  implicit val mapEntry_writer: RootJsonFormat[MapEntry] = lift(new RootJsonWriter[MapEntry] {
+    override def write(obj: MapEntry): JsValue = JsObject(
+      "type" -> JsString("map_entry"),
+      "cases" -> JsArray(obj.options.map {
+        case (args: Seq[ValueEntry], res: ValueEntry) =>
+          JsObject("args" -> JsArray(args.map(_.toJson).toVector),
+                   "value" -> res.toJson)
+      }.toVector),
+      "default" -> obj.default.toJson
+    )
+  })
+
+  implicit val modelEntry_writer: RootJsonFormat[ModelEntry] = lift(new RootJsonWriter[ModelEntry] {
+    override def write(obj: ModelEntry): JsValue = obj match {
+      case ve: ValueEntry =>
+        ve.toJson
+      case me: MapEntry =>
+        me.toJson
+    }
+  })
+
+  implicit val model_writer: RootJsonFormat[Model] = lift(new RootJsonWriter[Model] {
+    override def write(obj: Model): JsValue =
+      JsObject(obj.entries.map { case (k: String, v: ModelEntry) => (k, v.toJson) })
+  })
+
+  implicit val counterexample_writer: RootJsonFormat[Counterexample] = lift(new RootJsonWriter[Counterexample] {
+    override def write(obj: Counterexample): JsValue = JsObject("model" -> obj.model.toJson)
+  })
+
   implicit val abstractError_writer: RootJsonFormat[AbstractError] = lift(new RootJsonWriter[AbstractError] {
-    override def write(obj: AbstractError) = JsObject(
-      "cached" -> JsBoolean(obj.cached),
-      "tag" -> JsString(obj.fullId),
-      "text" -> JsString(obj.readableMessage),
-      "position" -> (obj.pos match {
-        case src_pos: Position => src_pos.toJson
-        case no_pos => JsString(no_pos.toString)
-      }))
+    override def write(obj: AbstractError): JsValue = {
+      obj match {
+        case e: VerificationError if e.counterexample.isDefined =>
+          JsObject(
+            "tag" -> JsString(obj.fullId),
+            "text" -> JsString(obj.readableMessage),
+            "position" -> obj.pos.toJson,
+            "cached" -> JsBoolean(obj.cached),
+            "counterexample" -> e.counterexample.get.toJson)
+        case _ =>
+          JsObject(
+            "tag" -> JsString(obj.fullId),
+            "text" -> JsString(obj.readableMessage),
+            "position" -> obj.pos.toJson,
+            "cached" -> JsBoolean(obj.cached))
+      }
+    }
   })
 
   implicit val failure_writer: RootJsonFormat[Failure] = lift(new RootJsonWriter[Failure] {
-    override def write(obj: Failure) =
+    override def write(obj: Failure): JsObject =
       JsObject(
         "type" -> JsString("error"),
         "errors" -> JsArray(obj.errors.map(_.toJson).toVector))
@@ -122,7 +198,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: EntitySuccessMessage): JsObject = {
       JsObject(
         "entity" -> obj.concerning.toJson,
-        "time" -> obj.verificationTime.toJson)
+        "time" -> obj.verificationTime.toJson,
+        "cached" -> obj.cached.toJson)
     }
   })
 
@@ -130,14 +207,40 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: EntityFailureMessage): JsValue = JsObject(
       "entity" -> obj.concerning.toJson,
       "time" -> obj.verificationTime.toJson,
+      "result" -> obj.result.toJson,
+      "cached" -> obj.cached.toJson)
+  })
+
+  implicit val astConstructionMessage_writer: RootJsonFormat[AstConstructionResultMessage] = lift(new RootJsonWriter[AstConstructionResultMessage] {
+    override def write(obj: AstConstructionResultMessage): JsValue = JsObject(
+      "status" -> (obj match {
+        case _: AstConstructionSuccessMessage =>
+          JsString("success")
+        case _: AstConstructionFailureMessage =>
+          JsString("failure")
+      }),
+      "details" -> (obj match {
+        case succ: AstConstructionSuccessMessage =>
+          succ.toJson
+        case fail: AstConstructionFailureMessage =>
+          fail.toJson
+      }))
+  })
+
+  implicit val astConstructionSuccess_writer: RootJsonFormat[AstConstructionSuccessMessage] = lift(new RootJsonWriter[AstConstructionSuccessMessage] {
+    override def write(obj: AstConstructionSuccessMessage): JsValue = JsObject(
+      "time" -> obj.astConstructionTime.toJson)
+  })
+
+  implicit val astConstructionFailure_writer: RootJsonFormat[AstConstructionFailureMessage] = lift(new RootJsonWriter[AstConstructionFailureMessage] {
+    override def write(obj: AstConstructionFailureMessage): JsValue = JsObject(
+      "time" -> obj.astConstructionTime.toJson,
       "result" -> obj.result.toJson)
   })
 
   implicit val overallSuccessMessage_writer: RootJsonFormat[OverallSuccessMessage] = lift(new RootJsonWriter[OverallSuccessMessage] {
-    override def write(obj: OverallSuccessMessage): JsObject = {
-      JsObject(
-        "time" -> obj.verificationTime.toJson)
-    }
+    override def write(obj: OverallSuccessMessage): JsObject = JsObject(
+      "time" -> obj.verificationTime.toJson)
   })
 
   implicit val overallFailureMessage_writer: RootJsonFormat[OverallFailureMessage] = lift(new RootJsonWriter[OverallFailureMessage] {
@@ -194,30 +297,81 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: ProgramOutlineReport) = JsObject("members" -> JsArray(obj.members.map(_.toJson).toVector))
   })
 
+  implicit val viperAtomicType_writer: RootJsonFormat[viper.silver.ast.AtomicType] = lift(new RootJsonWriter[AtomicType] {
+    override def write(obj: AtomicType) = obj match {
+      case viper.silver.ast.Int => JsString("Int")
+      case viper.silver.ast.Bool => JsString("Bool")
+      case viper.silver.ast.Perm => JsString("Perm")
+      case viper.silver.ast.Ref => JsString("Ref")
+      case viper.silver.ast.InternalType => JsString("Internal")
+      case viper.silver.ast.Wand => JsString("Wand")
+      case viper.silver.ast.BackendType(boogieName, smtName) =>
+        JsObject("boogieName" -> JsString(boogieName), "smtName" -> JsString(smtName))
+    }
+  })
+
+  implicit val viperGenericType_writer: RootJsonFormat[viper.silver.ast.GenericType] = lift(new RootJsonWriter[GenericType] {
+    override def write(obj: GenericType) = if (obj.isConcrete) {
+      // If this is a concrete type instantiation, we serialize it concretely
+      obj match {
+        case col: CollectionType =>
+          JsObject("collection" -> JsString(col.genericName), "elements" -> col.elementType.toJson)
+        case MapType(keyType, valueType) =>
+          JsObject("collection" -> JsString("Map"), "keys" -> keyType.toJson, "values" -> valueType.toJson)
+        case DomainType(domainName, partialTypVarsMap) =>
+          JsObject("collection" -> JsString(domainName), "typeParams" -> JsArray(partialTypVarsMap.values.map(_.toJson).toVector))
+      }
+    } else {
+      // If this is not a concrete type instantiation, we serialize it generically
+      JsString(obj.genericName)
+    }
+  })
+
+  implicit val viperType_writer: RootJsonFormat[ViperType] = lift(new RootJsonWriter[ViperType] {
+    override def write(obj: ViperType) = obj match {
+      case atomic: AtomicType =>
+        JsObject("kind" -> JsString("atomic"), "typename" -> atomic.toJson)
+      case generic: GenericType =>
+        JsObject("kind" -> JsString("generic"), "typename" -> generic.toJson, "isConcrete" -> JsBoolean(generic.isConcrete))
+      case ext: ExtensionType =>
+        JsObject("kind" -> JsString("extension"), "typename" -> JsString(ext.toString()))
+      case weird_type =>
+        /** TODO: check why trait [[viper.silver.ast.Type]] is not sealed */
+        JsObject("kind" -> JsString("weird_type"), "typename" -> JsString(weird_type.toString()))
+    }
+  })
+
+  implicit val symbolType_writer: RootJsonFormat[SymbolKind] = lift(new RootJsonWriter[SymbolKind] {
+    override def write(obj: SymbolKind) = obj match {
+      case typed_symbol: TypedSymbol =>
+        JsObject("name" -> JsString(typed_symbol.name), "viperType" -> typed_symbol.viperType.toJson)
+      case untyped_symbol =>
+        JsObject("name" -> JsString(untyped_symbol.name))
+    }
+  })
+
   /** Legacy marshaller format. Using three different position types in one case class is ugly, but a valid
     * workaround for handling all cases of AST construction. If you want to try to improve/refactor, see
-    * [[ViperBackend.collectDefinitions]] for the usage Definition.
+    * [[viper.server.utility.ProgramDefinitionsProvider]] for the usage Definition.
     */
   implicit val definition_writer: RootJsonFormat[Definition] = lift(new RootJsonWriter[Definition] {
     override def write(obj: Definition) = JsObject(
       "name" -> JsString(obj.name),
-      "type" -> JsString(obj.typ),
-      "location" -> (obj.location match {
-        case p:Position => p.toJson
-        case _ => JsString("<undefined>")
-      }),
+      "type" -> obj.typ.toJson,
+      "location" -> obj.location.toJson,
       "scopeStart" -> (obj.scope match {
-        case Some(s) => JsString(s.start.line + ":" + s.start.column)
+        case Some(s) => JsString(s"${s.start.line}:${s.start.column}")
         case _ => JsString("global")
       }),
       "scopeEnd" -> (obj.scope match {
-        case Some(s) if s.end.isDefined => JsString(s.end.get.line + ":" + s.end.get.column)
+        case Some(s) if s.end.isDefined => JsString(s"${s.end.get.line}:${s.end.get.column}")
         case _ => JsString("global")
       }))
   })
 
   implicit val programDefinitionsReport_writer: RootJsonFormat[ProgramDefinitionsReport] = lift(new RootJsonWriter[ProgramDefinitionsReport] {
-    override def write(obj: ProgramDefinitionsReport) = JsObject("definitions" -> JsArray(obj.definitions.map(_.toJson).toVector))
+    override def write(obj: ProgramDefinitionsReport) = JsObject(
+      "definitions" -> JsArray(obj.definitions.map(_.toJson).toVector))
   })
 
   implicit val symbExLogReport_writer: RootJsonFormat[ExecutionTraceReport] = lift(new RootJsonWriter[ExecutionTraceReport] {
@@ -250,14 +404,25 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
 
   implicit val exceptionReport_writer: RootJsonFormat[ExceptionReport] = lift(new RootJsonWriter[ExceptionReport] {
     override def write(obj: ExceptionReport) = JsObject(
-        "message" -> JsString(obj.e.toString),
-        "stacktrace" -> JsArray(obj.e.getStackTrace.map(_.toJson).toVector))
+      "message" -> JsString(obj.e.toString),
+      "stacktrace" -> JsArray(obj.e.getStackTrace.map(_.toJson).toVector))
   })
 
   implicit val invalidArgumentsReport_writer: RootJsonFormat[InvalidArgumentsReport] = lift(new RootJsonWriter[InvalidArgumentsReport] {
     override def write(obj: InvalidArgumentsReport) = JsObject(
       "tool" -> JsString(obj.tool_signature),
       "errors" -> JsArray(obj.errors.map(_.toJson).toVector))
+  })
+
+  implicit val backendSubProcessReport_writer: RootJsonFormat[BackendSubProcessReport] = lift(new RootJsonWriter[BackendSubProcessReport] {
+    override def write(obj: BackendSubProcessReport) = JsObject(
+      "tool" -> JsString(obj.tool_signature),
+      "process_exe" -> JsString(obj.process_exe),
+      "phase" -> JsString(obj.phase.toString),
+      "pid" -> (obj.pid_maybe match {
+        case Some(pid) => JsNumber(pid)
+        case None => JsNull
+      }))
   })
 
   implicit val dependency_writer: RootJsonFormat[Dependency] = lift(new RootJsonWriter[Dependency] {
@@ -275,6 +440,10 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: WarningsDuringParsing) = JsArray(obj.warnings.map(_.asInstanceOf[AbstractError].toJson).toVector)
   })
 
+  implicit val warningsDuringTypechecking_writer: RootJsonFormat[WarningsDuringTypechecking] = lift(new RootJsonWriter[WarningsDuringTypechecking] {
+    override def write(obj: WarningsDuringTypechecking) = JsArray(obj.warnings.map(_.asInstanceOf[AbstractError].toJson).toVector)
+  })
+
   implicit val simpleMessage_writer: RootJsonFormat[SimpleMessage] = lift(new RootJsonWriter[SimpleMessage] {
     override def write(obj: SimpleMessage) = JsObject("text" -> JsString(obj.text))
   })
@@ -287,6 +456,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: Message): JsValue = JsObject(
       "msg_type" -> JsString(obj.name),
       "msg_body" -> (obj match {
+        case p: AstConstructionResultMessage => p.toJson
         case a: VerificationResultMessage => a.toJson
         case s: StatisticsReport => s.toJson
         case o: ProgramOutlineReport => o.toJson
@@ -294,8 +464,10 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case e: ExecutionTraceReport => e.toJson
         case x: ExceptionReport => x.toJson
         case i: InvalidArgumentsReport => i.toJson
+        case b: BackendSubProcessReport => b.toJson
         case r: ExternalDependenciesReport => r.toJson
         case f: WarningsDuringParsing => f.toJson
+        case f: WarningsDuringTypechecking => f.toJson
         case m: SimpleMessage => m.toJson
       }))
   })
@@ -305,7 +477,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     val between = ByteString("\n")
     val end = ByteString("")
 
-    val compactArrayRendering: Flow[ByteString, ByteString, NotUsed] = Flow[ByteString].intersperse(between)
+    val compactArrayRendering: Flow[ByteString, ByteString, NotUsed] = Flow[ByteString].intersperse(start, between, end)
     // Method withFramingRendererFlow: Java DSL overrides Scala DSL. Who knows why? Use .asJava as a workaround.
     EntityStreamingSupport.json().withFramingRendererFlow( compactArrayRendering.asJava )
   }
