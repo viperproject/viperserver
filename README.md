@@ -1,9 +1,6 @@
 [![Test Status](https://github.com/viperproject/viperserver/actions/workflows/scala.yml/badge.svg?branch=master)](https://github.com/viperproject/viperserver/actions/workflows/scala.yml?query=branch%3Amaster)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](./LICENSE)
 
-
-# README #
-
 This is ViperServer, an HTTP server that manages verification requests to different tools from the Viper tool stack.
 
 The main two Viper tools (a.k.a verification backends) currently are: 
