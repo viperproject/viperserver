@@ -57,10 +57,9 @@ jobs:
             silicon-ref: "master"
             carbon-ref: "master"
           - name: release
-            # note that v.21.01-release does not work because silver PR #503 is not yet in there
-            silver-ref: "master"
-            silicon-ref: "master"
-            carbon-ref: "master"
+            silver-ref: "21.07-RC"
+            silicon-ref: "21.07-RC"
+            carbon-ref: "21.07-RC"
     steps:
       - name: Checkout ViperServer
         uses: actions/checkout@v2
