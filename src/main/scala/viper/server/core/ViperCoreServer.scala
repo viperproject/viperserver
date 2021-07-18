@@ -62,12 +62,11 @@ class ViperCoreServer(val config: ViperConfig)(implicit val executor: Verificati
     ast_id
   }
 
-  def verify(ast_id: AstJobId, backend_config: ViperBackendConfig): VerJobId = {
+  def verify(programId: String, ast_id: AstJobId, backend_config: ViperBackendConfig): VerJobId = {
 
     if (!isRunning) throw new IllegalStateException("Instance of VerificationServer already stopped")
     require(backend_config != null)
 
-    val programId = s"ViperAst#${ast_id.id}"
     val args: List[String] = backend_config.toList
 
     ast_jobs.lookupJob(ast_id) match {

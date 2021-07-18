@@ -62,14 +62,15 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
 
   override def onVerifyPost(vr: Requests.VerificationRequest): ToResponseMarshallable = {
     val arg_list = getArgListFromArgString(vr.arg)
+    val file: String = arg_list.last
+    val arg_list_partial: List[String] = arg_list.dropRight(1)
 
-    if (!validateViperFile(arg_list.last)) {
+    if (!validateViperFile(file)) {
       return VerificationRequestReject("File not found")
     }
 
     val ast_id = requestAst(arg_list)
 
-    val arg_list_partial: List[String] = arg_list.dropRight(1)
     val backend = try {
       ViperBackendConfig(arg_list_partial)
     } catch {
@@ -79,7 +80,7 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
         return VerificationRequestReject("Invalid arguments for backend.")
     }
 
-    val ver_id = verify(ast_id, backend)
+    val ver_id = verify(file, ast_id, backend)
 
     VerificationRequestAccept(ast_id, ver_id)
   }
