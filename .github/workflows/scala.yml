@@ -361,7 +361,7 @@ jobs:
             \"inputs\":{ \
               \"type\":\"nightly\", \
               \"viperserver_tag_name\":\"${{ env.TAG_NAME }}\", \
-              \"boogie_version\":\"latest\", \
+              \"boogie_tag_name\":\"latest\", \
               \"z3_version\":\"${{ env.Z3_VERSION }}\", \
               \"tag_name\":\"${{ env.TAG_NAME }}\", \
               \"release_name\":\"Nightly Release ${{ env.TAG_NAME }}\" \
