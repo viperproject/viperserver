@@ -21,6 +21,15 @@ on:
       release_name:
         description: 'Release title for stable release. Ignored if a nightly release will be created.'
         required: true
+      silver-ref:
+        description: 'Tag name for Silver. Ignored if a nightly release will be created.'
+        required: true
+      silicon-ref:
+        description: 'Tag name for Silicon. Ignored if a nightly release will be created.'
+        required: true
+      carbon-ref:
+        description: 'Tag name for Carbon. Ignored if a nightly release will be created.'
+        required: true
   schedule:
     - cron: '0 7 * * *' # run every day at 07:00 UTC
 
@@ -57,9 +66,9 @@ jobs:
             silicon-ref: "master"
             carbon-ref: "master"
           - name: release
-            silver-ref: "21.07-RC"
-            silicon-ref: "21.07-RC"
-            carbon-ref: "21.07-RC"
+            silver-ref: ${{ github.event.inputs.silver-ref }}
+            silicon-ref: ${{ github.event.inputs.silicon-ref }}
+            carbon-ref: ${{ github.event.inputs.carbon-ref }}
     steps:
       - name: Checkout ViperServer
         uses: actions/checkout@v2
