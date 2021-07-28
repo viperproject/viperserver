@@ -21,15 +21,6 @@ on:
       release_name:
         description: 'Release title for stable release. Ignored if a nightly release will be created.'
         required: true
-      silver-ref:
-        description: 'Tag name for Silver. Ignored if a nightly release will be created.'
-        required: true
-      silicon-ref:
-        description: 'Tag name for Silicon. Ignored if a nightly release will be created.'
-        required: true
-      carbon-ref:
-        description: 'Tag name for Carbon. Ignored if a nightly release will be created.'
-        required: true
   schedule:
     - cron: '0 7 * * *' # run every day at 07:00 UTC
 
@@ -46,6 +37,9 @@ on:
 # - create-stable-release
 # takes the fat and skinny JARs produced by configuration `release` during `build` job and creates a draft release with
 # them.
+
+env:
+  Z3_VERSION: "4.8.6"
 
 jobs:
   build:
@@ -66,9 +60,9 @@ jobs:
             silicon-ref: "master"
             carbon-ref: "master"
           - name: release
-            silver-ref: ${{ github.event.inputs.silver-ref }}
-            silicon-ref: ${{ github.event.inputs.silicon-ref }}
-            carbon-ref: ${{ github.event.inputs.carbon-ref }}
+            silver-ref: "v.21.07-release"
+            silicon-ref: "v.21.07-release"
+            carbon-ref: "v.21.07-release"
     steps:
       - name: Checkout ViperServer
         uses: actions/checkout@v2
@@ -215,31 +209,31 @@ jobs:
           name: viperserver-test-${{ matrix.name }}-fat-jar
           path: viperserver
 
-      - name: Download Z3 4.8.6 (Ubuntu)
+      - name: Download Z3 (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
         run: |
-          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-ubuntu-16.04.zip --output z3.zip
+          curl -L https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-ubuntu-16.04.zip --output z3.zip
           unzip z3.zip -d z3/
-          echo "$GITHUB_WORKSPACE/z3/z3-4.8.6-x64-ubuntu-16.04/bin" >> $GITHUB_PATH
-          echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-4.8.6-x64-ubuntu-16.04/bin/z3" >> $GITHUB_ENV
+          echo "$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-ubuntu-16.04/bin" >> $GITHUB_PATH
+          echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-ubuntu-16.04/bin/z3" >> $GITHUB_ENV
         shell: bash
 
-      - name: Download Z3 4.8.6 (macOS)
+      - name: Download Z3 (macOS)
         if: startsWith(matrix.os, 'macos')
         run: |
-          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-osx-10.14.6.zip --output z3.zip
+          curl -L https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-osx-10.14.6.zip --output z3.zip
           unzip z3.zip -d z3/
-          echo "$GITHUB_WORKSPACE/z3/z3-4.8.6-x64-osx-10.14.6/bin" >> $GITHUB_PATH
-          echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-4.8.6-x64-osx-10.14.6/bin/z3" >> $GITHUB_ENV
+          echo "$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-osx-10.14.6/bin" >> $GITHUB_PATH
+          echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-osx-10.14.6/bin/z3" >> $GITHUB_ENV
         shell: bash
 
-      - name: Download Z3 4.8.6 (Windows)
+      - name: Download Z3 (Windows)
         if: startsWith(matrix.os, 'windows')
         run: |
-          curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-win.zip --output z3.zip
+          curl -L https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-win.zip --output z3.zip
           unzip z3.zip -d z3/
-          echo "$GITHUB_WORKSPACE/z3/z3-4.8.6-x64-win/bin" >> $GITHUB_PATH
-          echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-4.8.6-x64-win/bin/z3.exe" >> $GITHUB_ENV
+          echo "$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-win/bin" >> $GITHUB_PATH
+          echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-win/bin/z3.exe" >> $GITHUB_ENV
         shell: bash
 
       - name: Setup Java JDK
@@ -367,6 +361,8 @@ jobs:
             \"inputs\":{ \
               \"type\":\"nightly\", \
               \"viperserver_tag_name\":\"${{ env.TAG_NAME }}\", \
+              \"boogie_version\":\"latest\", \
+              \"z3_version\":\"${{ env.Z3_VERSION }}\", \
               \"tag_name\":\"${{ env.TAG_NAME }}\", \
               \"release_name\":\"Nightly Release ${{ env.TAG_NAME }}\" \
             } \
