@@ -18,7 +18,6 @@ trait ViperBackendConfig {
     case _ : SiliconConfig => "silicon" :: partialCommandLine
     case _ : CarbonConfig => "carbon" :: partialCommandLine
     case _ : CustomConfig => backend_name :: partialCommandLine
-      
   }
 }
 
