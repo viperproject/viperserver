@@ -143,7 +143,7 @@ class ViperBackend(private val _frontend: SilFrontend, private val programId: St
         _frontend.logger.debug(s"Verification has failed (errors: ${f.errors.map(_.readableMessage).mkString("\n")}; members: ${_ast.members.map(_.name).mkString(", ")})")
         _frontend.reporter report OverallFailureMessage(_frontend.getVerifierName,
                                                         System.currentTimeMillis() - _frontend.startTime,
-                                                        Failure(f.errors.filter { e => !e.cached }))
+                                                        Failure(f.errors))
       case None =>
     }
   }
@@ -180,8 +180,6 @@ class ViperBackend(private val _frontend: SilFrontend, private val programId: St
     val ver_result: VerificationResult = _frontend.verifier.verify(transformed_prog)
     _frontend.setVerificationResult(ver_result)
     _frontend.setState(DefaultStates.Verification)
-
-    _frontend.logger.debug(s"Latest verification result: $ver_result")
 
     val meth_to_err_map: Seq[(Method, Option[List[AbstractVerificationError]])] = methodsToVerify.map((m: Method) => {
       // Results come back irrespective of program Member.
@@ -228,8 +226,11 @@ class ViperBackend(private val _frontend: SilFrontend, private val programId: St
         }
       }
     } else {
-      _frontend.logger.debug(s"Inconsistent error splitting; no cache update for this verification attempt with ProgramID $programId.")
+      _frontend.logger.warn(s"Inconsistent error splitting; no cache update for this verification attempt with ProgramID $programId.")
     }
+
+    // Write cache to file at the end of a verification run
+    ViperCache.writeToFile()
 
     // combine errors:
     if (all_cached_errors.nonEmpty) {

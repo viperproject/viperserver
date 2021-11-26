@@ -22,7 +22,7 @@ import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGeneration
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.vsi.Requests.CacheResetRequest
 import viper.server.vsi._
-import viper.silver.logger.ViperLogger
+import viper.silver.logger.{ViperLogger, ViperStdOutLogger}
 import viper.silver.reporter.Message
 
 import scala.concurrent.Future
@@ -35,7 +35,7 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
-    ViperCache.initialize(logger.get, config.backendSpecificCache())
+    ViperCache.initialize(logger.get, config.backendSpecificCache(), config.cacheFile.toOption)
 
     port = config.port.toOption.getOrElse(0) // 0 causes HTTP server to automatically select a free port
     super.start(config.maximumActiveJobs()).map({ _ =>

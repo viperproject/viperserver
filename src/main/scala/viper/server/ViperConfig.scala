@@ -102,6 +102,15 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     hidden = false
   )
 
+  val cacheFile: ScallopOption[String] = opt[String]("cacheFile",
+    descr = ("Specifies the file in which the resulting cache of a verification run gets written to."
+      + "If it is not set, the cache is only kept in memory and not written to the file system."
+      ),
+    default = None,
+    noshort = true,
+    hidden = false
+  )
+
   val nThreads: ScallopOption[Int] = opt[Int](
     name = "nThreads",
     descr = s"Maximal number of threads that should be used (not taking threads used by backend into account)\n" +

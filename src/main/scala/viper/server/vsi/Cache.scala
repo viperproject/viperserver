@@ -8,7 +8,8 @@ package viper.server.vsi
 
 import viper.silver.utility.CacheHelper
 
-import scala.collection.mutable.{ListBuffer, Map => MutableMap}
+import java.time.Instant
+import scala.collection.mutable.ListBuffer
 
 /** The goal of this generic caching trait is to provide:
   *
@@ -46,10 +47,11 @@ abstract class Cache {
     * The inner map is referred to as the fileCache. As the name indicates, it stores, for each
     * file, a number of hashes and corresponding cache entries.
     */
-  protected val _cache: MutableMap[String, FileCash] = MutableMap()
-  type FileCash = MutableMap[String, List[CacheEntry]]
+  protected var _cache: Cache = Map()
+  type Cache = Map[String, FileCache]
 
-  protected val _program_cache: MutableMap[Ast, MutableMap[CacheableMember, List[Member]]] = MutableMap()
+  type FileCache = Map[String, List[CacheEntry]]
+  protected var _program_cache: Map[Ast, Map[CacheableMember, List[Member]]] = Map()
 
   /** This method transforms a program and returns verification results based on the cache's
     * current state.
@@ -90,12 +92,13 @@ abstract class Cache {
           }
         })
       case None =>
-        val dep_map = MutableMap[CacheableMember, List[Member]]()
+        var dep_map = Map[CacheableMember, List[Member]]()
         cachable_members.foreach(cm => {
           val dependencies = cm.getDependencies(input_prog)
-          dep_map += (cm -> dependencies)
+          dep_map = dep_map + (cm -> dependencies)
           get(file_key, cm, dependencies) match {
             case Some(matched_entry) =>
+              matched_entry.lastAccessed = Instant.now()
               concerningsToCache += cm.transform
               cache_entries += matched_entry
             case None =>
@@ -103,7 +106,7 @@ abstract class Cache {
               concerningsToVerify += cm
           }
         })
-        _program_cache += (input_prog -> dep_map)
+        _program_cache = _program_cache + (input_prog -> dep_map)
     }
 
     val all_concernings: List[CacheableMember] = concerningsToCache.toList ++ concerningsToVerify.toList
@@ -125,7 +128,7 @@ abstract class Cache {
     for {
       fileCache <- _cache.get(file_key)
       cacheEntries <- fileCache.get(concerning_hash)
-      validEntry <- cacheEntries.find(_.depency_hash == dependency_hash)
+      validEntry <- cacheEntries.find(_.dependencyHash == dependency_hash)
     } yield validEntry
   }
 
@@ -147,7 +150,7 @@ abstract class Cache {
     val concerning_hash = key.hash()
     val dependencies_hash = dependencies.map(_.hash()).mkString(" ")
     val dependency_hash = CacheHelper.buildHash(concerning_hash + dependencies_hash)
-    val new_entry: CacheEntry = new CacheEntry(key, content, dependency_hash)
+    val new_entry: CacheEntry = CacheEntry(key.hash(), content, dependency_hash)
 
     assert(concerning_hash != null)
 
@@ -156,11 +159,12 @@ abstract class Cache {
         val existing_entries = fileCache.getOrElse(concerning_hash, Nil)
         val updated_cacheEntries = new_entry :: existing_entries
 
-        fileCache(concerning_hash) = updated_cacheEntries
+        val updatedFileCache = fileCache + (concerning_hash -> updated_cacheEntries)
+        _cache = _cache + (file_key -> updatedFileCache)
         updated_cacheEntries
       case None =>
         //if file not in cache yet, create new map entry for it. Recall the function.
-        _cache += (file_key -> collection.mutable.Map[String, List[CacheEntry]]())
+        _cache = _cache + (file_key -> Map())
         update(file_key, key, dependencies, content)
     }
   }
@@ -168,16 +172,18 @@ abstract class Cache {
   /** Resets the cache for a particular file.
     * */
   def forgetFile(file_key: String): Option[String] = {
-    _cache.remove(file_key) match {
+    val elem = _cache.get(file_key) match {
       case Some(_) => Some(file_key)
       case None => None
     }
+    _cache -= file_key
+    elem
   }
 
   /** Resets the entire cache.
     * */
   def resetCache(): Unit = {
-    _cache.clear()
+    _cache = Map()
   }
 }
 
@@ -194,7 +200,7 @@ abstract class Cache {
   *  created. If, at some point, a members dependency hash is no longer equal to the one stored
   *  here, the entry is no longer valid.
   * */
-case class CacheEntry(concerning: CacheableMember, content: CacheContent, depency_hash: String)
+case class CacheEntry(concerningHash: String, content: CacheContent, dependencyHash: String, created: Instant = Instant.now(), var lastAccessed: Instant = Instant.now())
 
 
 // ===== AUXILIARY TRAITS ==================================================================
@@ -245,7 +251,7 @@ trait CacheableMember extends Member {
     * terms of verification.
     *
     * A member may hit the cache, but the attached verification results might be invalid. Reason
-    * for this is that other members in the program have might have changed in such a way that
+    * for this is that other members in the program might have changed in such a way that
     * they influenced this member's verification outcome. These influencing members are called
     * dependencies and need to be checked when retrieving a member's attached result from cache.
     * */

@@ -39,7 +39,7 @@ class ViperCoreServer(val config: ViperConfig)(implicit val executor: Verificati
     println(s"Writing [level:${config.logLevel()}] logs into " +
       s"${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
-    ViperCache.initialize(logger.get, config.backendSpecificCache())
+    ViperCache.initialize(logger.get, config.backendSpecificCache(), config.cacheFile.toOption)
 
     super.start(config.maximumActiveJobs()) map { _ =>
       logger.get.info(s"ViperCoreServer has started.")

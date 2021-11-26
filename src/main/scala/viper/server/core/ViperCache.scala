@@ -6,17 +6,23 @@
 
 package viper.server.core
 
-import scala.language.postfixOps
+import scala.language.{dynamics, postfixOps}
 import ch.qos.logback.classic.Logger
+import net.liftweb.json.JsonAST.JObject
 import viper.server.core.ViperCache.logger
 import viper.server.vsi._
 import viper.silver.ast.{Add, And, AnonymousDomainAxiom, AnySetCardinality, AnySetContains, AnySetIntersection, AnySetMinus, AnySetSubset, AnySetUnion, Apply, Applying, Assert, Cached, CondExp, ConsInfo, CurrentPerm, Div, Domain, DomainFunc, DomainFuncApp, EmptyMultiset, EmptySeq, EmptySet, EpsilonPerm, EqCmp, Exhale, Exists, ExplicitMultiset, ExplicitSeq, ExplicitSet, FalseLit, Field, FieldAccess, FieldAccessPredicate, FieldAssign, Fold, ForPerm, Forall, FractionalPerm, FullPerm, FuncApp, Function, GeCmp, Goto, GtCmp, Hashable, If, Implies, Inhale, InhaleExhaleExp, IntLit, IntPermMul, Label, LabelledOld, LeCmp, Let, LocalVar, LocalVarAssign, LocalVarDecl, LocalVarDeclStmt, LtCmp, MagicWand, Method, MethodCall, Minus, Mod, Mul, NamedDomainAxiom, NeCmp, NewStmt, NoPerm, Node, Not, NullLit, Old, Or, Package, PermAdd, PermDiv, PermGeCmp, PermGtCmp, PermLeCmp, PermLtCmp, PermMinus, PermMul, PermSub, Position, Predicate, PredicateAccess, PredicateAccessPredicate, Program, RangeSeq, SeqAppend, SeqContains, SeqDrop, SeqIndex, SeqLength, SeqTake, SeqUpdate, Seqn, Sub, Trigger, TrueLit, Unfold, Unfolding, While, WildcardPerm}
 import viper.silver.utility.CacheHelper
-import viper.silver.verifier.errors._
-import viper.silver.verifier.{AbstractVerificationError, ErrorReason, VerificationError, errors}
+import viper.silver.verifier.errors.{ApplyFailed, CallFailed, ContractNotWellformed, FoldFailed, HeuristicsFailed, IfFailed, InhaleFailed, Internal, LetWandFailed, UnfoldFailed, _}
+import viper.silver.verifier.{AbstractVerificationError, VerificationError, errors}
+import net.liftweb.json.Serialization.{read, write}
+import net.liftweb.json.{DefaultFormats, Formats, JArray, JField, JInt, JString, MappingException, ShortTypeHints}
+import viper.silver.verifier.reasons.{AssertionFalse, DivisionByZero, EpsilonAsParam, FeatureUnsupported, InsufficientPermission, InternalReason, InvalidPermMultiplication, LabelledStateNotReached, MagicWandChunkNotFound, MapKeyNotContained, NegativePermission, ReceiverNotInjective, ReceiverNull, SeqIndexExceedsLength, SeqIndexNegative, UnexpectedNode}
 
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.time.Instant
 import scala.annotation.tailrec
-import scala.collection.mutable.{Map => MutableMap}
 
 // ===== CACHE OBJECT ==================================================================
 
@@ -26,67 +32,65 @@ object ViperCache extends Cache {
 
   var _logger: Logger = _
   def logger: Logger = _logger
+  var _cacheFile: Option[java.io.File] = _
 
-  def initialize(logger: Logger, backendSpecificCache: Boolean): Unit = {
+  def initialize(logger: Logger, backendSpecificCache: Boolean, cacheFile: Option[String]): Unit = {
     _backendSpecificCache = backendSpecificCache
     _logger = logger
-    resetCache()
+
+    _cacheFile = cacheFile.map(file => new java.io.File(file))
+
+    if(_cacheFile.isDefined) {
+      logger.trace("Trying to initializing cache with file {}", cacheFile.get)
+      if(_cacheFile.get.exists() && _cacheFile.get.canRead) {
+        try{
+          implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.cacheEntryHints)
+
+          _cache = read[Cache](Files.readString(_cacheFile.get.toPath))
+          logger.trace("Successfully read cache from file {}", cacheFile.get)
+        } catch {
+          case e: Throwable =>
+            logger.warn("Reading of cache file " + cacheFile.get + "  failed, error is: " + e.getMessage)
+            logger.debug("Error thrown: {}", e)
+        }
+      } else {
+        _logger.info("Cache file " + cacheFile.get + " not found, starting with empty cache")
+      }
+    } else {
+      logger.debug("No cache file specified, starting with empty cache")
+      resetCache()
+    }
   }
 
   def applyCache(
         backendName: String,
         file: String,
         p: Program): (Program, List[CacheResult]) = {
-
-    val file_key = getKey(backendName, file)
+    val file_key = getKey(file = file, backendName = backendName)
     val cacheable_ast = ViperAst(p)
     val (output_ast, cache_entries) = super.retrieve(file_key, cacheable_ast)
     val output_prog = output_ast.asInstanceOf[ViperAst].p
 
+    implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.errorNodeHints(p, file_key))
+
     val ver_results = cache_entries.map(ce => {
-      val concerning_method: Method = ce.concerning.asInstanceOf[ViperMethod].m
-      val content = ce.content.asInstanceOf[ViperCacheContent]
-      val ver_errors = updateErrorLocation(file_key, p, concerning_method, content)
-      CacheResult(concerning_method, ver_errors)
-    })
+        val concerning_method = p.methods.find(method => method.entityHash == ce.concerningHash).get
+        try {
+          // Try to deserialize content of the cache entry
+          val content = read[ViperCacheContent](ce.content.asInstanceOf[SerializedViperCacheContent].content)
+          logger.trace("Got a cache hit for method " + concerning_method.name)
+          CacheResult(concerning_method, content.errors)
+        } catch {
+          case e: Throwable =>
+            // In case parsing of the cache entry fails, abort caching & evict cache entries for this file, since hey might come from an unsupported version
+            logger.warn("Parsing of CacheEntry for method " + concerning_method.name + " failed, error is:" + e.getMessage)
+            logger.debug("{}", e)
+            super.forgetFile(file_key)
+            return(p, List())
+        }
+    }).filter(e => e != null)
 
     (output_prog, ver_results)
-  }
-
-  private def updateErrorLocation(
-                file_key: String,
-                p: Program,
-                m: Method,
-                cacheContent: ViperCacheContent): List[VerificationError] = {
-
-    cacheContent.errors.map(e => updateErrorLocation(file_key, p, m, e))
-  }
-
-  private def updateErrorLocation(
-                file_key: String,
-                p: Program,
-                m: Method,
-                error: LocalizedError): VerificationError = {
-
-    assert(error.error != null && error.accessPath != null && error.reasonAccessPath != null)
-
-    //get the corresponding offending node in the new AST
-    //TODO: are these casts ok?
-    val offendingNode = ViperCacheHelper.getNode(file_key, p, error.accessPath, error.error.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
-    val reasonOffendingNode = ViperCacheHelper.getNode(file_key, p, error.reasonAccessPath, error.error.reason.offendingNode).asInstanceOf[Option[errors.ErrorNode]]
-
-    if (offendingNode.isEmpty || reasonOffendingNode.isEmpty) {
-      throw new Exception(s"Cache error: no corresponding node found for error: $error")
-    }
-
-    //create a new VerificationError that only differs in the Position of the offending Node
-    //the casts are fine, because the offending Nodes are supposed to be ErrorNodes
-    val updatedOffendingNode = updatePosition(error.error.offendingNode, offendingNode.get.pos).asInstanceOf[errors.ErrorNode]
-    val updatedReasonOffendingNode = updatePosition(error.error.reason.offendingNode, reasonOffendingNode.get.pos).asInstanceOf[errors.ErrorNode]
-    val updatedError = error.error.withNode(updatedOffendingNode).asInstanceOf[AbstractVerificationError]
-    val updatedReason = error.error.reason.withNode(updatedReasonOffendingNode).asInstanceOf[ErrorReason]
-    val updatedErrorAndReason = updatedError.withReason(updatedReason)
-    setCached(updatedErrorAndReason)
   }
 
   def setCached(error: AbstractVerificationError): AbstractVerificationError = {
@@ -259,18 +263,34 @@ object ViperCache extends Cache {
 //    val deps: List[Concerning] = program.getDependencies(program, method).map(h => ViperMember(h))
     val deps: List[Member] = viperMethod.getDependencies(ViperAst(program))
     val content = createCacheContent(backendName, file, program, method, errors)
-    val file_key = getKey(backendName, file)
+    val file_key = getKey(file = file, backendName = backendName)
+
+    implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.errorNodeHints(program, file_key))
     super.update(file_key, ViperMethod(method), deps, content)
   }
 
   def forgetFile(backendName: String, file: String): Option[String] = {
-    val key = getKey(backendName, file)
+    val key = getKey(file = file, backendName = backendName)
     super.forgetFile(key)
   }
 
+  def writeToFile(): Unit = {
+    if(_cacheFile.isDefined) {
+      _logger.trace("Writing cache to file " + _cacheFile.get.getCanonicalPath)
+      implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.cacheEntryHints)
+      try {
+        Files.write(_cacheFile.get.toPath, write(_cache).getBytes(StandardCharsets.UTF_8))
+      } catch {
+        case e: Throwable =>
+          _logger.warn("Writing of cache failed with error: " + e.getMessage)
+          _logger.debug("{}" + e)
+      }
+    }
+  }
+
   override def resetCache(): Unit = {
-    ViperCacheHelper.node_hash_memo.clear()
-    _cache.clear()
+    ViperCacheHelper._node_hash_memo = Map()
+    _cache = Map()
   }
 
   def getKey(file: String, backendName: String): String = {
@@ -280,22 +300,19 @@ object ViperCache extends Cache {
   def createCacheContent(
         backendName: String, file: String,
         p: Program, m: Method,
-        errors: List[AbstractVerificationError]): ViperCacheContent = {
+        errors: List[AbstractVerificationError]): SerializedViperCacheContent = {
 
-    implicit val key: String = getKey(backendName, file)
-    val loc_errs = errors.map(err =>
-      LocalizedError(err,
-        ViperCacheHelper.getAccessPath(err.offendingNode, p),
-        ViperCacheHelper.getAccessPath(err.reason.offendingNode, p),
-        backendName))
-    ViperCacheContent(loc_errs)
+    implicit val key: String = getKey(file = file, backendName = backendName)
+
+    implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.errorNodeHints(p, key))
+    SerializedViperCacheContent(write(ViperCacheContent(errors)))
   }
 }
 
 
 object ViperCacheHelper {
-  private val _node_hash_memo = MutableMap.empty[String, MutableMap[Node, String]]
-  def node_hash_memo: MutableMap[String, MutableMap[Node, String]] = _node_hash_memo
+  var _node_hash_memo : Map[String, Map[Node, String]] = Map()
+  def node_hash_memo: Map[String, Map[Node, String]] = _node_hash_memo
 
   protected def hex(h: String): String = h.hashCode.toHexString
 
@@ -346,11 +363,13 @@ object ViperCacheHelper {
                 println(msg)
               }
               val hash = addIdxToHash(CacheHelper.computeEntityHash("", node))
-              _node_hash_memo(key)(n) = hash
+
+              val updatedMap = node_hash_memo(key) + (n -> hash)
+              _node_hash_memo = _node_hash_memo + (key -> updatedMap)
               hash
           }
           case None =>
-            _node_hash_memo(key) = MutableMap.empty[Node, String]
+            _node_hash_memo = _node_hash_memo + (key -> Map())
             getHashForNode(n, idx)
         }
     }
@@ -424,7 +443,7 @@ object ViperCacheHelper {
         implicit file_key: String,
         p: Program,
         accessPath: List[String],
-        oldNode: Node): Option[Node] = {
+        oldNodeClassName: String): Option[Node] = {
 
     logger.trace(s"looking for last node on access path ${accessPath.map(ViperCacheHelper.hex)}...")
 
@@ -432,12 +451,12 @@ object ViperCacheHelper {
     // the second element indicates the node's index in the list of children of its parent
     var curr: (Node, Int) = (p, 0) // the root is by definition at index 0
     accessPath.foreach(hash => {
-      logger.trace(s" ... curr = ${str(curr._1, curr._2)}")
-      logger.trace(s" ... considering hash ${hex(hash)} among subnodes ${curr._1.subnodes.zipWithIndex.map{ case (subnode, subIdx) => str(subnode, subIdx)}}...")
+      logger.trace(s" ... curr = ${str(curr._1, curr._2)(file_key)}")
+      logger.trace(s" ... considering hash ${hex(hash)} among subnodes ${curr._1.subnodes.zipWithIndex.map{ case (subnode, subIdx) => str(subnode, subIdx)(file_key)}}...")
 
       // In the list of the current node's children, find the one who's hash matches the hash
       // specified by the accesspath.
-      curr._1.subnodes.zipWithIndex.find { case (sub, subIdx) => getHashForNode(sub, subIdx) == hash } match {
+      curr._1.subnodes.zipWithIndex.find { case (sub, subIdx) => getHashForNode(sub, subIdx)(file_key) == hash } match {
         case Some(hashed_subnode) =>
           // hash corresponds to a subnode of curr.
           curr = hashed_subnode
@@ -448,8 +467,8 @@ object ViperCacheHelper {
     })
 
     // If path traversal successful check that found node and old node's classes match
-    if (curr._1.getClass == oldNode.getClass) {
-      logger.trace(s" ==> found node: (${curr._1.toOneLinerStr()} -> ${getHashForNode(curr._1, curr._2).hashCode.toHexString})")
+    if (curr._1.getClass.getName == oldNodeClassName) {
+      logger.trace(s" ==> found node: (${curr._1.toOneLinerStr()} -> ${getHashForNode(curr._1, curr._2)(file_key).hashCode.toHexString})")
       Some(curr._1)
     } else {
       logger.trace(s" ==> node not found!")
@@ -458,23 +477,82 @@ object ViperCacheHelper {
   }
 
   def removeBody(m: Method): Method = m.copy(body = None)(m.pos, ConsInfo(m.info, Cached), m.errT)
+
+  /** Type hints needed to serialize & deserialize the CacheEntry class, containing a SerializedViperCacheContent
+    *
+    */
+  val cacheEntryHints: ShortTypeHints = new ShortTypeHints(List(classOf[CacheEntry])) {
+    override def serialize: PartialFunction[Any, JObject] = {
+      case ce: CacheEntry => JObject(
+        JField("concerningHash", JString(ce.concerningHash)) ::
+          JField("dependencyHash", JString(ce.dependencyHash)) ::
+          JField("content", JString(ce.content.asInstanceOf[SerializedViperCacheContent].content)) ::
+          JField("created", JInt(ce.created.getEpochSecond)) ::
+          JField("lastAccessed", JInt(ce.lastAccessed.getEpochSecond)) :: Nil
+      )
+    }
+
+    override def deserialize: PartialFunction[(String, JObject), Any] = {
+      case ("CacheEntry", JObject(
+        JField("concerningHash", JString(concerningHash)) ::
+          JField("dependencyHash", JString(dependencyHash)) ::
+          JField("content", JString(content)) ::
+          JField("created", JInt(createdEpochSeconds)) ::
+          JField("lastAccessed", JInt(lastAccessedEpochSeconds)) :: Nil
+      ))
+      => CacheEntry(concerningHash, SerializedViperCacheContent(content), dependencyHash, Instant.ofEpochSecond(createdEpochSeconds.longValue), Instant.ofEpochSecond(lastAccessedEpochSeconds.longValue))
+    }
+  }
+
+  /** Generates type  hints needed to serialize & deserialize AbstractVerificationErrors and replaces nodes,
+    * occurring inside the error with their counterparts in the new program
+    *
+    */
+  def errorNodeHints(program: Program, file_key: String): ShortTypeHints = new ShortTypeHints(List(classOf[Internal],
+    classOf[AssignmentFailed], classOf[CallFailed], classOf[ContractNotWellformed], classOf[PreconditionInCallFalse], classOf[PreconditionInAppFalse],
+    classOf[ExhaleFailed], classOf[InhaleFailed], classOf[IfFailed], classOf[WhileFailed], classOf[AssertFailed], classOf[TerminationFailed],
+    classOf[PostconditionViolated], classOf[FoldFailed], classOf[UnfoldFailed], classOf[PackageFailed], classOf[ApplyFailed],
+    classOf[LoopInvariantNotPreserved], classOf[LoopInvariantNotEstablished], classOf[FunctionNotWellformed], classOf[PredicateNotWellformed],
+    classOf[MagicWandNotWellformed], classOf[LetWandFailed], classOf[HeuristicsFailed], classOf[VerificationErrorWithCounterexample],
+    classOf[InternalReason], classOf[FeatureUnsupported], classOf[UnexpectedNode], classOf[AssertionFalse], classOf[EpsilonAsParam],
+    classOf[ReceiverNull], classOf[DivisionByZero], classOf[NegativePermission], classOf[InsufficientPermission], classOf[InvalidPermMultiplication],
+    classOf[MagicWandChunkNotFound], classOf[ReceiverNotInjective], classOf[LabelledStateNotReached], classOf[SeqIndexNegative],
+    classOf[SeqIndexExceedsLength], classOf[MapKeyNotContained]
+  )) {
+
+    override def serialize: PartialFunction[Any, JObject] = {
+      case node: Node => JObject(List(
+        JField("node", JArray(ViperCacheHelper.getAccessPath(node, program)(file_key).map(s => JString(s)))),
+        JField("class", JString(node.getClass.getName))
+      ))
+    }
+
+    override def deserialize: PartialFunction[(String, JObject), Any] = {
+      case (_, JObject(JField("node", JArray(accessPath)) :: JField("class", JString(className)) :: Nil))
+        if classOf[Node].isAssignableFrom(Class.forName(className)) =>
+        val parsedAccessPath = accessPath.map {
+          case JString(s) => s
+          case x => throw MappingException("Unexpected token " + x + " in accessPath", null)
+        }
+        ViperCacheHelper.getNode(file_key, program, parsedAccessPath, className)
+          .getOrElse(() => throw MappingException("No matching node found while trying to deserialize errors" , null) )
+    }
+  }
 }
 
 // ===== AUXILIARY CLASSES ==================================================================
 
-case class ViperCacheContent(errors: List[LocalizedError]) extends CacheContent
-
-/** A localized error contains the Abstract Verification Error, paths
+/** Serialized CacheContent implementation of ViperCacheContent. We use this helper class to store the cache content,
+  * since it is easier to serialize/deserialize errors when the program ast is accessible, because we need to update
+  * error nodes inside errors to match the new ast.
   *
-  * */
-case class LocalizedError(
-              error: AbstractVerificationError,
-              accessPath: List[String],
-              reasonAccessPath: List[String],
-              backendName: String) {
+  */
+case class SerializedViperCacheContent(content: String) extends CacheContent
 
-  override def toString = s"LocalizedError(error=${error.loggableMessage}, accessPath=${accessPath.map(_.hashCode.toHexString)}, reasonAccessPath=${reasonAccessPath.map(_.hashCode.toHexString)}, backendName=$backendName)"
-}
+/** Class containing the verification results of a viper verification run
+  *
+  */
+case class ViperCacheContent(errors: List[AbstractVerificationError])
 
 /** An access path holds a List of Numbers
   *
