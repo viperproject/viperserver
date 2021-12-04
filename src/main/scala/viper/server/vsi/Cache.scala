@@ -8,6 +8,7 @@ package viper.server.vsi
 
 import viper.silver.utility.CacheHelper
 
+import java.security.MessageDigest
 import java.time.Instant
 import scala.collection.mutable.ListBuffer
 
@@ -51,7 +52,7 @@ abstract class Cache {
   type Cache = Map[String, FileCache]
 
   type FileCache = Map[String, List[CacheEntry]]
-  protected var _program_cache: Map[Ast, Map[CacheableMember, List[Member]]] = Map()
+  protected var _program_cache: Map[String, Map[String, String]] = Map()
 
   /** This method transforms a program and returns verification results based on the cache's
     * current state.
@@ -74,40 +75,39 @@ abstract class Cache {
     //read errors from cache
     val cachable_members = input_prog.decompose()
 
-    val prog_dependencies = _program_cache.find({
-      case (k, _) => k.equals(input_prog)
-    })
+    val input_prog_hex = MessageDigest.getInstance("SHA-1")
+      .digest(input_prog.toString.getBytes("UTF-8"))
+      .map("%02x".format(_)).mkString
 
-    prog_dependencies match {
-      case Some((_, dep_map)) =>
-        cachable_members.foreach(cm => {
-          val dependencies = dep_map(cm)
-          get(file_key, cm, dependencies) match {
-            case Some(matched_entry) =>
-              concerningsToCache += cm.transform
-              cache_entries += matched_entry
-            case None =>
-              //Nothing in cache, request verification
-              concerningsToVerify += cm
-          }
-        })
+    val prog_dependencies = _program_cache.get(input_prog_hex)
+
+    val dep_map = prog_dependencies match {
+      case Some(dep_map) => dep_map
       case None =>
-        var dep_map = Map[CacheableMember, List[Member]]()
+        var dep_map = Map[String, String]()
         cachable_members.foreach(cm => {
-          val dependencies = cm.getDependencies(input_prog)
-          dep_map = dep_map + (cm -> dependencies)
-          get(file_key, cm, dependencies) match {
-            case Some(matched_entry) =>
-              matched_entry.lastAccessed = Instant.now()
-              concerningsToCache += cm.transform
-              cache_entries += matched_entry
-            case None =>
-              //Nothing in cache, request verification
-              concerningsToVerify += cm
-          }
+          val concerning_hash = cm.hash()
+          val dependency_hash = CacheHelper.buildHash(concerning_hash + cm.getDependencies(input_prog).map(_.hash()).mkString(" "))
+          dep_map = dep_map + (concerning_hash -> dependency_hash)
         })
-        _program_cache = _program_cache + (input_prog -> dep_map)
+        _program_cache = _program_cache + (input_prog_hex -> dep_map)
+        dep_map
     }
+
+    cachable_members.foreach(cm => {
+      val concerning_hash = cm.hash()
+      val dependency_hash = dep_map(concerning_hash)
+
+      get(file_key, concerning_hash, dependency_hash) match {
+        case Some(matched_entry) =>
+          matched_entry.lastAccessed = Instant.now()
+          concerningsToCache += cm.transform
+          cache_entries += matched_entry
+        case None =>
+          //Nothing in cache, request verification
+          concerningsToCache += cm
+      }
+    })
 
     val all_concernings: List[CacheableMember] = concerningsToCache.toList ++ concerningsToVerify.toList
     val output_prog: Ast = input_prog.compose(all_concernings)
@@ -117,14 +117,9 @@ abstract class Cache {
   /** Utility function to retrieve entries for single members.
     * */
   final def get(file_key: String,
-                key: CacheableMember,
-                dependencies: List[Member]): Option[CacheEntry] = {
-
-    val concerning_hash = key.hash()
-    val dependencies_hash = dependencies.map(_.hash()).mkString(" ")
-    val dependency_hash = CacheHelper.buildHash(concerning_hash + dependencies_hash)
+                concerning_hash: String,
+                dependency_hash: String): Option[CacheEntry] = {
     assert(concerning_hash != null)
-
     for {
       fileCache <- _cache.get(file_key)
       cacheEntries <- fileCache.get(concerning_hash)
@@ -183,6 +178,7 @@ abstract class Cache {
   /** Resets the entire cache.
     * */
   def resetCache(): Unit = {
+    _program_cache = Map()
     _cache = Map()
   }
 }
