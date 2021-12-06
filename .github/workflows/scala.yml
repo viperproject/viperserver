@@ -53,10 +53,8 @@ jobs:
       fail-fast: false
       matrix:
         # note that the same names are also used in all other jobs and they have to match!
-        name: [latest, release]
-        exclude:
-          # skip 'latest' name on 'release' branch and ignore 'release' on all other branches'
-          - name: ${{ github.ref == 'refs/heads/release' && 'latest' || 'release' }}
+        # skip 'latest' name on 'release' branch and ignore 'release' on all other branches'
+        name: [ ${{ github.ref == 'refs/heads/release' && 'latest' || 'release' }} ]
         include:
           - name: latest
             silver-ref: "master"
