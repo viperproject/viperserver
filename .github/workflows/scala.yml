@@ -58,15 +58,15 @@ jobs:
           # skip 'latest' name on 'release' branch and ignore 'release' on all other branches'
           if [[ "$IS_RELEASE" == ${{ true }} ]]
           then
-            NAME: "release"
-            SILVER_REF: "v.21.07-release"
-            SILICON_REF: "v.21.07-release"
-            CARBON_REF: "v.21.07-release"
+            NAME="release"
+            SILVER_REF="v.21.07-release"
+            SILICON_REF="v.21.07-release"
+            CARBON_REF="v.21.07-release"
           else
-            NAME: "latest"
-            SILVER_REF: "master"
-            SILICON_REF: "master"
-            CARBON_REF: "master"
+            NAME="latest"
+            SILVER_REF="master"
+            SILICON_REF="master"
+            CARBON_REF="master"
           fi
           echo ::set-output name=matrix::{\"include\":[{ \
             \"name\":\"$NAME\", \
