@@ -69,10 +69,10 @@ jobs:
             CARBON_REF="master"
           fi
           echo ::set-output name=matrix::{\"include\":[{ \
-            \"name\":\"$NAME\", \
-            \"silver_ref\":\"$SILVER_REF\", \
-            \"silicon_ref\":\"$SILICONREF\", \
-            \"carbon_ref\":\"$CARBON_REF\" \
+            \"name\":$NAME, \
+            \"silver_ref\":$SILVER_REF, \
+            \"silicon_ref\":$SILICON_REF, \
+            \"carbon_ref\":$CARBON_REF \
           }]}"
 
   build:
