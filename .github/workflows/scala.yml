@@ -73,7 +73,7 @@ jobs:
             \"silver_ref\":$SILVER_REF, \
             \"silicon_ref\":$SILICON_REF, \
             \"carbon_ref\":$CARBON_REF \
-          }]}"
+          }]}
 
   build:
     needs: prepare-matrix
