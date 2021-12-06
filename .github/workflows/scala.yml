@@ -36,7 +36,7 @@ on:
 # them. This job automatically runs every night.
 # - create-stable-release
 # takes the fat and skinny JARs produced by configuration `release` during `build` job and creates a draft release with
-# them.
+# them. This only works on branch `release`.
 
 env:
   Z3_VERSION: "4.8.6"
@@ -54,6 +54,9 @@ jobs:
       matrix:
         # note that the same names are also used in all other jobs and they have to match!
         name: [latest, release]
+        exclude:
+          # skip 'latest' name on 'release' branch and ignore 'release' on all other branches'
+          - name: ${{ github.ref == 'refs/heads/release' && 'latest' || 'release' }}
         include:
           - name: latest
             silver-ref: "master"
