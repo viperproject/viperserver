@@ -68,6 +68,7 @@ jobs:
             SILICON_REF="master"
             CARBON_REF="master"
           fi
+          # creates a JSON object that looks like the key-values in the GitHub documentation on `strategy.matrix`
           MATRIX="{ \
             \"name\":[\"$NAME\"], \
             \"include\": [{ \
@@ -77,6 +78,7 @@ jobs:
               \"carbon_ref\":\"$CARBON_REF\" \
             }] \
           }"
+          # print matrix for debugging purposes:
           echo $MATRIX
           echo ::set-output name=matrix::$MATRIX
 
