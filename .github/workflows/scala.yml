@@ -68,14 +68,17 @@ jobs:
             SILICON_REF="master"
             CARBON_REF="master"
           fi
-          MATRIX="[{ \
+          MATRIX="{ \
             \"name\":\"$NAME\", \
-            \"silver_ref\":\"$SILVER_REF\", \
-            \"silicon_ref\":\"$SILICON_REF\", \
-            \"carbon_ref\":\"$CARBON_REF\" \
-          }]"
+            \"include\": [{ \
+              \"name\":\"$NAME\", \
+              \"silver_ref\":\"$SILVER_REF\", \
+              \"silicon_ref\":\"$SILICON_REF\", \
+              \"carbon_ref\":\"$CARBON_REF\" \
+            }] \
+          }"
           echo $MATRIX
-          echo ::set-output name=matrix::{\"include\":$MATRIX}
+          echo ::set-output name=matrix::$MATRIX
 
   build:
     needs: prepare-matrix
