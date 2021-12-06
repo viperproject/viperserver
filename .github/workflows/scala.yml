@@ -69,7 +69,7 @@ jobs:
             CARBON_REF="master"
           fi
           MATRIX="{ \
-            \"name\":\"$NAME\", \
+            \"name\":[\"$NAME\"], \
             \"include\": [{ \
               \"name\":\"$NAME\", \
               \"silver_ref\":\"$SILVER_REF\", \
