@@ -22,7 +22,7 @@ import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGeneration
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.vsi.Requests.CacheResetRequest
 import viper.server.vsi._
-import viper.silver.logger.{ViperLogger, ViperStdOutLogger}
+import viper.silver.logger.ViperLogger
 import viper.silver.reporter.Message
 
 import scala.concurrent.Future

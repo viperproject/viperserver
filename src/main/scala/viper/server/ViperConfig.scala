@@ -103,8 +103,8 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
   )
 
   val cacheFile: ScallopOption[String] = opt[String]("cacheFile",
-    descr = ("Specifies the file in which the resulting cache of a verification run gets written to."
-      + "If it is not set, the cache is only kept in memory and not written to the file system."
+    descr = ("Specifies the file from which the cache gets initialized on startup and to which the resulting cache gets written to."
+      + "If it is not set, the cache will be initially empty and is only kept in memory, so it is not persisted during runs"
       ),
     default = None,
     noshort = true,

@@ -48,11 +48,16 @@ abstract class Cache {
     * The inner map is referred to as the fileCache. As the name indicates, it stores, for each
     * file, a number of hashes and corresponding cache entries.
     */
+  type FileKey = String
+  type MethodHash = String
+  type FileCache = Map[MethodHash, List[CacheEntry]]
+  type Cache = Map[FileKey, FileCache]
   protected var _cache: Cache = Map()
-  type Cache = Map[String, FileCache]
 
-  type FileCache = Map[String, List[CacheEntry]]
-  protected var _program_cache: Map[String, Map[String, String]] = Map()
+  type ProgramHash = String
+  type DependencyHash = String
+  type DependendyMap = Map[MethodHash, DependencyHash]
+  protected var _program_cache: Map[ProgramHash, DependendyMap] = Map()
 
   /** This method transforms a program and returns verification results based on the cache's
     * current state.

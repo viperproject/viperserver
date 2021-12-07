@@ -40,25 +40,26 @@ object ViperCache extends Cache {
 
     _cacheFile = cacheFile.map(file => new java.io.File(file))
 
-    if(_cacheFile.isDefined) {
-      logger.trace("Trying to initializing cache with file {}", cacheFile.get)
-      if(_cacheFile.get.exists() && _cacheFile.get.canRead) {
-        try{
-          implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.cacheEntryHints)
+    _cacheFile match {
+      case Some(file) =>
+        logger.trace("Trying to initializing cache with file {}", cacheFile.get)
+        if(_cacheFile.get.exists() && _cacheFile.get.canRead) {
+          try{
+            implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.cacheEntryHints)
 
-          _cache = read[Cache](Files.readString(_cacheFile.get.toPath))
-          logger.trace("Successfully read cache from file {}", cacheFile.get)
-        } catch {
-          case e: Throwable =>
-            logger.warn("Reading of cache file " + cacheFile.get + "  failed, error is: " + e.getMessage)
-            logger.debug("Error thrown: {}", e)
+            _cache = read[Cache](Files.readString(_cacheFile.get.toPath))
+            logger.trace("Successfully read cache from file {}", cacheFile.get)
+          } catch {
+            case e: Throwable =>
+              logger.warn("Reading of cache file " + cacheFile.get + "  failed, error is: " + e.getMessage)
+              logger.debug("Error thrown: {}", e)
+          }
+        } else {
+          _logger.info("Cache file " + cacheFile.get + " not found, starting with empty cache")
         }
-      } else {
-        _logger.info("Cache file " + cacheFile.get + " not found, starting with empty cache")
-      }
-    } else {
-      logger.debug("No cache file specified, starting with empty cache")
-      resetCache()
+      case _ =>
+        logger.debug("No cache file specified, starting with empty cache")
+        resetCache()
     }
   }
 
@@ -275,21 +276,21 @@ object ViperCache extends Cache {
   }
 
   def writeToFile(): Unit = {
-    if(_cacheFile.isDefined) {
-      _logger.trace("Writing cache to file " + _cacheFile.get.getCanonicalPath)
+    _cacheFile.foreach(file => {
+      _logger.trace("Writing cache to file " + file.getCanonicalPath)
       implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.cacheEntryHints)
       try {
-        Files.write(_cacheFile.get.toPath, write(_cache).getBytes(StandardCharsets.UTF_8))
+        Files.write(file.toPath, write(_cache).getBytes(StandardCharsets.UTF_8))
       } catch {
         case e: Throwable =>
           _logger.warn("Writing of cache failed with error: " + e.getMessage)
           _logger.debug("{}" + e)
       }
-    }
+    })
   }
 
   override def resetCache(): Unit = {
-    ViperCacheHelper._node_hash_memo = Map()
+    ViperCacheHelper.reset_node_hash_memo()
     _cache = Map()
   }
 
@@ -311,8 +312,10 @@ object ViperCache extends Cache {
 
 
 object ViperCacheHelper {
-  var _node_hash_memo : Map[String, Map[Node, String]] = Map()
+  private var _node_hash_memo : Map[String, Map[Node, String]] = Map()
   def node_hash_memo: Map[String, Map[Node, String]] = _node_hash_memo
+
+  def reset_node_hash_memo(): Unit = _node_hash_memo = Map()
 
   protected def hex(h: String): String = h.hashCode.toHexString
 
