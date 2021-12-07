@@ -50,14 +50,14 @@ abstract class Cache {
     */
   type FileKey = String
   type MemberHash = String
-  type FileCache = Map[MethodHash, List[CacheEntry]]
+  type FileCache = Map[MemberHash, List[CacheEntry]]
   type Cache = Map[FileKey, FileCache]
   protected var _cache: Cache = Map()
 
   type ProgramHash = String
   type DependencyHash = String
-  type DependendyMap = Map[MethodHash, DependencyHash]
-  protected var _program_cache: Map[ProgramHash, DependendyMap] = Map()
+  type DependencyMap = Map[MemberHash, DependencyHash]
+  protected var _program_cache: Map[ProgramHash, DependencyMap] = Map()
 
   /** This method transforms a program and returns verification results based on the cache's
     * current state.
