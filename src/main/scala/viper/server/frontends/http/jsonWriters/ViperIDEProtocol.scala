@@ -170,14 +170,13 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   implicit val abstractError_writer: RootJsonFormat[AbstractError] = lift(new RootJsonWriter[AbstractError] {
     override def write(obj: AbstractError): JsValue = {
       obj match {
-        case e: VerificationError =>
-          val counterexamples: Seq[Counterexample] = e.failureContexts.flatMap(ctx => ctx.counterExample)
+        case e: VerificationError if e.counterexample.isDefined =>
           JsObject(
             "tag" -> JsString(obj.fullId),
             "text" -> JsString(obj.readableMessage),
             "position" -> obj.pos.toJson,
             "cached" -> JsBoolean(obj.cached),
-            "counterexamples" -> JsArray(counterexamples.map(_.toJson).toVector))
+            "counterexample" -> e.counterexample.get.toJson)
         case _ =>
           JsObject(
             "tag" -> JsString(obj.fullId),
