@@ -80,6 +80,7 @@ jobs:
           }"
           # print matrix for debugging purposes:
           echo $MATRIX
+          # set outputs of job:
           echo ::set-output name=matrix::$MATRIX
 
   build:
@@ -207,13 +208,13 @@ jobs:
 
 
   test:
-    needs: build
+    needs: [prepare-matrix, build]
     strategy:
       # tests should not be stopped when they fail on one of the OSes:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
-        name: [latest, release]
+        name: ${{ fromJson(needs.prepare-matrix.outputs.matrix).name }}
     runs-on: ${{ matrix.os }}
     steps:
       # we need to checkout the repo to have access to the test files
@@ -289,9 +290,9 @@ jobs:
 
 
   create-nightly-release:
+    needs: [prepare-matrix, test]
     # this job creates a new nightly pre-release, set viperserver.jar as artifacts, and deletes old releases
-    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'nightly') || github.event_name == 'schedule'
-    needs: test
+    if: contains(fromJson(needs.prepare-matrix.outputs.matrix).name, 'latest') && ((github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'nightly') || github.event_name == 'schedule')
     runs-on: ubuntu-latest
     env:
       # specifies that `latest` artifacts from `build` job should be used for nightly releases:
@@ -397,9 +398,9 @@ jobs:
 
 
   create-stable-release:
+    needs: [prepare-matrix, test]
     # this job creates a stable draft-release and set viperserver.jar as artifacts
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'stable'
-    needs: test
+    if: contains(fromJson(needs.prepare-matrix.outputs.matrix).name, 'release') && github.event_name == 'workflow_dispatch' && github.event.inputs.type == 'stable'
     runs-on: ubuntu-latest
     env:
       # specifies that `release` artifacts from `build` job should be used for stable releases:
