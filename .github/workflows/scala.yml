@@ -36,33 +36,60 @@ on:
 # them. This job automatically runs every night.
 # - create-stable-release
 # takes the fat and skinny JARs produced by configuration `release` during `build` job and creates a draft release with
-# them.
+# them. This only works on branch `release`.
 
 env:
   Z3_VERSION: "4.8.6"
 
 jobs:
-  build:
+  prepare-matrix:
     # build is the base job on which all other jobs depend
     # we enforce here that the nightly build job only runs in the main repo:
     if: (github.event_name == 'schedule' && github.repository == 'viperproject/viperserver') || (github.event_name != 'schedule')
+    # sets up matrix for `build` job (based on https://stackoverflow.com/a/65434401/1990080)
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          # note that the values of `NAME` are also used in all other jobs and they have to match!
+          IS_RELEASE=${{ github.ref == 'refs/heads/release' }}
+          # skip 'latest' name on 'release' branch and ignore 'release' on all other branches'
+          if [[ "$IS_RELEASE" == ${{ true }} ]]
+          then
+            NAME="release"
+            SILVER_REF="v.21.07-release"
+            SILICON_REF="v.21.07-release"
+            CARBON_REF="v.21.07-release"
+          else
+            NAME="latest"
+            SILVER_REF="master"
+            SILICON_REF="master"
+            CARBON_REF="master"
+          fi
+          # creates a JSON object that looks like the key-values in the GitHub documentation on `strategy.matrix`
+          MATRIX="{ \
+            \"name\":[\"$NAME\"], \
+            \"include\": [{ \
+              \"name\":\"$NAME\", \
+              \"silver_ref\":\"$SILVER_REF\", \
+              \"silicon_ref\":\"$SILICON_REF\", \
+              \"carbon_ref\":\"$CARBON_REF\" \
+            }] \
+          }"
+          # print matrix for debugging purposes:
+          echo $MATRIX
+          echo ::set-output name=matrix::$MATRIX
+
+  build:
+    needs: prepare-matrix
     runs-on: ubuntu-latest
     container: viperproject/viperserver:v3_z3_4.8.6
     strategy:
       # tests should not be stopped when they fail on one of the configurations:
       fail-fast: false
-      matrix:
-        # note that the same names are also used in all other jobs and they have to match!
-        name: [latest, release]
-        include:
-          - name: latest
-            silver-ref: "master"
-            silicon-ref: "master"
-            carbon-ref: "master"
-          - name: release
-            silver-ref: "v.21.07-release"
-            silicon-ref: "v.21.07-release"
-            carbon-ref: "v.21.07-release"
+      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
     steps:
       - name: Checkout ViperServer
         uses: actions/checkout@v2
