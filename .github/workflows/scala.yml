@@ -73,9 +73,9 @@ jobs:
             \"name\":[\"$NAME\"], \
             \"include\": [{ \
               \"name\":\"$NAME\", \
-              \"silver_ref\":\"$SILVER_REF\", \
-              \"silicon_ref\":\"$SILICON_REF\", \
-              \"carbon_ref\":\"$CARBON_REF\" \
+              \"silver-ref\":\"$SILVER_REF\", \
+              \"silicon-ref\":\"$SILICON_REF\", \
+              \"carbon-ref\":\"$CARBON_REF\" \
             }] \
           }"
           # print matrix for debugging purposes:
