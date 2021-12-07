@@ -42,20 +42,20 @@ object ViperCache extends Cache {
 
     _cacheFile match {
       case Some(file) =>
-        logger.trace("Trying to initializing cache with file {}", cacheFile.get)
-        if(_cacheFile.get.exists() && _cacheFile.get.canRead) {
+        logger.trace("Trying to initializing cache with file {}", file)
+        if(file.exists() && file.canRead) {
           try{
             implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.cacheEntryHints)
 
-            _cache = read[Cache](Files.readString(_cacheFile.get.toPath))
-            logger.trace("Successfully read cache from file {}", cacheFile.get)
+            _cache = read[Cache](Files.readString(file.toPath))
+            logger.trace("Successfully read cache from file {}", file)
           } catch {
             case e: Throwable =>
-              logger.warn("Reading of cache file " + cacheFile.get + "  failed, error is: " + e.getMessage)
+              logger.warn("Reading of cache file " + file + "  failed, error is: " + e.getMessage)
               logger.debug("Error thrown: {}", e)
           }
         } else {
-          _logger.info("Cache file " + cacheFile.get + " not found, starting with empty cache")
+          _logger.info("Cache file " + file + " not found, starting with empty cache")
         }
       case _ =>
         logger.debug("No cache file specified, starting with empty cache")

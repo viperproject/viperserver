@@ -49,7 +49,7 @@ abstract class Cache {
     * file, a number of hashes and corresponding cache entries.
     */
   type FileKey = String
-  type MethodHash = String
+  type MemberHash = String
   type FileCache = Map[MethodHash, List[CacheEntry]]
   type Cache = Map[FileKey, FileCache]
   protected var _cache: Cache = Map()
