@@ -29,7 +29,7 @@ lazy val server = (project in file("."))
         // classpath used by Scala's reflection.
         Test / fork := true,
 
-        // Compilation settings
+        libraryDependencies += "net.liftweb" %% "lift-json" % "3.5.0",
         libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.6.10",
         libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json" % "10.2.1",
         libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.6.10",
