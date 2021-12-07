@@ -172,12 +172,12 @@ abstract class Cache {
   /** Resets the cache for a particular file.
     * */
   def forgetFile(file_key: String): Option[String] = {
-    val elem = _cache.get(file_key) match {
+    val key = _cache.get(file_key) match {
       case Some(_) => Some(file_key)
       case None => None
     }
     _cache -= file_key
-    elem
+    key
   }
 
   /** Resets the entire cache.
