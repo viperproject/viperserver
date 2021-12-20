@@ -1,0 +1,3 @@
+method test() {
+    assert false
+}

@@ -1,0 +1,8 @@
+domain testDomain{
+    function func(): Bool
+}
+
+method test() {
+    // fails as expected
+    assert false
+}

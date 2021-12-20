@@ -6,7 +6,7 @@
 
 package viper.server.core
 
-import scala.language.{dynamics, postfixOps}
+import scala.language.postfixOps
 import ch.qos.logback.classic.Logger
 import net.liftweb.json.JsonAST.JObject
 import viper.server.core.ViperCache.logger
@@ -80,7 +80,9 @@ object ViperCache extends Cache {
           // Try to deserialize content of the cache entry
           val content = read[ViperCacheContent](ce.content.asInstanceOf[SerializedViperCacheContent].content)
           logger.trace("Got a cache hit for method " + concerning_method.name)
-          CacheResult(concerning_method, content.errors)
+          // set cached flag:
+          val cachedErrors = content.errors.map(setCached)
+          CacheResult(concerning_method, cachedErrors)
         } catch {
           case e: Throwable =>
             // In case parsing of the cache entry fails, abort caching & evict cache entries for this file, since hey might come from an unsupported version
@@ -261,12 +263,9 @@ object ViperCache extends Cache {
         errors: List[AbstractVerificationError]): List[CacheEntry] = {
 
     val viperMethod = ViperMethod(method)
-//    val deps: List[Concerning] = program.getDependencies(program, method).map(h => ViperMember(h))
     val deps: List[Member] = viperMethod.getDependencies(ViperAst(program))
-    val content = createCacheContent(backendName, file, program, method, errors)
+    val content = createCacheContent(backendName, file, program, errors)
     val file_key = getKey(file = file, backendName = backendName)
-
-    implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.errorNodeHints(program, file_key))
     super.update(file_key, ViperMethod(method), deps, content)
   }
 
@@ -300,7 +299,7 @@ object ViperCache extends Cache {
 
   def createCacheContent(
         backendName: String, file: String,
-        p: Program, m: Method,
+        p: Program,
         errors: List[AbstractVerificationError]): SerializedViperCacheContent = {
 
     implicit val key: String = getKey(file = file, backendName = backendName)
