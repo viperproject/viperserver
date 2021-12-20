@@ -1,0 +1,12 @@
+domain testDomain{
+    function func(): Bool
+
+    axiom unsound {
+        func() && !func()
+    }
+}
+
+method test() {
+    // succeeds due to unsound axiom above
+    assert false
+}

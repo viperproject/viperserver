@@ -1,0 +1,7 @@
+function unsound(): Bool
+    ensures false
+
+method test() {
+    // succeeds due to unsound function above
+    assert false
+}
