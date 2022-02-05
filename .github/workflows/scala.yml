@@ -86,7 +86,7 @@ jobs:
   build:
     needs: prepare-matrix
     runs-on: ubuntu-latest
-    container: viperproject/viperserver:v3_z3_4.8.6
+    container: viperproject/viperserver:v4_z3_4.8.6
     strategy:
       # tests should not be stopped when they fail on one of the configurations:
       fail-fast: false
@@ -119,6 +119,8 @@ jobs:
         run: java --version
       - name: Z3 Version
         run: z3 -version
+      - name: Boogie Version
+        run: boogie /version
 
       - name: Create version file
         run: |
@@ -301,6 +303,8 @@ jobs:
         run: java --version
       - name: Z3 Version
         run: z3 -version
+      - name: Boogie Version
+        run: boogie /version
 
       # unfortunately, the JAR seems to be broken and discovering test suites (e.g. using `-w viper.server`) fails.
       # thus, the test suites have to be explicitly mentioned
