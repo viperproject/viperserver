@@ -76,6 +76,10 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     val silicon_with_caching: SiliconConfig = SiliconConfig(List())
     server.verify(programId, silicon_with_caching, ast)
   }
+  def verifyCarbonWithCaching(server: ViperCoreServer, vprFile: String): VerJobId = {
+    val carbon_without_caching: CarbonConfig = CarbonConfig(List(/*"--boogieExe", "/Users/arquintlinard/Library/Application Support/Code/User/globalStorage/viper-admin.viper/Stable/ViperTools/boogie/Binaries/Boogie"*/))
+    server.verify(vprFile, carbon_without_caching, getAstByFileName(vprFile))
+  }
 
   var currentTestName: Option[String] = None
   override def withFixture(test: NoArgTest): Outcome = {
@@ -307,6 +311,22 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       })(context)
     })
 
+    s"keep caches for different backends separate - Silver Issue #550" in withServer({ (core, context) =>
+      implicit val ctx: VerificationExecutionContext = context
+      val siliconJid = verifySiliconWithoutCaching(core, ver_error_file)
+      val siliconVerification = ViperCoreServerUtils.getResultsFuture(core, siliconJid).map {
+        case VerifierFailure(Seq(err)) => assert(!err.cached, "first verification should not be cached")
+        case res => fail(s"expected a single entity failure from Silicon but got $res")
+      }
+      siliconVerification
+        .map(_ => verifyCarbonWithCaching(core, ver_error_file))
+        .flatMap(carbonJid => ViperCoreServerUtils.getResultsFuture(core, carbonJid))
+        .map {
+          case VerifierFailure(Seq(err)) => assert(!err.cached, "verification should not reuse cache from other backend")
+          case res => fail(s"expected a single entity failure from Carbon but got $res")
+        }
+    })
+
     s"run getMessagesFuture() to get Seq[Message] containing the expected verification result" in withServer({ (core, context) =>
       val jid = verifySiliconWithoutCaching(core, ver_error_file)
       ViperCoreServerUtils.getMessagesFuture(core, jid)(context).map { msgs =>
@@ -358,7 +378,6 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
 
       def handleResult(file: String, res: VerificationResult): Assertion = res match {
         case VerifierFailure(errors) =>
-          println(errors)
           assert(errors.size == 1)
           assert(errors.head.cached == (file == file2))
         case _ => fail(s"unexpected verification result for file $file")
@@ -381,6 +400,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       verifyMultipleFiles(core, List(fileBeforeModification, fileAfterModification), handleResult)(context)
     })
 
+    /* this is currently not the case (see Silver Issue #548)
     s"adapting a heap-dependent function should invalidate the cache" in withServer({ (core, context) =>
       val fileBeforeModification = "src/test/resources/viper/changed-function/version1.vpr"
       val fileAfterModification = "src/test/resources/viper/changed-function/version2.vpr"
@@ -394,6 +414,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
 
       verifyMultipleFiles(core, List(fileBeforeModification, fileAfterModification), handleResult)(context)
     })
+    */
 
     /**
       * verifies multiple files sequentially but uses identical program IDs for both files such that there can be

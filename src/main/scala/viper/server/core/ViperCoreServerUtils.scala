@@ -11,7 +11,7 @@ import akka.pattern.ask
 import akka.util.Timeout
 import viper.server.vsi.{JobNotFoundException, VerJobId}
 import viper.silver.logger.ViperLogger
-import viper.silver.reporter.{EntityFailureMessage, Message}
+import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessage, OverallSuccessMessage, VerificationResultMessage}
 import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 
 import scala.concurrent.{Future, Promise}
@@ -73,17 +73,14 @@ object ViperCoreServerUtils {
   def getResultsFuture(core: ViperCoreServer, jid: VerJobId)(implicit executor: VerificationExecutionContext): Future[VerificationResult] = {
     val messages_future = getMessagesFuture(core, jid)
     val result_future: Future[VerificationResult] = messages_future.map(msgs => {
-
-      val abstract_errors: Seq[AbstractError] = msgs.foldLeft(Seq(): Seq[AbstractError]) {(errors, msg) =>
-        msg match {
-          case EntityFailureMessage(_, _, _, VerificationFailure(errs), _) => errs ++ errors
-          case _ => errors
-        }
+      // note that errors cannot be extracted from entity failure messages because some backends (e.g. Carbon) do not
+      // produce entity messages but only an overall message at the very end
+      val overallResults = msgs.collect {
+        case _: OverallSuccessMessage => VerificationSuccess
+        case m: OverallFailureMessage => VerificationFailure(m.result.errors)
       }
-      abstract_errors match {
-        case Seq() => VerificationSuccess
-        case errors => VerificationFailure(errors)
-      }
+      assert(overallResults.length == 1, s"every verification should result in exactly one overall success or failure message but got $msgs")
+      overallResults.head
     })
     result_future
   }
