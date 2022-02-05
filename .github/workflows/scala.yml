@@ -275,6 +275,7 @@ jobs:
         run: |
           curl -L ${{ env.LINUX_BOOGIE_URL }} --output boogie-linux.zip
           unzip boogie-linux.zip -d boogie-linux
+          echo "$GITHUB_WORKSPACE/boogie-linux/binaries-linux/Boogie" >> $GITHUB_PATH
           echo "BOOGIE_EXE=$GITHUB_WORKSPACE/boogie-linux/binaries-linux/Boogie" >> $GITHUB_ENV
         shell: bash
 
@@ -283,6 +284,7 @@ jobs:
         run: |
           curl -L ${{ env.MAC_BOOGIE_URL }} --output boogie-mac.zip
           unzip boogie-mac.zip -d boogie-mac
+          echo "$GITHUB_WORKSPACE/boogie-mac/binaries-osx/Boogie" >> $GITHUB_PATH
           echo "BOOGIE_EXE=$GITHUB_WORKSPACE/boogie-mac/binaries-osx/Boogie" >> $GITHUB_ENV
         shell: bash
 
@@ -291,6 +293,7 @@ jobs:
         run: |
           curl -L ${{ env.WIN_BOOGIE_URL }} --output boogie-win.zip
           unzip boogie-win.zip -d boogie-win
+          echo "$GITHUB_WORKSPACE/boogie-win/binaries-win/Boogie.exe" >> $GITHUB_PATH
           echo "BOOGIE_EXE=$GITHUB_WORKSPACE/boogie-win/binaries-win/Boogie.exe" >> $GITHUB_ENV
         shell: bash
 
