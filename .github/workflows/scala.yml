@@ -216,6 +216,10 @@ jobs:
         os: [macos-latest, ubuntu-latest, windows-latest]
         name: ${{ fromJson(needs.prepare-matrix.outputs.matrix).name }}
     runs-on: ${{ matrix.os }}
+    env:
+      WIN_BOOGIE_URL: 'https://github.com/viperproject/boogie-builder/releases/latest/download/boogie-win.zip'
+      LINUX_BOOGIE_URL: 'https://github.com/viperproject/boogie-builder/releases/latest/download/boogie-linux.zip'
+      MAC_BOOGIE_URL: 'https://github.com/viperproject/boogie-builder/releases/latest/download/boogie-osx.zip'
     steps:
       # we need to checkout the repo to have access to the test files
       - name: Checkout ViperServer
@@ -262,6 +266,30 @@ jobs:
           unzip z3.zip -d z3/
           echo "$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-win/bin" >> $GITHUB_PATH
           echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-win/bin/z3.exe" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Download Boogie (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          curl -L ${{ env.LINUX_BOOGIE_URL }} --output boogie-linux.zip
+          unzip boogie-linux.zip -d boogie-linux
+          echo "BOOGIE_EXE=$GITHUB_WORKSPACE/boogie-linux/binaries-linux/Boogie" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Download Boogie (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          curl -L ${{ env.MAC_BOOGIE_URL }} --output boogie-mac.zip
+          unzip boogie-mac.zip -d boogie-mac
+          echo "BOOGIE_EXE=$GITHUB_WORKSPACE/boogie-mac/binaries-osx/Boogie" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Download Boogie (Windows)
+        if: startsWith(matrix.os, 'windows')
+        run: |
+          curl -L ${{ env.WIN_BOOGIE_URL }} --output boogie-win.zip
+          unzip boogie-win.zip -d boogie-win
+          echo "BOOGIE_EXE=$GITHUB_WORKSPACE/boogie-win/binaries-win/Boogie.exe" >> $GITHUB_ENV
         shell: bash
 
       - name: Setup Java JDK
