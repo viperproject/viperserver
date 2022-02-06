@@ -1,0 +1,15 @@
+// Any copyright is dedicated to the Public Domain.
+// http://creativecommons.org/publicdomain/zero/1.0/
+
+domain testDomain{
+    function func(): Bool
+
+    axiom unsound {
+        func() && !func()
+    }
+}
+
+method test() {
+    // succeeds due to unsound axiom above
+    assert false
+}

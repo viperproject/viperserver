@@ -86,7 +86,7 @@ jobs:
   build:
     needs: prepare-matrix
     runs-on: ubuntu-latest
-    container: viperproject/viperserver:v3_z3_4.8.6
+    container: viperproject/viperserver:v4_z3_4.8.6
     strategy:
       # tests should not be stopped when they fail on one of the configurations:
       fail-fast: false
@@ -119,6 +119,8 @@ jobs:
         run: java --version
       - name: Z3 Version
         run: z3 -version
+      - name: Boogie Version
+        run: boogie /version
 
       - name: Create version file
         run: |
@@ -216,6 +218,10 @@ jobs:
         os: [macos-latest, ubuntu-latest, windows-latest]
         name: ${{ fromJson(needs.prepare-matrix.outputs.matrix).name }}
     runs-on: ${{ matrix.os }}
+    env:
+      WIN_BOOGIE_URL: 'https://github.com/viperproject/boogie-builder/releases/latest/download/boogie-win.zip'
+      LINUX_BOOGIE_URL: 'https://github.com/viperproject/boogie-builder/releases/latest/download/boogie-linux.zip'
+      MAC_BOOGIE_URL: 'https://github.com/viperproject/boogie-builder/releases/latest/download/boogie-osx.zip'
     steps:
       # we need to checkout the repo to have access to the test files
       - name: Checkout ViperServer
@@ -264,6 +270,33 @@ jobs:
           echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-win/bin/z3.exe" >> $GITHUB_ENV
         shell: bash
 
+      - name: Download Boogie (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          curl -L ${{ env.LINUX_BOOGIE_URL }} --output boogie-linux.zip
+          unzip boogie-linux.zip -d boogie-linux
+          echo "$GITHUB_WORKSPACE/boogie-linux/binaries-linux" >> $GITHUB_PATH
+          echo "BOOGIE_EXE=$GITHUB_WORKSPACE/boogie-linux/binaries-linux/Boogie" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Download Boogie (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          curl -L ${{ env.MAC_BOOGIE_URL }} --output boogie-mac.zip
+          unzip boogie-mac.zip -d boogie-mac
+          echo "$GITHUB_WORKSPACE/boogie-mac/binaries-osx" >> $GITHUB_PATH
+          echo "BOOGIE_EXE=$GITHUB_WORKSPACE/boogie-mac/binaries-osx/Boogie" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Download Boogie (Windows)
+        if: startsWith(matrix.os, 'windows')
+        run: |
+          curl -L ${{ env.WIN_BOOGIE_URL }} --output boogie-win.zip
+          unzip boogie-win.zip -d boogie-win
+          echo "$GITHUB_WORKSPACE/boogie-win/binaries-win" >> $GITHUB_PATH
+          echo "BOOGIE_EXE=$GITHUB_WORKSPACE/boogie-win/binaries-win/Boogie.exe" >> $GITHUB_ENV
+        shell: bash
+
       - name: Setup Java JDK
         uses: actions/setup-java@v1.4.3
         with:
@@ -273,6 +306,8 @@ jobs:
         run: java --version
       - name: Z3 Version
         run: z3 -version
+      - name: Boogie Version
+        run: Boogie /version
 
       # unfortunately, the JAR seems to be broken and discovering test suites (e.g. using `-w viper.server`) fails.
       # thus, the test suites have to be explicitly mentioned

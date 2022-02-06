@@ -32,8 +32,10 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install sbt
-RUN echo "deb https://repo.scala-sbt.org/scalasbt/debian /" | tee -a /etc/apt/sources.list.d/sbt.list && \
-    curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x2EE0EA64E40A89B84B2DF73499E82A75642AC823" | apt-key add && \
+RUN echo "deb https://repo.scala-sbt.org/scalasbt/debian all main" | tee /etc/apt/sources.list.d/sbt.list && \
+    echo "deb https://repo.scala-sbt.org/scalasbt/debian /" | tee /etc/apt/sources.list.d/sbt_old.list && \
+    curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x2EE0EA64E40A89B84B2DF73499E82A75642AC823" | gpg --no-default-keyring --keyring gnupg-ring:/etc/apt/trusted.gpg.d/scalasbt-release.gpg --import && \
+    chmod 644 /etc/apt/trusted.gpg.d/scalasbt-release.gpg && \
     apt-get update && \
     apt-get install -y sbt && \
     rm -rf /var/lib/apt/lists/*
@@ -54,6 +56,16 @@ RUN curl -L $Z3_URL --output /z3.zip && \
     rm -r /z3
 # executing `which z3` and setting Z3_EXE based on its result is unfortunately not possible, therefore it is hardcoded
 ENV Z3_EXE /usr/bin/z3
+
+# Install Boogie
+ENV BOOGIE_URL="https://github.com/viperproject/boogie-builder/releases/latest/download/boogie-linux.zip"
+ENV BOOGIE_BIN="binaries-linux/Boogie"
+RUN curl -L $BOOGIE_URL --output /boogie.zip && \
+    unzip /boogie.zip -d /boogie/ && \
+    rm /boogie.zip && \
+    ln -s /boogie/$BOOGIE_BIN /usr/bin/boogie
+# executing `which boogie` and setting BOOGIE_EXE based on its result is unfortunately not possible, therefore it is hardcoded
+ENV BOOGIE_EXE /usr/bin/boogie
 
 
 WORKDIR /
