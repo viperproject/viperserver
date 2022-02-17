@@ -102,6 +102,15 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     hidden = false
   )
 
+  val cacheFile: ScallopOption[String] = opt[String]("cacheFile",
+    descr = ("Specifies the file from which the cache gets initialized on startup and to which the resulting cache gets written to."
+      + "If it is not set, the cache will be initially empty and is only kept in memory, so it is not persisted during runs"
+      ),
+    default = None,
+    noshort = true,
+    hidden = false
+  )
+
   val nThreads: ScallopOption[Int] = opt[Int](
     name = "nThreads",
     descr = s"Maximal number of threads that should be used (not taking threads used by backend into account)\n" +

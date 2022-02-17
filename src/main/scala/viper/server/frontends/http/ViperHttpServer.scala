@@ -35,7 +35,7 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
-    ViperCache.initialize(logger.get, config.backendSpecificCache())
+    ViperCache.initialize(logger.get, config.backendSpecificCache(), config.cacheFile.toOption)
 
     port = config.port.toOption.getOrElse(0) // 0 causes HTTP server to automatically select a free port
     super.start(config.maximumActiveJobs()).map({ _ =>
