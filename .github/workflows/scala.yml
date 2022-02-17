@@ -246,7 +246,7 @@ jobs:
       - name: Download Z3 (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
         run: |
-          curl -L https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-ubuntu-16.04.zip --output z3.zip
+          curl -L --silent --show-error --fail https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-ubuntu-16.04.zip --output z3.zip
           unzip z3.zip -d z3/
           echo "$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-ubuntu-16.04/bin" >> $GITHUB_PATH
           echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-ubuntu-16.04/bin/z3" >> $GITHUB_ENV
@@ -255,7 +255,7 @@ jobs:
       - name: Download Z3 (macOS)
         if: startsWith(matrix.os, 'macos')
         run: |
-          curl -L https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-osx-10.14.6.zip --output z3.zip
+          curl -L --silent --show-error --fail https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-osx-10.14.6.zip --output z3.zip
           unzip z3.zip -d z3/
           echo "$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-osx-10.14.6/bin" >> $GITHUB_PATH
           echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-osx-10.14.6/bin/z3" >> $GITHUB_ENV
@@ -264,7 +264,7 @@ jobs:
       - name: Download Z3 (Windows)
         if: startsWith(matrix.os, 'windows')
         run: |
-          curl -L https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-win.zip --output z3.zip
+          curl -L --silent --show-error --fail https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-win.zip --output z3.zip
           unzip z3.zip -d z3/
           echo "$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-win/bin" >> $GITHUB_PATH
           echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-win/bin/z3.exe" >> $GITHUB_ENV
@@ -273,7 +273,7 @@ jobs:
       - name: Download Boogie (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
         run: |
-          curl -L ${{ env.LINUX_BOOGIE_URL }} --output boogie-linux.zip
+          curl -L --silent --show-error --fail ${{ env.LINUX_BOOGIE_URL }} --output boogie-linux.zip
           unzip boogie-linux.zip -d boogie-linux
           echo "$GITHUB_WORKSPACE/boogie-linux/binaries-linux" >> $GITHUB_PATH
           echo "BOOGIE_EXE=$GITHUB_WORKSPACE/boogie-linux/binaries-linux/Boogie" >> $GITHUB_ENV
@@ -282,7 +282,7 @@ jobs:
       - name: Download Boogie (macOS)
         if: startsWith(matrix.os, 'macos')
         run: |
-          curl -L ${{ env.MAC_BOOGIE_URL }} --output boogie-mac.zip
+          curl -L --silent --show-error --fail ${{ env.MAC_BOOGIE_URL }} --output boogie-mac.zip
           unzip boogie-mac.zip -d boogie-mac
           echo "$GITHUB_WORKSPACE/boogie-mac/binaries-osx" >> $GITHUB_PATH
           echo "BOOGIE_EXE=$GITHUB_WORKSPACE/boogie-mac/binaries-osx/Boogie" >> $GITHUB_ENV
@@ -291,7 +291,7 @@ jobs:
       - name: Download Boogie (Windows)
         if: startsWith(matrix.os, 'windows')
         run: |
-          curl -L ${{ env.WIN_BOOGIE_URL }} --output boogie-win.zip
+          curl -L --silent --show-error --fail ${{ env.WIN_BOOGIE_URL }} --output boogie-win.zip
           unzip boogie-win.zip -d boogie-win
           echo "$GITHUB_WORKSPACE/boogie-win/binaries-win" >> $GITHUB_PATH
           echo "BOOGIE_EXE=$GITHUB_WORKSPACE/boogie-win/binaries-win/Boogie.exe" >> $GITHUB_ENV
