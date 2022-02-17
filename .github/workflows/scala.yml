@@ -51,6 +51,9 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
+      # checkout repo first because we need `viper-toolchain-versions.sh`:
+      - name: Checkout ViperServer
+        uses: actions/checkout@v2
       - id: set-matrix
         run: |
           # note that the values of `NAME` are also used in all other jobs and they have to match!
