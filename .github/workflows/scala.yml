@@ -12,7 +12,7 @@ on:
   workflow_dispatch: # allow to manually trigger this workflow
     inputs:
       type:
-        description: 'Specifies whether a stable or nightly release should be triggered. Has to be "stable" or "nightly".'
+        description: 'Specifies whether a stable or nightly release should be triggered. Has to be "stable" or "nightly". Note that "stable" can only be used on branch "release".'
         required: true
         default: 'stable'
       tag_name:
@@ -27,8 +27,8 @@ on:
 
 # some remarks about the high-level structure of this CI script:
 # - build
-# `build` builds and tests ViperServer using sbt. It runs in two configurations, once using master branch of silver,
-# silicon, and carbon and a second time using a particular tag or commit (as specified in the matrix).
+# `build` builds and tests ViperServer using sbt. It runs in the Silver, Carbon, and Silicon commits as specified in
+# `viper-toolchain-versions.sh`.
 # - test
 # `test` takes both ViperServer JARs that include tests and executes them on Ubuntu, macOS, and Windows.
 # - create-nightly-release
@@ -59,15 +59,11 @@ jobs:
           if [[ "$IS_RELEASE" == ${{ true }} ]]
           then
             NAME="release"
-            SILVER_REF="v.21.07-release"
-            SILICON_REF="v.21.07-release"
-            CARBON_REF="v.21.07-release"
           else
             NAME="latest"
-            SILVER_REF="master"
-            SILICON_REF="master"
-            CARBON_REF="master"
           fi
+          # read Silver, Carbon, and Silicon commits that should be used from the following file:
+          source viper-toolchain-versions.sh
           # creates a JSON object that looks like the key-values in the GitHub documentation on `strategy.matrix`
           MATRIX="{ \
             \"name\":[\"$NAME\"], \
