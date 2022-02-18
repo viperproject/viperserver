@@ -1,0 +1,10 @@
+// Any copyright is dedicated to the Public Domain.
+// http://creativecommons.org/publicdomain/zero/1.0/
+
+function unsound(): Bool
+    ensures false
+
+method test() {
+    // succeeds due to unsound function above
+    assert false
+}

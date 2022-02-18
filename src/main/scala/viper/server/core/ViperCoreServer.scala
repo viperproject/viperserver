@@ -8,20 +8,23 @@ package viper.server.core
 
 import akka.Done
 import akka.actor.ActorRef
+import akka.util.Timeout
 import viper.server.ViperConfig
 import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
 import viper.silver.ast.Program
 import viper.silver.logger.ViperLogger
 
+import scala.concurrent.duration._
 import scala.concurrent.Future
+import scala.language.postfixOps
 
-class ViperCoreServer(val _args: Array[String])(implicit val executor: VerificationExecutionContext) extends VerificationServer with ViperPost {
+class ViperCoreServer(val config: ViperConfig)(implicit val executor: VerificationExecutionContext) extends VerificationServer with ViperPost {
 
   override type AST = Program
 
   // --- VCS : Configuration ---
-  protected var _config: ViperConfig = _
-  final def config: ViperConfig = _config
+
+  override lazy val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
 
   protected var _logger: ViperLogger = _
   final def logger: ViperLogger = _logger
@@ -31,18 +34,17 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
     * This function must be called before any other. Calling any other function before this one
     * will result in an IllegalStateException.
     * */
-  def start(): Unit = {
-    _config = new ViperConfig(_args)
-    config.verify()
-
+  def start(): Future[Done] = {
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
     println(s"Writing [level:${config.logLevel()}] logs into " +
       s"${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
-    ViperCache.initialize(logger.get, config.backendSpecificCache())
+    ViperCache.initialize(logger.get, config.backendSpecificCache(), config.cacheFile.toOption)
 
-    super.start(config.maximumActiveJobs())
-    println(s"ViperCoreServer has started.")
+    super.start(config.maximumActiveJobs()) map { _ =>
+      logger.get.info(s"ViperCoreServer has started.")
+      Done
+    }
   }
 
   def requestAst(arg_list: List[String]): AstJobId = {
@@ -60,30 +62,29 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
     ast_id
   }
 
-  def verify(ast_id: AstJobId, backend_config: ViperBackendConfig): VerJobId = {
+  def verify(programId: String, ast_id: AstJobId, backend_config: ViperBackendConfig): VerJobId = {
 
     if (!isRunning) throw new IllegalStateException("Instance of VerificationServer already stopped")
     require(backend_config != null)
 
-    val programId = s"ViperAst#${ast_id.id}"
     val args: List[String] = backend_config.toList
 
     ast_jobs.lookupJob(ast_id) match {
       case Some(handle_future) =>
-        val task_backend_fut =
-          handle_future.map((handle: AstHandle[Program]) => {
-            val art: Future[Program] = handle.artifact
-            art.map(program => {
-              new VerificationWorker(logger.get, args :+ programId, program)(executor)
-            }).recover({
+        val task_backend_maybe_fut: Future[Option[VerificationWorker]] =
+          handle_future.map((handle: AstHandle[Option[Program]]) => {
+            val program_maybe_fut: Future[Option[Program]] = handle.artifact
+            program_maybe_fut.map(_.map(new VerificationWorker(args, programId, _, logger.get)(executor))).recover({
               case e: Throwable =>
-                println(s"### As exception has occurred while constructing Viper AST: $e")
+                val msg = s"### An exception has occurred while constructing Viper AST: $e"
+                println(msg)
+                logger.get.error(msg)
                 throw e
             })
 
           }).flatten
 
-        initializeVerificationProcess(task_backend_fut, Some(ast_id))
+        initializeVerificationProcess(task_backend_maybe_fut, Some(ast_id))
 
       case None =>
         logger.get.error(s"Could not start verification process for non-existent $ast_id")
@@ -99,8 +100,8 @@ class ViperCoreServer(val _args: Array[String])(implicit val executor: Verificat
     require(program != null && backend_config != null)
 
     val args: List[String] = backend_config.toList
-    val task_backend = new VerificationWorker(logger.get, args :+ programId, program)(executor)
-    val ver_id = initializeVerificationProcess(Future.successful(task_backend), None)
+    val task_backend = new VerificationWorker(args, programId, program, logger.get)(executor)
+    val ver_id = initializeVerificationProcess(Future.successful(Some(task_backend)), None)
 
     if (ver_id.id >= 0) {
       logger.get.info(s"Verification process #${ver_id.id} has successfully started.")

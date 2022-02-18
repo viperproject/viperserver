@@ -6,7 +6,7 @@
 
 package viper.server.frontends.http
 
-import akka.NotUsed
+import akka.{Done, NotUsed}
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.marshalling.ToResponseMarshallable
 import akka.http.scaladsl.server.Directives._
@@ -20,29 +20,28 @@ import viper.server.ViperConfig
 import viper.server.core.{AstConstructionFailureException, VerificationExecutionContext, ViperBackendConfig, ViperCache, ViperCoreServer}
 import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGenerationRequestComplete, AlloyGenerationRequestReject, CacheFlushAccept, CacheFlushReject, JobDiscardAccept, JobDiscardReject, ServerStopConfirmed, VerificationRequestAccept, VerificationRequestReject}
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
-import viper.server.utility.ibm
 import viper.server.vsi.Requests.CacheResetRequest
 import viper.server.vsi._
 import viper.silver.logger.ViperLogger
 import viper.silver.reporter.Message
 
+import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
-class ViperHttpServer(_args: Array[String])(executor: VerificationExecutionContext)
-  extends ViperCoreServer(_args)(executor) with VerificationServerHttp {
+class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContext)
+  extends ViperCoreServer(config)(executor) with VerificationServerHttp {
 
-  override def start(): Unit = {
-    _config = new ViperConfig(_args.toIndexedSeq)
-    config.verify()
-
+  override def start(): Future[Done] = {
     _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
     println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
 
-    ViperCache.initialize(logger.get, config.backendSpecificCache())
+    ViperCache.initialize(logger.get, config.backendSpecificCache(), config.cacheFile.toOption)
 
-    port = config.port.getOrElse(ibm.Socket.findFreePort)
-    super.start(config.maximumActiveJobs())
-    println(s"ViperServer online at http://localhost:$port}")
+    port = config.port.toOption.getOrElse(0) // 0 causes HTTP server to automatically select a free port
+    super.start(config.maximumActiveJobs()).map({ _ =>
+      println(s"ViperServer online at http://localhost:$port")
+      Done
+    })(executor)
   }
 
   def setRoutes(): Route = {
@@ -63,14 +62,15 @@ class ViperHttpServer(_args: Array[String])(executor: VerificationExecutionConte
 
   override def onVerifyPost(vr: Requests.VerificationRequest): ToResponseMarshallable = {
     val arg_list = getArgListFromArgString(vr.arg)
+    val file: String = arg_list.last
+    val arg_list_partial: List[String] = arg_list.dropRight(1)
 
-    if (!validateViperFile(arg_list.last)) {
+    if (!validateViperFile(file)) {
       return VerificationRequestReject("File not found")
     }
 
     val ast_id = requestAst(arg_list)
 
-    val arg_list_partial: List[String] = arg_list.dropRight(1)
     val backend = try {
       ViperBackendConfig(arg_list_partial)
     } catch {
@@ -80,7 +80,7 @@ class ViperHttpServer(_args: Array[String])(executor: VerificationExecutionConte
         return VerificationRequestReject("Invalid arguments for backend.")
     }
 
-    val ver_id = verify(ast_id, backend)
+    val ver_id = verify(file, ast_id, backend)
 
     VerificationRequestAccept(ast_id, ver_id)
   }

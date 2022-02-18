@@ -11,7 +11,8 @@ import java.util.concurrent.{CompletableFuture => CFuture}
 import org.eclipse.lsp4j.jsonrpc.services.{JsonNotification, JsonRequest}
 import org.eclipse.lsp4j.services.{LanguageClient, LanguageClientAware}
 import org.eclipse.lsp4j.{DidChangeConfigurationParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentSymbolParams, InitializeParams, InitializeResult, InitializedParams, Location, Range, ServerCapabilities, SymbolInformation, TextDocumentPositionParams, TextDocumentSyncKind}
-import viper.server.core.DefaultVerificationExecutionContext
+import viper.server.ViperConfig
+import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp.LogLevel._
 import viper.server.frontends.lsp.VerificationState._
 
@@ -43,15 +44,13 @@ abstract class StandardReceiver extends LanguageClientAware {
     Log.info("On opening document")
     try {
       val uri: String = params.getTextDocument.getUri
-      Common.isViperSourceFile(uri).thenAccept(isViperFile => {
-        if (true) {
-          //notify client
-          Coordinator.client.notifyFileOpened(uri)
-          if (!Coordinator.files.contains(uri)) {
-            //create new task for opened file
-            val manager = new FileManager(uri)
-            Coordinator.files += (uri -> manager)
-          }
+      Common.isViperSourceFile(uri).thenAccept(_ => {
+        //notify client
+        Coordinator.client.notifyFileOpened(uri)
+        if (!Coordinator.files.contains(uri)) {
+          //create new task for opened file
+          val manager = new FileManager(uri)
+          Coordinator.files += (uri -> manager)
         }
       })
     } catch {
@@ -117,7 +116,7 @@ abstract class StandardReceiver extends LanguageClientAware {
           val def_range = new Range(matching_def.code_location, matching_def.code_location)
           new Location(document.getUri, def_range)
         })
-      case None =>
+      case _ =>
         // No definition found - maybe it's a keyword.
         val e = s"Verification task not found for URI ${document.getUri}"
         Log.debug(e)
@@ -153,7 +152,7 @@ abstract class StandardReceiver extends LanguageClientAware {
   }
 }
 
-class CustomReceiver extends StandardReceiver {
+class CustomReceiver()(executor: VerificationExecutionContext) extends StandardReceiver {
 
   @JsonNotification(S2C_Commands.FileClosed)
   def onFileClosed(uri: String): Unit = {
@@ -188,8 +187,8 @@ class CustomReceiver extends StandardReceiver {
       } else {
         throw new Throwable("Unexpected Backend")
       }
-      val executor = new DefaultVerificationExecutionContext()
-      Coordinator.verifier = new ViperServerService(Array())(executor)
+      val config = new ViperConfig(Seq())
+      Coordinator.verifier = new ViperServerService(config)(executor)
       Coordinator.verifier.setReady(Coordinator.backend)
     } catch {
       case e: Throwable => Log.debug("Error handling swap backend request: " + e)
@@ -216,13 +215,13 @@ class CustomReceiver extends StandardReceiver {
 
   @JsonRequest(C2S_Commands.RequestBackendNames)
   def onGetNames(backendName: String): CFuture[Array[String]] = {
-    Log.debug("on getting backend names")
+    Log.debug(s"on getting backend names $backendName")
     CFuture.completedFuture(Array("Silicon", "Carbon"))
   }
 
   @JsonNotification(C2S_Commands.StopBackend)
   def onBackendStop(backendName: String): Unit= {
-    Log.debug("on stopping backend")
+    Log.debug(s"on stopping backend $backendName")
     Coordinator.verifier.setStopping()
     Coordinator.verifier.setStopped()
   }
@@ -265,7 +264,7 @@ class CustomReceiver extends StandardReceiver {
     Log.debug("on stopping verification")
     try {
       val manager = Coordinator.files.getOrElse(uri, return CFuture.completedFuture(false))
-        manager.abortVerification().thenApply((success) => {
+        manager.abortVerification().thenApply(_ => {
           val params = StateChangeParams(Ready.id, verificationCompleted = 0, verificationNeeded = 0, uri = uri)
           Coordinator.sendStateChangeNotification(params, Some(manager))
           true

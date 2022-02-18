@@ -13,7 +13,7 @@ import akka.actor.ActorRef
 import akka.pattern.ask
 import akka.stream.QueueOfferResult
 import akka.util.Timeout
-import viper.server.core.VerificationExecutionContext
+import ch.qos.logback.classic.Logger
 
 import scala.concurrent.{Await, Future, Promise}
 import scala.concurrent.duration._
@@ -31,7 +31,7 @@ import scala.util.Try
   *  The first serves the purpose of running the task concurrently. The second allows to
   *  communicate from the verification process to the server.
   * */
-abstract class MessageStreamingTask[T]() extends Callable[T] with Post {
+abstract class MessageStreamingTask[T] extends Callable[T] with Post {
 
   private lazy val artifactPromise = Promise[T]()
   lazy val artifact: Future[T] = artifactPromise.future
@@ -40,8 +40,13 @@ abstract class MessageStreamingTask[T]() extends Callable[T] with Post {
   }
 
   private var q_actor: ActorRef = _
+  private var hasEnded: Boolean = false
 
   final def setQueueActor(actor: ActorRef): Unit = {
+    if (q_actor != null) {
+      throw new IllegalStateException("cannot set queue actor - a queue actor has already been set")
+    }
+
     q_actor = actor
   }
 
@@ -51,7 +56,12 @@ abstract class MessageStreamingTask[T]() extends Callable[T] with Post {
     * which  will eventually indicate whether or not the offer was successful. This method is
     * blocking, as it waits for the successful completion of such an offer.
     * */
-  protected def enqueueMessage(msg: Envelope)(implicit executor: VerificationExecutionContext): Unit = {
+  protected def enqueueMessage(msg: Envelope, logger: Logger): Unit = {
+    if (hasEnded) {
+      throw new IllegalStateException("cannot enqueue message - message streaming task's end has already been registered")
+    }
+
+    logger.trace(s"enqueueMessage: $msg")
     implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
     // answer is a future that will resolve with the actor's response to the BackendReport request
     val answer = (q_actor ? TaskProtocol.BackendReport(msg)).mapTo[Future[QueueOfferResult]]
@@ -64,7 +74,9 @@ abstract class MessageStreamingTask[T]() extends Callable[T] with Post {
     } catch {
       case ex: Exception =>
         // print exception such that one sees that something went wrong:
-        println(s"exception in enqueueMessage occurred: $ex")
+        val errorMsg = s"exception in enqueueMessage occurred: $ex"
+        println(errorMsg)
+        logger.error(errorMsg)
         // rethrow exception:
         throw ex
     }
@@ -76,7 +88,13 @@ abstract class MessageStreamingTask[T]() extends Callable[T] with Post {
     *
     * @param success indicates whether or not the task has ended as successfully.
     * */
-  protected def registerTaskEnd(success: Boolean): Unit = {
+  protected def registerTaskEnd(success: Boolean, logger: Logger): Unit = {
+    if (hasEnded) {
+      throw new IllegalStateException("cannot register task end - message streaming task's end has already been registered")
+    }
+
+    hasEnded = true
+    logger.trace(s"registerTaskEnd: $success")
     q_actor ! TaskProtocol.FinalBackendReport(success)
   }
 }

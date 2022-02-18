@@ -6,32 +6,42 @@
 
 package viper.server.core
 
-import akka.actor.{Actor, Props}
+import akka.actor.{Actor, Props, Status}
 import akka.pattern.ask
 import akka.util.Timeout
 import viper.server.vsi.{JobNotFoundException, VerJobId}
-import viper.silver.reporter.{EntityFailureMessage, Message}
+import viper.silver.logger.ViperLogger
+import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessage, OverallSuccessMessage, VerificationResultMessage}
 import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 
-import scala.concurrent.Future
+import scala.concurrent.{Future, Promise}
 import scala.concurrent.duration._
 
 object ViperCoreServerUtils {
 
   private object SeqActor {
     case object Result
-    def props(): Props = Props(new SeqActor())
+    def props(jid: VerJobId, logger: ViperLogger): Props = Props(new SeqActor(jid, logger))
   }
 
-  class SeqActor() extends Actor {
+  class SeqActor(jid: VerJobId, logger: ViperLogger) extends Actor {
 
     var messages: List[Message] = List()
+    private val msgPromise: Promise[List[Message]] = Promise()
 
     override def receive: PartialFunction[Any, Unit] = {
       case m: Message =>
+        logger.get.trace(s"SeqActor(JID ${jid.id}) received message $m")
         messages = messages :+ m
       case SeqActor.Result =>
-        sender() ! messages
+        sender() ! msgPromise.future // return a future that will be completed as soon as all messages have been received
+      case Status.Success =>
+        // Success is sent when the stream is completed
+        logger.get.trace(s"SeqActor(JID ${jid.id}) has successfully completed receiving messages")
+        msgPromise.success(messages)
+      case Status.Failure(cause) =>
+        logger.get.trace(s"SeqActor(JID ${jid.id}) has failed receiving all messages: $cause")
+        msgPromise.failure(cause)
     }
   }
 
@@ -45,13 +55,12 @@ object ViperCoreServerUtils {
   def getMessagesFuture(core: ViperCoreServer, jid: VerJobId)(implicit executor: VerificationExecutionContext): Future[List[Message]] = {
     import scala.language.postfixOps
 
-    val actor = executor.actorSystem.actorOf(SeqActor.props())
+    val actor = executor.actorSystem.actorOf(SeqActor.props(jid, core.logger))
     val complete_future = core.streamMessages(jid, actor).getOrElse(Future.failed(JobNotFoundException))
-    val res: Future[List[Message]] = complete_future.flatMap(_ => {
+    complete_future.flatMap(_ => {
       implicit val askTimeout: Timeout = Timeout(core.config.actorCommunicationTimeout() milliseconds)
-      (actor ? SeqActor.Result).mapTo[List[Message]]
+      (actor ? SeqActor.Result).mapTo[Future[List[Message]]].flatten
     })
-    res
   }
 
   /** Get a Future containing only verification results.
@@ -64,17 +73,14 @@ object ViperCoreServerUtils {
   def getResultsFuture(core: ViperCoreServer, jid: VerJobId)(implicit executor: VerificationExecutionContext): Future[VerificationResult] = {
     val messages_future = getMessagesFuture(core, jid)
     val result_future: Future[VerificationResult] = messages_future.map(msgs => {
-
-      val abstract_errors: Seq[AbstractError] = msgs.foldLeft(Seq(): Seq[AbstractError]) {(errors, msg) =>
-        msg match {
-          case EntityFailureMessage(_, _, _, VerificationFailure(errs), _) => errs ++ errors
-          case _ => errors
-        }
+      // note that errors cannot be extracted from entity failure messages because some backends (e.g. Carbon) do not
+      // produce entity messages but only an overall message at the very end
+      val overallResults = msgs.collect {
+        case _: OverallSuccessMessage => VerificationSuccess
+        case m: OverallFailureMessage => VerificationFailure(m.result.errors)
       }
-      abstract_errors match {
-        case Seq() => VerificationSuccess
-        case errors => VerificationFailure(errors)
-      }
+      assert(overallResults.length == 1, s"every verification should result in exactly one overall success or failure message but got $msgs")
+      overallResults.head
     })
     result_future
   }

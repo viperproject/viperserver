@@ -23,9 +23,10 @@ case class ServerCrashException(e: Throwable) extends Exception(e)
 
 
 class AstWorker(val arg_list: List[String],
-                val logger: Logger)(override val executor: VerificationExecutionContext) extends MessageReportingTask[Program] {
+                override val logger: Logger)(override val executor: VerificationExecutionContext)
+  extends MessageReportingTask[Option[Program]] {
 
-  private def constructAst(): Program = {
+  private def constructAst(): Option[Program] = {
     val file: String = arg_list.last
 
     val reporter = new ActorReporter("AstGenerationReporter")
@@ -35,38 +36,32 @@ class AstWorker(val arg_list: List[String],
       astGen.generateViperAst(file)
     } catch {
       case _: java.nio.file.NoSuchFileException =>
-        println("The file for which verification has been requested was not found.")
+        val msg = s"The file ($file) for which verification has been requested was not found."
+        println(msg)
+        logger.error(msg)
         registerTaskEnd(false)
         throw ViperFileNotFoundException
-      case e: InterruptedException =>
-        logger.info(s"AstWorker has been interrupted: $e")
-        registerTaskEnd(false)
-        throw AstConstructionInterrupted
-      case e: java.nio.channels.ClosedByInterruptException =>
-        logger.info(s"AstWorker has been interrupted: $e")
+      case e@ (_: InterruptedException | _: java.nio.channels.ClosedByInterruptException) =>
+        logger.info(s"AstWorker ($file) has been interrupted", e)
         registerTaskEnd(false)
         throw AstConstructionInterrupted
       case e: Throwable =>
         reporter report ExceptionReport(e)
-        logger.trace(s"Creation/Execution of an AstGenerator instance resulted in an exception.", e)
+        val msg = s"Creation/Execution of an AstGenerator instance ($file) resulted in $e."
+        println(msg)
+        logger.error(msg, e)
         registerTaskEnd(false)
         throw ServerCrashException(e)
     }
 
+    registerTaskEnd(true)
     ast_option match {
-      case Some(ast) =>
-        registerTaskEnd(true)
-        ast
       case None =>
-        logger.info("The file for which verification has been requested contained syntax errors, type errors, " +
-          "or is simply inconsistent.")
-        registerTaskEnd(false)
-        throw AstConstructionFailureException
+        logger.info(s"The file ($file) contained syntax errors, type errors, or is simply inconsistent.")
+      case _ =>
     }
+    ast_option
   }
 
-  override def call(): Program = {
-    // println(">>> AstWorker.call()")
-    constructAst()
-  }
+  override def call(): Option[Program] = constructAst()
 }

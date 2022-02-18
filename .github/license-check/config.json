@@ -69,7 +69,6 @@
       "tmp/**",
       "**/*.json",
       "**/*.log",
-      ".github/check-license/**",
       "**/README.md",
       "**/LICENSE"
     ]

@@ -1,13 +1,12 @@
-![Scala CI](https://github.com/viperproject/viperserver/workflows/Scala%20CI/badge.svg?branch=master)
-
-# README #
+[![Test Status](https://github.com/viperproject/viperserver/actions/workflows/scala.yml/badge.svg?branch=master)](https://github.com/viperproject/viperserver/actions/workflows/scala.yml?query=branch%3Amaster)
+[![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](./LICENSE)
 
 This is ViperServer, an HTTP server that manages verification requests to different tools from the Viper tool stack.
 
 The main two Viper tools (a.k.a verification backends) currently are: 
 
-- [Carbon](https://bitbucket.org/viperproject/carbon), a verification condition generation (VCG) backend for the Viper language.
-- [Silicon](https://bitbucket.org/viperproject/silicon), a symbolic execution verification backend.
+- [Carbon](https://github.com/viperproject/carbon), a verification condition generation (VCG) backend for the Viper language.
+- [Silicon](https://github.com/viperproject/silicon), a symbolic execution verification backend.
 
 
 ### The Purpose of ViperServer ###
@@ -21,14 +20,14 @@ The main two Viper tools (a.k.a verification backends) currently are:
    [Nailgun](https://github.com/facebook/nailgun).
 1. Develop Viper encodings more efficiently with caching.
 1. Interact with Viper tools programmatically using the HTTP API. A reference client implementation (in Python) is
-   available via [viper_client](https://bitbucket.org/viperproject/viper_client).
+   available via [viper_client](https://github.com/viperproject/viper_client).
 
 For more details about using Viper, please visit: http://viper.ethz.ch/downloads/
 
 
 ### Installation Instructions ###
 
-* Clone [silver](https://bitbucket.org/viperproject/silver/), [silicon](https://bitbucket.org/viperproject/silicon/) and [carbon](https://bitbucket.org/viperproject/carbon/) repositories in your computer, in separate directories.
+* Clone [silver](https://github.com/viperproject/silver/), [silicon](https://github.com/viperproject/silicon/) and [carbon](https://github.com/viperproject/carbon/) repositories in your computer, in separate directories.
 * Clone **viperserver** (this repository) in your computer, in another directory.
 * From within the directory where you installed viperserver, create a symbolic links to the directories where you installed silver, silicon and carbon.
 * On Linux/Mac OS X:  
@@ -56,4 +55,4 @@ mklink /D carbon <relative path to diretory where you installed carbon>
 
 ### Who do I talk to? ###
 
-* This repository is maintained by [Arshavir Ter-Gabrielyan](mailto:ter-gabrielyan@inf.ethz.ch).
+* This repository is maintained by [Linard Arquint](mailto:linard.arquint@inf.ethz.ch).
