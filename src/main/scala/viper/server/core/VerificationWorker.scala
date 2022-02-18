@@ -67,7 +67,7 @@ class VerificationWorker(private val logger: Logger,
           logger.info("Creating new Carbon verification backend.")
           backend = new ViperBackend(new CarbonFrontend(new ActorReporter("carbon"), logger), program)
           backend.execute(args)
-        case custom :: args =>
+        case "custom" :: custom :: args =>
           logger.info(s"Creating new verification backend based on class $custom.")
           backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(custom)).get, program)
           backend.execute(args)

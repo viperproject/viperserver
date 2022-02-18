@@ -55,3 +55,6 @@ lazy val server = (project in file("."))
                 fallbackStrategy(x)
         }
     )
+
+
+enablePlugins(JavaAppPackaging)
