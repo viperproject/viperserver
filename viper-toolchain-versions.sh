@@ -5,6 +5,6 @@
 #
 # Copyright (c) 2011-2021 ETH Zurich.
 
-SILVER_REF="22.02-RC"
-SILICON_REF="22.02-RC"
-CARBON_REF="22.02-RC"
+SILVER_REF="v.22.02-release"
+SILICON_REF="v.22.02-release"
+CARBON_REF="v.22.02-release"
