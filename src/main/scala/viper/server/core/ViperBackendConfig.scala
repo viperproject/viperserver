@@ -17,7 +17,7 @@ trait ViperBackendConfig {
   def toList: List[String] = this match {
     case _ : SiliconConfig => "silicon" :: partialCommandLine
     case _ : CarbonConfig => "carbon" :: partialCommandLine
-    case _ : CustomConfig => "custom" :: partialCommandLine
+    case cc : CustomConfig => "custom" :: cc.backend_name :: partialCommandLine
   }
 }
 
