@@ -352,6 +352,7 @@ object ViperCacheHelper {
     def addIdxToHash(hash: String): String = idx.toString + hash
 
     node match {
+      // Members don't need an id, since we don't want their order to matter for caching
       case m: Method => removeBody(m).entityHash
       case m: vpr.Member => m.entityHash
       case hn: Hashable => addIdxToHash(hn.entityHash)
