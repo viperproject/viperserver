@@ -127,7 +127,7 @@ jobs:
           echo "CARBON_SILVER_REF=$(git -C viperserver/carbon/silver rev-parse HEAD)" >> $GITHUB_ENV
 
       - name: Silicon and Carbon reference same Silver commit
-        if: env.SILICON_SILVER_REF == env.CARBON_SILVER_REF
+        if: env.SILICON_SILVER_REF != env.CARBON_SILVER_REF
         run: |
           echo "::error file=.github/workflows/scala.yml::Silicon and Carbon reference different Silver commits (${{ env.SILICON_SILVER_REF }} and ${{ env.CARBON_SILVER_REF }})"
           # terminate this job:
