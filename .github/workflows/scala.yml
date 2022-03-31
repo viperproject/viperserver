@@ -121,11 +121,12 @@ jobs:
         run: ln --symbolic ../silicon; ln --symbolic ../carbon
         working-directory: viperserver
 
-      run: |
-        SILICON_SILVER_REF=$(git -C viperserver/silicon/silver rev-parse HEAD)"
-        CARBON_SILVER_REF=$(git -C viperserver/carbon/silver rev-parse HEAD)"
-        echo "SILICON_SILVER_REF=$SILICON_SILVER_REF" >> $GITHUB_ENV
-        echo "CARBON_SILVER_REF=$CARBON_SILVER_REF" >> $GITHUB_ENV
+      - name: Get Silver commits referenced by Silicon and Carbon
+        run: |
+          SILICON_SILVER_REF=$(git -C viperserver/silicon/silver rev-parse HEAD)"
+          CARBON_SILVER_REF=$(git -C viperserver/carbon/silver rev-parse HEAD)"
+          echo "SILICON_SILVER_REF=$SILICON_SILVER_REF" >> $GITHUB_ENV
+          echo "CARBON_SILVER_REF=$CARBON_SILVER_REF" >> $GITHUB_ENV
 
       - name: Silicon and Carbon reference same Silver commit
         if: env.SILICON_SILVER_REF == env.CARBON_SILVER_REF
