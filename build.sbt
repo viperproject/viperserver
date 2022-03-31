@@ -5,11 +5,13 @@
 // Copyright (c) 2011-2020 ETH Zurich.
 
 // Import general settings from Silver, Silicon and Carbon
-lazy val silver = project in file("silver")
+
+// we assume that carbon/silver and silicon/silver point to the same version of the silver repo
+lazy val silver = project in file("silicon/silver")
 lazy val silicon = project in file("silicon")
 lazy val carbon = project in file("carbon")
 
-lazy val common = (project in file("common"))
+lazy val common = project in file("common")
 
 // Viper Server specific project settings
 lazy val server = (project in file("."))
