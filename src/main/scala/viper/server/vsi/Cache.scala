@@ -92,7 +92,7 @@ abstract class Cache {
         var dep_map = Map[String, String]()
         cachable_members.foreach(cm => {
           val concerning_hash = cm.hash()
-          val dependency_hash = CacheHelper.buildHash(concerning_hash + cm.getDependencies(input_prog).map(_.hash()).mkString(" "))
+          val dependency_hash = calculateDependencyHash(cm, cm.getDependencies(input_prog))
           dep_map = dep_map + (concerning_hash -> dependency_hash)
         })
         _program_cache = _program_cache + (input_prog_hex -> dep_map)
@@ -148,8 +148,7 @@ abstract class Cache {
               content: CacheContent): List[CacheEntry] = {
 
     val concerning_hash = key.hash()
-    val dependencies_hash = dependencies.map(_.hash()).mkString(" ")
-    val dependency_hash = CacheHelper.buildHash(concerning_hash + dependencies_hash)
+    val dependency_hash = calculateDependencyHash(key, dependencies)
     val new_entry: CacheEntry = CacheEntry(key.hash(), content, dependency_hash)
 
     assert(concerning_hash != null)
@@ -185,6 +184,18 @@ abstract class Cache {
   def resetCache(): Unit = {
     _program_cache = Map()
     _cache = Map()
+  }
+
+  /**
+    * Returns a hash that contains the hashes of all dependencies as well as member's hash.
+    * The ordering of `dependencies` does not matter because the resulting hashes will be sorted.
+    */
+  private def calculateDependencyHash(member: CacheableMember, dependencies: List[Member]): String = {
+    val dependencyHashes = dependencies
+      .map(_.hash())
+      // sort these hashes such that we do not rely on the ordering of members / dependencies in the AST
+      .sorted
+    CacheHelper.buildHash(member.hash() + dependencyHashes.mkString(" "))
   }
 }
 
