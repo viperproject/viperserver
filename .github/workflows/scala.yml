@@ -27,7 +27,7 @@ on:
 
 # some remarks about the high-level structure of this CI script:
 # - build
-# `build` builds and tests ViperServer using sbt. It runs in the Silver, Carbon, and Silicon commits as specified in
+# `build` builds and tests ViperServer using sbt. It runs in the Carbon, and Silicon commits as specified in
 # `viper-toolchain-versions.sh`.
 # - test
 # `test` takes both ViperServer JARs that include tests and executes them on Ubuntu, macOS, and Windows.
@@ -65,14 +65,13 @@ jobs:
           else
             NAME="latest"
           fi
-          # read Silver, Carbon, and Silicon commits that should be used from the following file:
+          # read Carbon and Silicon commits that should be used from the following file:
           source viper-toolchain-versions.sh
           # creates a JSON object that looks like the key-values in the GitHub documentation on `strategy.matrix`
           MATRIX="{ \
             \"name\":[\"$NAME\"], \
             \"include\": [{ \
               \"name\":\"$NAME\", \
-              \"silver-ref\":\"$SILVER_REF\", \
               \"silicon-ref\":\"$SILICON_REF\", \
               \"carbon-ref\":\"$CARBON_REF\" \
             }] \
@@ -95,24 +94,20 @@ jobs:
         uses: actions/checkout@v2
         with:
           path: viperserver
-      - name: Checkout Silver
-        uses: actions/checkout@v2
-        with:
-          repository: viperproject/silver
-          ref: ${{ matrix.silver-ref }}
-          path: silver
       - name: Checkout Silicon
         uses: actions/checkout@v2
         with:
           repository: viperproject/silicon
           ref: ${{ matrix.silicon-ref }}
           path: silicon
+          submodules: true
       - name: Checkout Carbon
         uses: actions/checkout@v2
         with:
           repository: viperproject/carbon
           ref: ${{ matrix.carbon-ref }}
           path: carbon
+          submodules: true
 
       - name: Java Version
         run: java --version
@@ -121,29 +116,35 @@ jobs:
       - name: Boogie Version
         run: boogie /version
 
+      # create symlinks to Silicon and Carbon:
+      - name: Create ViperServers's sym links
+        run: ln --symbolic ../silicon; ln --symbolic ../carbon
+        working-directory: viperserver
+
+      - name: Get Silver commits referenced by Silicon and Carbon
+        run: |
+          echo "SILICON_SILVER_REF=$(git -C viperserver/silicon/silver rev-parse HEAD)" >> $GITHUB_ENV
+          echo "CARBON_SILVER_REF=$(git -C viperserver/carbon/silver rev-parse HEAD)" >> $GITHUB_ENV
+
+      - name: Silicon and Carbon reference different Silver commits
+        if: env.SILICON_SILVER_REF != env.CARBON_SILVER_REF
+        run: |
+          echo "::error file=.github/workflows/scala.yml::Silicon and Carbon reference different Silver commits (${{ env.SILICON_SILVER_REF }} and ${{ env.CARBON_SILVER_REF }})"
+          # terminate this job:
+          exit 1
+
       - name: Create version file
         run: |
           echo "ViperServer: commit $(git -C viperserver rev-parse HEAD)" >> versions.txt
-          echo "Silicon: commit $(git -C silicon rev-parse HEAD)" >> versions.txt
-          echo "Carbon: commit $(git -C carbon rev-parse HEAD)" >> versions.txt
-          echo "Silver: commit $(git -C silver rev-parse HEAD)" >> versions.txt
+          echo "Silicon: commit $(git -C viperserver/silicon rev-parse HEAD)" >> versions.txt
+          echo "Carbon: commit $(git -C viperserver/carbon rev-parse HEAD)" >> versions.txt
+          echo "Silver: commit ${{ env.SILICON_SILVER_REF }}" >> versions.txt
         # first line overwrites versions.txt in case it already exists, all other append to the file
       - name: Upload version file
         uses: actions/upload-artifact@v2
         with:
           name: versions-${{ matrix.name }}.txt
           path: versions.txt
-
-      # create symlinks between and to Viper dependencies:
-      - name: Create Silicon's sym links
-        run: ln --symbolic ../silver
-        working-directory: silicon
-      - name: Create Carbon's sym links
-        run: ln --symbolic ../silver
-        working-directory: carbon
-      - name: Create ViperServers's sym links
-        run: ln --symbolic ../silver; ln --symbolic ../silicon; ln --symbolic ../carbon
-        working-directory: viperserver
 
       - name: Set sbt cache variables
         run: echo "SBT_OPTS=-Dsbt.global.base=sbt-cache/.sbtboot -Dsbt.boot.directory=sbt-cache/.boot -Dsbt.ivy.home=sbt-cache/.ivy" >> $GITHUB_ENV

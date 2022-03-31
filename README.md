@@ -27,20 +27,19 @@ For more details about using Viper, please visit: http://viper.ethz.ch/downloads
 
 ### Installation Instructions ###
 
-* Clone [silver](https://github.com/viperproject/silver/), [silicon](https://github.com/viperproject/silicon/) and [carbon](https://github.com/viperproject/carbon/) repositories in your computer, in separate directories.
+* Clone [silicon](https://github.com/viperproject/silicon/) and [carbon](https://github.com/viperproject/carbon/) repositories in your computer, in separate directories.
+* Execute `git submodule init; git submodule update` in both, the silicon and carbon, directories to fetch their depending `silver` repository. Even though silicon's silver repository is actually used for compilation of ViperServer, we assume that they reference the same silver commit.
 * Clone **viperserver** (this repository) in your computer, in another directory.
-* From within the directory where you installed viperserver, create a symbolic links to the directories where you installed silver, silicon and carbon.
+* From within the directory where you installed viperserver, create a symbolic links to the directories where you installed silicon and carbon.
 * On Linux/Mac OS X:  
-```
-ln -s <relative path to diretory where you installed silver> silver  
-ln -s <relative path to diretory where you installed silicon> silicon  
-ln -s <relative path to diretory where you installed carbon> carbon  
+``` 
+ln -s <relative path to diretory where you installed silicon> silicon
+ln -s <relative path to diretory where you installed carbon> carbon
 ```
 * On Windows:  
 ```
-mklink /D silver <relative path to diretory where you installed silver>  
-mklink /D silicon <relative path to diretory where you installed silicon>  
-mklink /D carbon <relative path to diretory where you installed carbon>  
+mklink /D silicon <relative path to diretory where you installed silicon>
+mklink /D carbon <relative path to diretory where you installed carbon>
 ```
 * Compile by typing: ```sbt compile```
 
