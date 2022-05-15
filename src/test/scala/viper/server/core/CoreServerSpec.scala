@@ -416,6 +416,43 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     })
     */
 
+    s"reordering of domains should not invalidate the cache" in withServer({ (core, context) =>
+      val fileBeforeReordering = "src/test/resources/viper/reordered-domains/version1.vpr"
+      val fileAfterReordering = "src/test/resources/viper/reordered-domains/version2.vpr"
+
+      def handleResult(file: String, res: VerificationResult): Assertion = (res: @unchecked) match {
+        case VerifierFailure(errors) =>
+          assert(errors.size == 1)
+          val err = errors.head
+          if (err.cached) {
+            assert(file == fileAfterReordering)
+          } else {
+            assert(file == fileBeforeReordering)
+          }
+      }
+
+      verifyMultipleFiles(core, List(fileBeforeReordering, fileAfterReordering), handleResult)(context)
+    })
+
+    s"reordering domain components should not invalidate the cache - Issue #52" in withServer({ (core, context) =>
+      val fileBeforeModification = "src/test/resources/viper/reordered-axioms/version1.vpr"
+      val fileAfterReorderingDomainFunctions = "src/test/resources/viper/reordered-axioms/version2.vpr"
+      val fileAfterReorderingDomainAxioms = "src/test/resources/viper/reordered-axioms/version3.vpr"
+
+      def handleResult(file: String, res: VerificationResult): Assertion = (res: @unchecked) match {
+        case VerifierFailure(errors) =>
+          assert(errors.size == 1)
+          val err = errors.head
+          if (err.cached) {
+            assert(file == fileAfterReorderingDomainFunctions || file == fileAfterReorderingDomainAxioms)
+          } else {
+            assert(file == fileBeforeModification)
+          }
+      }
+
+      verifyMultipleFiles(core, List(fileBeforeModification, fileAfterReorderingDomainFunctions, fileAfterReorderingDomainAxioms), handleResult)(context)
+    })
+
     /**
       * verifies multiple files sequentially but uses identical program IDs for both files such that there can be
       * caching behavior
