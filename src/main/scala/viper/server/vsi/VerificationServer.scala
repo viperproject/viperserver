@@ -213,7 +213,7 @@ trait VerificationServer extends Post {
               }
           }
         }) flatMap {
-          case (ast_handle_maybe: Option[AstHandle[AST]], ver_handle: VerHandle) =>
+          case (ast_handle_maybe: Option[AstHandle[Option[AST]]], ver_handle: VerHandle) =>
             val ver_source = ver_handle match {
               case VerHandle(null, null, null, _) =>
                 /** There were no messages produced during verification. */
