@@ -286,7 +286,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val statisticsReport_writer: RootJsonFormat[StatisticsReport] = lift(new RootJsonWriter[StatisticsReport] {
-    override def write(obj: StatisticsReport) = JsObject(
+    override def write(obj: StatisticsReport): JsObject = JsObject(
       "methods" -> JsNumber(obj.nOfMethods),
       "functions" -> JsNumber(obj.nOfFunctions),
       "predicates" -> JsNumber(obj.nOfPredicates),
@@ -295,11 +295,11 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val programOutlineReport_writer: RootJsonFormat[ProgramOutlineReport] = lift(new RootJsonWriter[ProgramOutlineReport] {
-    override def write(obj: ProgramOutlineReport) = JsObject("members" -> JsArray(obj.members.map(_.toJson).toVector))
+    override def write(obj: ProgramOutlineReport): JsObject = JsObject("members" -> JsArray(obj.members.map(_.toJson).toVector))
   })
 
   implicit val viperAtomicType_writer: RootJsonFormat[viper.silver.ast.AtomicType] = lift(new RootJsonWriter[AtomicType] {
-    override def write(obj: AtomicType) = obj match {
+    override def write(obj: AtomicType): JsValue = obj match {
       case viper.silver.ast.Int => JsString("Int")
       case viper.silver.ast.Bool => JsString("Bool")
       case viper.silver.ast.Perm => JsString("Perm")
@@ -312,7 +312,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val viperGenericType_writer: RootJsonFormat[viper.silver.ast.GenericType] = lift(new RootJsonWriter[GenericType] {
-    override def write(obj: GenericType) = if (obj.isConcrete) {
+    override def write(obj: GenericType): JsValue = if (obj.isConcrete) {
       // If this is a concrete type instantiation, we serialize it concretely
       obj match {
         case col: CollectionType =>
@@ -329,7 +329,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val viperType_writer: RootJsonFormat[ViperType] = lift(new RootJsonWriter[ViperType] {
-    override def write(obj: ViperType) = obj match {
+    override def write(obj: ViperType): JsObject = obj match {
       case atomic: AtomicType =>
         JsObject("kind" -> JsString("atomic"), "typename" -> atomic.toJson)
       case generic: GenericType =>
@@ -343,7 +343,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val symbolType_writer: RootJsonFormat[SymbolKind] = lift(new RootJsonWriter[SymbolKind] {
-    override def write(obj: SymbolKind) = obj match {
+    override def write(obj: SymbolKind): JsObject = obj match {
       case typed_symbol: TypedSymbol =>
         JsObject("name" -> JsString(typed_symbol.name), "viperType" -> typed_symbol.viperType.toJson)
       case untyped_symbol =>
@@ -356,7 +356,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     * [[viper.server.utility.ProgramDefinitionsProvider]] for the usage Definition.
     */
   implicit val definition_writer: RootJsonFormat[Definition] = lift(new RootJsonWriter[Definition] {
-    override def write(obj: Definition) = JsObject(
+    override def write(obj: Definition): JsObject = JsObject(
       "name" -> JsString(obj.name),
       "type" -> obj.typ.toJson,
       "location" -> obj.location.toJson,
@@ -371,13 +371,13 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val programDefinitionsReport_writer: RootJsonFormat[ProgramDefinitionsReport] = lift(new RootJsonWriter[ProgramDefinitionsReport] {
-    override def write(obj: ProgramDefinitionsReport) = JsObject(
+    override def write(obj: ProgramDefinitionsReport): JsObject = JsObject(
       "definitions" -> JsArray(obj.definitions.map(_.toJson).toVector))
   })
 
   implicit val symbExLogReport_writer: RootJsonFormat[ExecutionTraceReport] = lift(new RootJsonWriter[ExecutionTraceReport] {
-    override def write(obj: ExecutionTraceReport) = obj match {
-      case ExecutionTraceReport(members: Seq[SymbLog], axioms: List[Term], functionPostAxioms: List[Term]) =>
+    override def write(obj: ExecutionTraceReport): JsObject = obj match {
+      case ExecutionTraceReport(members: Seq[SymbLog] @unchecked, axioms: List[Term] @unchecked, functionPostAxioms: List[Term] @unchecked) =>
         JsObject(
           "members" -> SymbExLogReportWriter.toJSON(members),
           "axioms" -> JsArray(axioms.map(TermWriter.toJSON).toVector),
@@ -389,34 +389,27 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
             )
           })).toVector)
         )
-
-      case ExecutionTraceReport(members, axioms, functionPostAxioms) =>
-        JsObject(
-          "members" -> JsArray(members.map(m => JsString(m.toString)).toVector),
-          "axioms" -> JsArray(axioms.map(a => JsString(a.toString)).toVector),
-          "functionPostAxioms" -> JsArray(functionPostAxioms.map(a => JsString(a.toString)).toVector)
-        )
     }
   })
 
   implicit val stackTraceElement_writer: RootJsonFormat[StackTraceElement] = lift(new RootJsonWriter[java.lang.StackTraceElement] {
-    override def write(obj: java.lang.StackTraceElement) = JsString(obj.toString)
+    override def write(obj: java.lang.StackTraceElement): JsString = JsString(obj.toString)
   })
 
   implicit val exceptionReport_writer: RootJsonFormat[ExceptionReport] = lift(new RootJsonWriter[ExceptionReport] {
-    override def write(obj: ExceptionReport) = JsObject(
+    override def write(obj: ExceptionReport): JsObject = JsObject(
       "message" -> JsString(obj.e.toString),
       "stacktrace" -> JsArray(obj.e.getStackTrace.map(_.toJson).toVector))
   })
 
   implicit val invalidArgumentsReport_writer: RootJsonFormat[InvalidArgumentsReport] = lift(new RootJsonWriter[InvalidArgumentsReport] {
-    override def write(obj: InvalidArgumentsReport) = JsObject(
+    override def write(obj: InvalidArgumentsReport): JsObject = JsObject(
       "tool" -> JsString(obj.tool_signature),
       "errors" -> JsArray(obj.errors.map(_.toJson).toVector))
   })
 
   implicit val backendSubProcessReport_writer: RootJsonFormat[BackendSubProcessReport] = lift(new RootJsonWriter[BackendSubProcessReport] {
-    override def write(obj: BackendSubProcessReport) = JsObject(
+    override def write(obj: BackendSubProcessReport): JsObject = JsObject(
       "tool" -> JsString(obj.tool_signature),
       "process_exe" -> JsString(obj.process_exe),
       "phase" -> JsString(obj.phase.toString),
@@ -427,30 +420,30 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   })
 
   implicit val dependency_writer: RootJsonFormat[Dependency] = lift(new RootJsonWriter[Dependency] {
-    override def write(obj: Dependency) = JsObject(
+    override def write(obj: Dependency): JsObject = JsObject(
       "name" -> JsString(obj.name),
       "version" -> JsString(obj.version),
       "location" -> JsString(obj.location))
   })
 
   implicit val externalDependenciesReport_writer: RootJsonFormat[ExternalDependenciesReport] = lift(new RootJsonWriter[ExternalDependenciesReport] {
-    override def write(obj: ExternalDependenciesReport) = JsArray(obj.deps.map(_.toJson).toVector)
+    override def write(obj: ExternalDependenciesReport): JsArray = JsArray(obj.deps.map(_.toJson).toVector)
   })
 
   implicit val warningsDuringParsing_writer: RootJsonFormat[WarningsDuringParsing] = lift(new RootJsonWriter[WarningsDuringParsing] {
-    override def write(obj: WarningsDuringParsing) = JsArray(obj.warnings.map(_.asInstanceOf[AbstractError].toJson).toVector)
+    override def write(obj: WarningsDuringParsing): JsArray = JsArray(obj.warnings.map(_.asInstanceOf[AbstractError].toJson).toVector)
   })
 
   implicit val warningsDuringTypechecking_writer: RootJsonFormat[WarningsDuringTypechecking] = lift(new RootJsonWriter[WarningsDuringTypechecking] {
-    override def write(obj: WarningsDuringTypechecking) = JsArray(obj.warnings.map(_.asInstanceOf[AbstractError].toJson).toVector)
+    override def write(obj: WarningsDuringTypechecking): JsArray = JsArray(obj.warnings.map(_.asInstanceOf[AbstractError].toJson).toVector)
   })
 
   implicit val simpleMessage_writer: RootJsonFormat[SimpleMessage] = lift(new RootJsonWriter[SimpleMessage] {
-    override def write(obj: SimpleMessage) = JsObject("text" -> JsString(obj.text))
+    override def write(obj: SimpleMessage): JsObject = JsObject("text" -> JsString(obj.text))
   })
 
   implicit val pongMessage_writer: RootJsonFormat[PongMessage] = lift(new RootJsonWriter[PongMessage] {
-    override def write(obj: PongMessage) = JsObject("msg" -> JsString(obj.text))
+    override def write(obj: PongMessage): JsObject = JsObject("msg" -> JsString(obj.text))
   })
 
   implicit val message_writer: RootJsonFormat[Message] = lift(new RootJsonWriter[Message] {
