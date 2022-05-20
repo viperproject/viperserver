@@ -11,7 +11,7 @@ import akka.stream.scaladsl.SourceQueueWithComplete
 import org.reactivestreams.Publisher
 
 import scala.collection.mutable
-import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.concurrent.{Future, Promise}
 
 sealed trait JobId {
   val id: Int

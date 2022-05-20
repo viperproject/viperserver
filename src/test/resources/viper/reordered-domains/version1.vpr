@@ -1,0 +1,22 @@
+// Any copyright is dedicated to the Public Domain.
+// http://creativecommons.org/publicdomain/zero/1.0/
+
+domain testDomain1 {
+    function func1(): Bool
+
+    axiom ax1 {
+        func1()
+    }
+}
+
+domain testDomain2 {
+    function func2(): Int
+
+    axiom ax2 {
+        func2() == 42
+    }
+}
+
+method test() {
+    assert false // should fail
+}

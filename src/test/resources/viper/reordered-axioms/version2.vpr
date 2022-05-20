@@ -1,0 +1,20 @@
+// Any copyright is dedicated to the Public Domain.
+// http://creativecommons.org/publicdomain/zero/1.0/
+
+domain testDomain {
+    // func1 and func2 have been reordered:
+    function func2(): Int
+    function func1(): Bool
+
+    axiom ax1 {
+        func1()
+    }
+
+    axiom ax2 {
+        func2() == 42
+    }
+}
+
+method test() {
+    assert false // should fail and should be cached
+}
