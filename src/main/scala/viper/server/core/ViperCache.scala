@@ -18,7 +18,7 @@ import viper.silver.verifier.errors.{ApplyFailed, CallFailed, ContractNotWellfor
 import viper.silver.verifier.{AbstractVerificationError, VerificationError, errors}
 import net.liftweb.json.Serialization.{read, write}
 import net.liftweb.json.{DefaultFormats, Formats, JArray, JField, JInt, JString, MappingException, ShortTypeHints}
-import viper.silver.verifier.reasons.{AssertionFalse, DivisionByZero, EpsilonAsParam, FeatureUnsupported, InsufficientPermission, InternalReason, InvalidPermMultiplication, LabelledStateNotReached, MagicWandChunkNotFound, MapKeyNotContained, NegativePermission, ReceiverNotInjective, ReceiverNull, SeqIndexExceedsLength, SeqIndexNegative, UnexpectedNode}
+import viper.silver.verifier.reasons.{AssertionFalse, DivisionByZero, EpsilonAsParam, FeatureUnsupported, InsufficientPermission, InternalReason, InvalidPermMultiplication, LabelledStateNotReached, MagicWandChunkNotFound, MapKeyNotContained, NegativePermission, QPAssertionNotInjective, ReceiverNull, SeqIndexExceedsLength, SeqIndexNegative, UnexpectedNode}
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -521,7 +521,7 @@ object ViperCacheHelper {
     classOf[MagicWandNotWellformed], classOf[LetWandFailed], classOf[HeuristicsFailed], classOf[VerificationErrorWithCounterexample],
     classOf[InternalReason], classOf[FeatureUnsupported], classOf[UnexpectedNode], classOf[AssertionFalse], classOf[EpsilonAsParam],
     classOf[ReceiverNull], classOf[DivisionByZero], classOf[NegativePermission], classOf[InsufficientPermission], classOf[InvalidPermMultiplication],
-    classOf[MagicWandChunkNotFound], classOf[ReceiverNotInjective], classOf[LabelledStateNotReached], classOf[SeqIndexNegative],
+    classOf[MagicWandChunkNotFound], classOf[QPAssertionNotInjective], classOf[LabelledStateNotReached], classOf[SeqIndexNegative],
     classOf[SeqIndexExceedsLength], classOf[MapKeyNotContained]
   )) {
 
