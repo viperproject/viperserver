@@ -11,13 +11,14 @@ import ch.qos.logback.classic.Logger
 import net.liftweb.json.JsonAST.JObject
 import viper.server.core.ViperCache.logger
 import viper.server.vsi._
+import viper.silver.{ast => vpr}
 import viper.silver.ast.{Add, And, AnonymousDomainAxiom, AnySetCardinality, AnySetContains, AnySetIntersection, AnySetMinus, AnySetSubset, AnySetUnion, Apply, Applying, Assert, Cached, CondExp, ConsInfo, CurrentPerm, Div, Domain, DomainFunc, DomainFuncApp, EmptyMultiset, EmptySeq, EmptySet, EpsilonPerm, EqCmp, Exhale, Exists, ExplicitMultiset, ExplicitSeq, ExplicitSet, FalseLit, Field, FieldAccess, FieldAccessPredicate, FieldAssign, Fold, ForPerm, Forall, FractionalPerm, FullPerm, FuncApp, Function, GeCmp, Goto, GtCmp, Hashable, If, Implies, Inhale, InhaleExhaleExp, IntLit, IntPermMul, Label, LabelledOld, LeCmp, Let, LocalVar, LocalVarAssign, LocalVarDecl, LocalVarDeclStmt, LtCmp, MagicWand, Method, MethodCall, Minus, Mod, Mul, NamedDomainAxiom, NeCmp, NewStmt, NoPerm, Node, Not, NullLit, Old, Or, Package, PermAdd, PermDiv, PermGeCmp, PermGtCmp, PermLeCmp, PermLtCmp, PermMinus, PermMul, PermSub, Position, Predicate, PredicateAccess, PredicateAccessPredicate, Program, RangeSeq, SeqAppend, SeqContains, SeqDrop, SeqIndex, SeqLength, SeqTake, SeqUpdate, Seqn, Sub, Trigger, TrueLit, Unfold, Unfolding, While, WildcardPerm}
 import viper.silver.utility.CacheHelper
 import viper.silver.verifier.errors.{ApplyFailed, CallFailed, ContractNotWellformed, FoldFailed, HeuristicsFailed, IfFailed, InhaleFailed, Internal, LetWandFailed, UnfoldFailed, _}
 import viper.silver.verifier.{AbstractVerificationError, VerificationError, errors}
 import net.liftweb.json.Serialization.{read, write}
 import net.liftweb.json.{DefaultFormats, Formats, JArray, JField, JInt, JString, MappingException, ShortTypeHints}
-import viper.silver.verifier.reasons.{AssertionFalse, DivisionByZero, EpsilonAsParam, FeatureUnsupported, InsufficientPermission, InternalReason, InvalidPermMultiplication, LabelledStateNotReached, MagicWandChunkNotFound, MapKeyNotContained, NegativePermission, ReceiverNotInjective, ReceiverNull, SeqIndexExceedsLength, SeqIndexNegative, UnexpectedNode}
+import viper.silver.verifier.reasons.{AssertionFalse, DivisionByZero, EpsilonAsParam, FeatureUnsupported, InsufficientPermission, InternalReason, InvalidPermMultiplication, LabelledStateNotReached, MagicWandChunkNotFound, MapKeyNotContained, NegativePermission, QPAssertionNotInjective, ReceiverNull, SeqIndexExceedsLength, SeqIndexNegative, UnexpectedNode}
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -351,7 +352,9 @@ object ViperCacheHelper {
     def addIdxToHash(hash: String): String = idx.toString + hash
 
     node match {
-      case m: Method => addIdxToHash(removeBody(m).entityHash)
+      // Members don't need an id, since we don't want their order to matter for caching
+      case m: Method => removeBody(m).entityHash
+      case m: vpr.Member => m.entityHash
       case hn: Hashable => addIdxToHash(hn.entityHash)
       case n =>
         _node_hash_memo.get(key) match {
@@ -518,7 +521,7 @@ object ViperCacheHelper {
     classOf[MagicWandNotWellformed], classOf[LetWandFailed], classOf[HeuristicsFailed], classOf[VerificationErrorWithCounterexample],
     classOf[InternalReason], classOf[FeatureUnsupported], classOf[UnexpectedNode], classOf[AssertionFalse], classOf[EpsilonAsParam],
     classOf[ReceiverNull], classOf[DivisionByZero], classOf[NegativePermission], classOf[InsufficientPermission], classOf[InvalidPermMultiplication],
-    classOf[MagicWandChunkNotFound], classOf[ReceiverNotInjective], classOf[LabelledStateNotReached], classOf[SeqIndexNegative],
+    classOf[MagicWandChunkNotFound], classOf[QPAssertionNotInjective], classOf[LabelledStateNotReached], classOf[SeqIndexNegative],
     classOf[SeqIndexExceedsLength], classOf[MapKeyNotContained]
   )) {
 

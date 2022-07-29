@@ -11,8 +11,8 @@ import akka.pattern.ask
 import akka.util.Timeout
 import viper.server.vsi.{JobNotFoundException, VerJobId}
 import viper.silver.logger.ViperLogger
-import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessage, OverallSuccessMessage, VerificationResultMessage}
-import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
+import viper.silver.reporter.{Message, OverallFailureMessage, OverallSuccessMessage}
+import viper.silver.verifier.{VerificationResult, Failure => VerificationFailure, Success => VerificationSuccess}
 
 import scala.concurrent.{Future, Promise}
 import scala.concurrent.duration._

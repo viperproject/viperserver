@@ -28,6 +28,7 @@
   {
     "include": [
       "**/Dockerfile",
+      "**/*.sh",
       "**/*.conf"
     ],
     "exclude": [
