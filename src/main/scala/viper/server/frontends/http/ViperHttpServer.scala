@@ -22,7 +22,6 @@ import viper.server.frontends.http.jsonWriters.ViperIDEProtocol.{AlloyGeneration
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.vsi.Requests.CacheResetRequest
 import viper.server.vsi._
-import viper.silver.logger.ViperLogger
 import viper.silver.reporter.Message
 
 import scala.concurrent.Future
@@ -32,11 +31,6 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
   extends ViperCoreServer(config)(executor) with VerificationServerHttp {
 
   override def start(): Future[Done] = {
-    _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
-    println(s"Writing [level:${config.logLevel()}] logs into ${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
-
-    ViperCache.initialize(logger.get, config.backendSpecificCache(), config.cacheFile.toOption)
-
     port = config.port.toOption.getOrElse(0) // 0 causes HTTP server to automatically select a free port
     super.start(config.maximumActiveJobs()).map({ _ =>
       println(s"ViperServer online at http://localhost:$port")
@@ -54,7 +48,7 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
         println("shutting down...")
         ServerStopConfirmed("shutting down...")
       case Failure(err_msg) =>
-        logger.get.error(s"Interrupting one of the verification threads timed out: $err_msg")
+        globalLogger.error(s"Interrupting one of the verification threads timed out: $err_msg")
         println("forcibly shutting down...")
         ServerStopConfirmed("forcibly shutting down...")
     }
@@ -75,12 +69,12 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
       ViperBackendConfig(arg_list_partial)
     } catch {
       case _: IllegalArgumentException =>
-        logger.get.error(s"Invalid arguments: ${vr.arg} " +
+        globalLogger.error(s"Invalid arguments: ${vr.arg} " +
           s"You need to specify the verification backend, e.g., `silicon [args]`")
         return VerificationRequestReject("Invalid arguments for backend.")
     }
 
-    val ver_id = verify(file, ast_id, backend)
+    val ver_id = verifyWithAstJob(file, ast_id, backend)
 
     VerificationRequestAccept(ast_id, ver_id)
   }
@@ -94,24 +88,24 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
   override def verificationRequestRejection(jid: Int, e: Throwable): ToResponseMarshallable = {
     e match {
       case JobNotFoundException =>
-        logger.get.error(s"The verification job #$jid does not exist.")
+        globalLogger.error(s"The verification job #$jid does not exist.")
         VerificationRequestReject(s"The verification job #$jid does not exist.")
       case AstConstructionFailureException =>
-        logger.get.error(s"The verification job #$jid could not be created since the AST is inconsistent.")
+        globalLogger.error(s"The verification job #$jid could not be created since the AST is inconsistent.")
         VerificationRequestReject(s"The verification job #$jid could not be created since the AST is inconsistent.")
       case _ =>
-        logger.get.error(s"The verification job #$jid resulted in a terrible error: $e")
+        globalLogger.error(s"The verification job #$jid resulted in a terrible error: $e")
         VerificationRequestReject(s"The verification job #$jid resulted in a terrible error: $e")
     }
   }
 
   override def discardJobConfirmation(jid: Int, msg: String): ToResponseMarshallable = {
-    _logger.get.info(s"The verification job #$jid was successfully stopped.")
+    globalLogger.info(s"The verification job #$jid was successfully stopped.")
     JobDiscardAccept(msg)
   }
 
   override def discardJobRejection(jid: Int): ToResponseMarshallable = {
-    _logger.get.error(s"The verification job #$jid does not exist.")
+    globalLogger.error(s"The verification job #$jid does not exist.")
     JobDiscardReject(s"The verification job #$jid does not exist.")
   }
 
@@ -141,10 +135,10 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
           r =>
             ViperCache.forgetFile(r.backend, r.file) match {
               case Some(_) =>
-                _logger.get.info(s"The cache for tool (${r.backend}) for file (${r.file}) has been flushed successfully.")
+                globalLogger.info(s"The cache for tool (${r.backend}) for file (${r.file}) has been flushed successfully.")
                 complete( CacheFlushAccept(s"The cache for tool (${r.backend}) for file (${r.file}) has been flushed successfully.") )
               case None =>
-                _logger.get.error(s"The cache does not exist for tool (${r.backend}) for file (${r.file}).")
+                globalLogger.error(s"The cache does not exist for tool (${r.backend}) for file (${r.file}).")
                 complete( CacheFlushReject(s"The cache does not exist for tool (${r.backend}) for file (${r.file}).") )
             }
         }
@@ -175,21 +169,21 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
 
             val commands = world.getAllCommands
             if (commands.size() != 1) {
-              _logger.get.error(s"Expected only one command, but got ${commands.size()}")
+              globalLogger.error(s"Expected only one command, but got ${commands.size()}")
               complete( AlloyGenerationRequestReject(s"Expected only one command, but got ${commands.size()}") )
             }
             val command = commands.get(0)
             val solution = TranslateAlloyToKodkod.execute_command(reporter, world.getAllReachableSigs, command, options)
             if (solution.satisfiable()) {
-              _logger.get.info("Model is satisfiable")
+              globalLogger.info("Model is satisfiable")
               complete( AlloyGenerationRequestComplete(solution) )
             } else {
-              _logger.get.info(s"Model could not be satisfied.")
+              globalLogger.info(s"Model could not be satisfied.")
               complete( AlloyGenerationRequestReject(s"Model could not be satisfied.") )
             }
           } catch {
             case e: Throwable =>
-              _logger.get.error(s"An exception occurred during model-generation:\n${e.toString}")
+              globalLogger.error(s"An exception occurred during model-generation:\n${e.toString}")
               complete( AlloyGenerationRequestReject(s"An exception occurred during model-generation:\n${e.toString}") )
           }
         }

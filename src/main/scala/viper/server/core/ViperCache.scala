@@ -6,8 +6,9 @@
 
 package viper.server.core
 
-import scala.language.postfixOps
 import ch.qos.logback.classic.Logger
+
+import scala.language.postfixOps
 import net.liftweb.json.JsonAST.JObject
 import viper.server.core.ViperCache.logger
 import viper.server.vsi._
@@ -43,20 +44,20 @@ object ViperCache extends Cache {
 
     _cacheFile match {
       case Some(file) =>
-        logger.trace("Trying to initializing cache with file {}", file)
+        logger.trace(s"Trying to initializing cache with file $file")
         if(file.exists() && file.canRead) {
           try{
             implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.cacheEntryHints)
 
             _cache = read[Cache](Files.readString(file.toPath))
-            logger.trace("Successfully read cache from file {}", file)
+            logger.trace(s"Successfully read cache from file $file")
           } catch {
             case e: Throwable =>
-              logger.warn("Reading of cache file " + file + "  failed, error is: " + e.getMessage)
-              logger.debug("Error thrown: {}", e)
+              logger.warn(s"Reading of cache file $file failed, error is: ${e.getMessage}")
+              logger.debug(s"Error thrown: $e")
           }
         } else {
-          _logger.info("Cache file " + file + " not found, starting with empty cache")
+          _logger.info(s"Cache file $file not found, starting with empty cache")
         }
       case _ =>
         logger.debug("No cache file specified, starting with empty cache")
@@ -80,15 +81,15 @@ object ViperCache extends Cache {
         try {
           // Try to deserialize content of the cache entry
           val content = read[ViperCacheContent](ce.content.asInstanceOf[SerializedViperCacheContent].content)
-          logger.trace("Got a cache hit for method " + concerning_method.name)
+          logger.trace(s"Got a cache hit for method $concerning_method.name")
           // set cached flag:
           val cachedErrors = content.errors.map(setCached)
           CacheResult(concerning_method, cachedErrors)
         } catch {
           case e: Throwable =>
             // In case parsing of the cache entry fails, abort caching & evict cache entries for this file, since hey might come from an unsupported version
-            logger.warn("Parsing of CacheEntry for method " + concerning_method.name + " failed, error is:" + e.getMessage)
-            logger.debug("{}", e)
+            logger.warn(s"Parsing of CacheEntry for method $concerning_method.name failed, error is: ${e.getMessage}")
+            logger.debug(s"$e")
             super.forgetFile(file_key)
             return(p, List())
         }
@@ -125,7 +126,7 @@ object ViperCache extends Cache {
       case e: HeuristicsFailed => e.copy(cached = true)
       case e: VerificationErrorWithCounterexample => e.copy(cached = true)
       case e: AbstractVerificationError =>
-        logger.warn("Setting a verification error to cached was not possible for " + e + ". Make sure to handle this types of errors")
+        logger.warn(s"Setting a verification error to cached was not possible for $e. Make sure to handle this types of errors")
         e
     }
   }
@@ -251,7 +252,7 @@ object ViperCache extends Cache {
       case t: EmptyMultiset => t.copy()(pos, t.info, t.errT)
       case t: ExplicitMultiset => t.copy()(pos, t.info, t.errT)
       case t =>
-        logger.warn("The location was not updated for the node " + t + ". Make sure to handle this type of node")
+        logger.warn(s"The location was not updated for the node $t. Make sure to handle this type of node")
         t
     }
   }
@@ -277,21 +278,21 @@ object ViperCache extends Cache {
 
   def writeToFile(): Unit = {
     _cacheFile.foreach(file => {
-      _logger.trace("Writing cache to file " + file.getCanonicalPath)
+      _logger.trace(s"Writing cache to file ${file.getCanonicalPath}")
       implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.cacheEntryHints)
       try {
         Files.write(file.toPath, write(_cache).getBytes(StandardCharsets.UTF_8))
       } catch {
         case e: Throwable =>
-          _logger.warn("Writing of cache failed with error: " + e.getMessage)
-          _logger.debug("{}" + e)
+          _logger.warn(s"Writing of cache failed with error: ${e.getMessage}")
+          _logger.debug(s"$e")
       }
     })
   }
 
-  override def resetCache(): Unit = {
+  override def resetCache(): Boolean = {
     ViperCacheHelper.reset_node_hash_memo()
-    _cache = Map()
+    super.resetCache()
   }
 
   def getKey(file: String, backendName: String): String = {
@@ -362,10 +363,8 @@ object ViperCacheHelper {
             case Some(hash) => hash
             case None =>
               if ( memo.size > 100 || _node_hash_memo.size > 100 ) {
-                val msg = s"[WARNING] ViperCache has memoized more than 100 non-Hashable nodes." +
-                  s" Consider optimizing the code."
-                logger.warn(msg)
-                println(msg)
+                logger.warn(s"[WARNING] ViperCache has memoized more than 100 non-Hashable nodes." +
+                  s" Consider optimizing the code.")
               }
               val hash = addIdxToHash(CacheHelper.computeEntityHash("", node))
 

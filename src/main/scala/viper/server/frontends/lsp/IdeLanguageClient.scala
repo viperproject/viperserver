@@ -45,7 +45,7 @@ trait IdeLanguageClient extends LanguageClient {
   def notifyHint(msg: String, hint: Hint): Unit
 
   @JsonNotification(S2C_Commands.UnhandledViperServerMessageType)
-  def notifyUnhandledViperServerMessage(msg: String, logLevel: Int): Unit
+  def notifyUnhandledViperServerMessage(msgType: String, msg: String, logLevel: Int): Unit
 
   @JsonNotification(S2C_Commands.VerificationNotStarted)
   def notifyVerificationNotStarted(uri: String): Unit

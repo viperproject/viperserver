@@ -8,14 +8,13 @@ package viper.server
 
 import java.io.IOException
 import java.net.{ServerSocket, Socket}
-
 import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.eclipse.lsp4j.jsonrpc.Launcher.Builder
 import viper.server.core.{DefaultVerificationExecutionContext, VerificationExecutionContext}
 import viper.server.frontends.http.ViperHttpServer
-import viper.server.frontends.lsp.{Coordinator, CustomReceiver, IdeLanguageClient}
+import viper.server.frontends.lsp.{CustomReceiver, IdeLanguageClient, ViperServerService}
 
-import scala.concurrent.Await
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration.Duration
 
 object ViperServerRunner {
@@ -53,36 +52,36 @@ object ViperServerRunner {
   /**
     * Run VCS in LSP mode.
     */
-  private def runLspServer(config: ViperConfig)(executor: VerificationExecutionContext): Unit = {
+  private def runLspServer(config: ViperConfig)(implicit executor: VerificationExecutionContext): Unit = {
     try {
-      val serverSocket = new ServerSocket(config.port())
-      announcePort(serverSocket.getLocalPort)
-      println(s"going to listen on port ${serverSocket.getLocalPort} for LSP")
+      val done = startServer(config)
+        .map { case (serverSocket, server) =>
+          val url = serverSocket.getInetAddress.getHostAddress
+          val port = serverSocket.getLocalPort
+          val serverUrl = s"$url:$port"
+          announcePort(port)
+          println(s"going to listen on port $port for LSP")
+          processRequests(serverSocket, server, serverUrl)
+        }
 
-      Coordinator.port = serverSocket.getLocalPort
-      Coordinator.url = serverSocket.getInetAddress.getHostAddress
-
-      val socket = serverSocket.accept()
-      println(s"client got connected")
-      // TODO add support for multiple clients connecting to this server
-
-      val server: CustomReceiver = new CustomReceiver()(executor)
-      val launcher = createLauncher(server, socket)(executor)
-      server.connect(launcher.getRemoteProxy)
-      // start listening on input stream in a new thread:
-      val future = launcher.startListening()
-      // wait until stream is closed again
-      future.get()
-      println("listener thread from server has stopped")
+      // wait until server is done:
+      Await.ready(done, Duration.Inf)
+      println("all clients have been processed")
       executor.terminate()
       println("executor service has been shut down")
       System.exit(0)
     } catch {
-      case e: IOException => {
+      case e: IOException =>
         println(s"IOException occurred: ${e.toString}")
         System.exit(1)
-      }
     }
+  }
+
+  private def startServer(config: ViperConfig)(implicit executor: VerificationExecutionContext): Future[(ServerSocket, ViperServerService)] = {
+    val serverSocket = new ServerSocket(config.port())
+    val server = new ViperServerService(config)(executor)
+    server.start()
+      .map(_ => (serverSocket, server))
   }
 
   private def announcePort(port: Int): Unit = {
@@ -90,6 +89,37 @@ object ViperServerRunner {
     // do not change this format without adapting clients such as the Viper-IDE client
     // regex for parsing: "<ViperServerPort:(\d+)>"
     println(s"<ViperServerPort:$port>")
+  }
+
+  private def processRequests(serverSocket: ServerSocket, server: ViperServerService, serverUrl: String)(implicit executor: VerificationExecutionContext): Future[Unit] = {
+    var clientFutures: Set[Future[Unit]] = Set.empty
+
+    while (!serverSocket.isClosed) {
+      val socket = serverSocket.accept()
+      val clientFuture = handleClient(server, socket, serverUrl)
+      clientFutures += clientFuture
+    }
+
+    Future.sequence[Unit, Set, Set[Unit]](clientFutures)
+      .map(_ => ())
+  }
+
+  /**
+    * processes client requests arriving on `socket`.
+    * The returned future completes when stream is closed.
+    */
+  private def handleClient(server: ViperServerService, socket: Socket, serverUrl: String)(implicit executor: VerificationExecutionContext): Future[Unit] = {
+    println(s"client connected: ${socket.toString}")
+    val receiver: CustomReceiver = new CustomReceiver(server, serverUrl)
+    val launcher = createLauncher(receiver, socket)(executor)
+    receiver.connect(launcher.getRemoteProxy)
+    // convert Java Future to Scala Future:
+    Future {
+      launcher.startListening().get()
+      println(s"client disconnected: ${socket.toString}")
+      receiver.disconnected()
+      socket.close()
+    }
   }
 
   private def createLauncher(server: CustomReceiver, socket: Socket)(executor: VerificationExecutionContext): Launcher[IdeLanguageClient] =
