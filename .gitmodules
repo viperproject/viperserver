@@ -1,0 +1,6 @@
+[submodule "carbon"]
+	path = carbon
+	url = https://github.com/viperproject/carbon.git
+[submodule "silicon"]
+	path = silicon
+	url = https://github.com/viperproject/silicon.git
