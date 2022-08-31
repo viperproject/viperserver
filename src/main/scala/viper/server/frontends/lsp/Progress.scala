@@ -6,13 +6,13 @@
 
 package viper.server.frontends.lsp
 
-class Progress(val nofPredicates: Int, val nofFunctions: Int, val nofMethods: Int) {
+class Progress(coordinator: ClientCoordinator, val nofPredicates: Int, val nofFunctions: Int, val nofMethods: Int) {
 
-  var currentFunctions = 0;
-  var currentMethods = 0;
-  var currentPredicates = 0;
+  var currentFunctions = 0
+  var currentMethods = 0
+  var currentPredicates = 0
 
-  def updateProgress(output: BackendOutput) = {
+  def updateProgress(output: BackendOutput): Unit = {
     try {
       output.typ match {
         case BackendOutputType.MethodVerified => currentMethods += 1
@@ -20,7 +20,7 @@ class Progress(val nofPredicates: Int, val nofFunctions: Int, val nofMethods: In
         case BackendOutputType.PredicateVerified => currentPredicates += 1
       }
     } catch {
-      case e: Throwable => Log.debug("Error updating progress: ", e);
+      case e: Throwable => coordinator.logger.debug(s"Error updating progress: $e")
     }
   }
 

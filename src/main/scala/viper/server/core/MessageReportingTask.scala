@@ -40,5 +40,4 @@ trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
       }
     }
   }
-
 }

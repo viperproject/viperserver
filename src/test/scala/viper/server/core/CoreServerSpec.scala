@@ -106,7 +106,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     }
     val core = new ViperCoreServer(config)(verificationContext)
     val started = core.start().map({ _ =>
-      core.logger.get.debug(s"server started for test case '$testName'")
+      core.globalLogger.debug(s"server started for test case '$testName'")
     })(verificationContext)
 
     // execute testCode
@@ -114,7 +114,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     // if successful, try to stop core server
     // if unsuccessful, stop core server but return error of testFuture
     val testWithShutdownFuture = testFuture.transformWith(testRes => {
-      core.logger.get.debug("stopping server")
+      core.globalLogger.debug("stopping server")
       val coreStopFuture = core.stop()
       testRes match {
         case Success(_) => coreStopFuture
@@ -124,11 +124,11 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     // run afterStop if testWithShutdownFuture was successful:
     val finalFut = testWithShutdownFuture
       .flatMap(_ => {
-        core.logger.get.debug(s"server has been stopped")
+        core.globalLogger.debug(s"server has been stopped")
         afterStop(core, verificationContext)
       })(verificationContext)
       .transform(res => {
-        core.logger.get.debug(s"test case '$testName' is done")
+        core.globalLogger.debug(s"test case '$testName' is done")
         res
       })(verificationContext)
     val res = Await.result(finalFut, Duration.Inf)
@@ -136,7 +136,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     // terminate context with a larger timeout such that we can distinguish a timeout from terminate taking quite long
     verificationContext.terminate(10 * execution_context_terminate_timeout_ms)
     val terminateDurationMs = System.currentTimeMillis() - startTime
-    core.logger.get.debug(s"terminating VerificationExecutionContext took ${terminateDurationMs}ms")
+    core.globalLogger.debug(s"terminating VerificationExecutionContext took ${terminateDurationMs}ms")
     res match {
       case Succeeded => {
         // check whether timeout has been exceeded and fail test accordingly:
@@ -342,7 +342,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       val jobIds = files.map(file => (file, verifySiliconWithoutCaching(core, file)))
       val filesAndMessages = jobIds map { case (f, id) => (f, ViperCoreServerUtils.getMessagesFuture(core, id)) }
       val resultFutures = filesAndMessages map { case (f, fut) => fut.map(msgs => {
-        core.logger.get.debug(s"messages for $f: ${msgs.mkString(",")}")
+        core.globalLogger.debug(s"messages for $f: ${msgs.mkString(",")}")
         msgs.last match {
           case _: OverallSuccessMessage => assert(f != ver_error_file)
           case _: OverallFailureMessage => assert(f == ver_error_file)
@@ -358,7 +358,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       val jobIds = files.map(file => (file, verifySiliconWithCaching(core, file)))
       val filesAndMessages = jobIds map { case (f, id) => (f, ViperCoreServerUtils.getMessagesFuture(core, id)(context)) }
       val resultFutures = filesAndMessages map { case (f, fut) => fut.map(msgs => {
-        core.logger.get.debug(s"messages for $f: ${msgs.mkString(",")}")
+        core.globalLogger.debug(s"messages for $f: ${msgs.mkString(",")}")
         msgs.last match {
           case _: OverallSuccessMessage => assert(f != ver_error_file)
           case _: OverallFailureMessage => assert(f == ver_error_file)

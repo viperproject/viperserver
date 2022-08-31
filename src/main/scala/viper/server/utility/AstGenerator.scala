@@ -6,9 +6,9 @@
 
 package viper.server.utility
 
-import java.nio.file.NoSuchFileException
-
 import ch.qos.logback.classic.Logger
+
+import java.nio.file.NoSuchFileException
 import viper.server.utility.Helpers.validateViperFile
 import viper.silver.ast.Program
 import viper.silver.frontend.{SilFrontend, ViperAstProvider}
@@ -30,7 +30,7 @@ class AstGenerator(private val _logger: Logger,
   def generateViperAst(vpr_file_path: String): Option[Program] = {
 
     if (!validateViperFile(vpr_file_path)) {
-      _logger.error(s"No such file: `$vpr_file_path``")
+      _logger.error(s"No such file: `$vpr_file_path`")
       throw new NoSuchFileException(vpr_file_path)
     }
     

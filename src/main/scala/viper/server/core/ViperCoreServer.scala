@@ -9,6 +9,7 @@ package viper.server.core
 import akka.Done
 import akka.actor.ActorRef
 import akka.util.Timeout
+import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
 import viper.silver.ast.Program
@@ -26,8 +27,23 @@ class ViperCoreServer(val config: ViperConfig)(implicit val executor: Verificati
 
   override lazy val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
 
-  protected var _logger: ViperLogger = _
-  final def logger: ViperLogger = _logger
+  /** global logger that should be used for the server's entire lifetime. Log messages are reported to the global logger as well as local one (if they exist) */
+  val globalLogger: Logger = getGlobalLogger(config)
+
+  /** allows subclasses to return their own global logger */
+  def getGlobalLogger(config: ViperConfig): Logger = {
+    val logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
+    println(s"Writing [level:${config.logLevel()}] logs into " +
+      s"${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
+    logger.get
+  }
+
+  protected def combineLoggers(localLogger: Option[Logger]): Logger = {
+    localLogger match {
+      case Some(ll) => MultiLogger("Combined logger for ViperCoreServer", Seq(globalLogger, ll)).get
+      case _ => globalLogger
+    }
+  }
 
   /** Configures an instance of ViperCoreServer.
     *
@@ -35,34 +51,30 @@ class ViperCoreServer(val config: ViperConfig)(implicit val executor: Verificati
     * will result in an IllegalStateException.
     * */
   def start(): Future[Done] = {
-    _logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
-    println(s"Writing [level:${config.logLevel()}] logs into " +
-      s"${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
-
-    ViperCache.initialize(logger.get, config.backendSpecificCache(), config.cacheFile.toOption)
-
+    ViperCache.initialize(globalLogger, config.backendSpecificCache(), config.cacheFile.toOption)
     super.start(config.maximumActiveJobs()) map { _ =>
-      logger.get.info(s"ViperCoreServer has started.")
+      globalLogger.info(s"ViperCoreServer has started.")
       Done
     }
   }
 
-  def requestAst(arg_list: List[String]): AstJobId = {
+  def requestAst(arg_list: List[String], localLogger: Option[Logger] = None): AstJobId = {
     require(config != null)
-
-    val task_backend = new AstWorker(arg_list, logger.get)(executor)
+    val logger = combineLoggers(localLogger)
+    val task_backend = new AstWorker(arg_list, logger)(executor)
     val ast_id = initializeAstConstruction(task_backend)
 
     if (ast_id.id >= 0) {
-      logger.get.info(s"Verification process #${ast_id.id} has successfully started.")
+      logger.info(s"Verification process #${ast_id.id} has successfully started.")
     } else {
-      logger.get.error(s"Could not start verification process. " +
+      logger.error(s"Could not start verification process. " +
         s"The maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
     }
     ast_id
   }
 
-  def verify(programId: String, ast_id: AstJobId, backend_config: ViperBackendConfig): VerJobId = {
+  def verifyWithAstJob(programId: String, ast_id: AstJobId, backend_config: ViperBackendConfig, localLogger: Option[Logger] = None): VerJobId = {
+    val logger = combineLoggers(localLogger)
 
     if (!isRunning) throw new IllegalStateException("Instance of VerificationServer already stopped")
     require(backend_config != null)
@@ -74,20 +86,17 @@ class ViperCoreServer(val config: ViperConfig)(implicit val executor: Verificati
         val task_backend_maybe_fut: Future[Option[VerificationWorker]] =
           handle_future.map((handle: AstHandle[Option[Program]]) => {
             val program_maybe_fut: Future[Option[Program]] = handle.artifact
-            program_maybe_fut.map(_.map(new VerificationWorker(args, programId, _, logger.get)(executor))).recover({
+            program_maybe_fut.map(_.map(new VerificationWorker(args, programId, _, logger)(executor))).recover({
               case e: Throwable =>
-                val msg = s"### An exception has occurred while constructing Viper AST: $e"
-                println(msg)
-                logger.get.error(msg)
+                logger.error(s"### An exception has occurred while constructing Viper AST: $e")
                 throw e
             })
-
           }).flatten
 
         initializeVerificationProcess(task_backend_maybe_fut, Some(ast_id))
 
       case None =>
-        logger.get.error(s"Could not start verification process for non-existent $ast_id")
+        logger.error(s"Could not start verification process for non-existent $ast_id")
         VerJobId(-1)
     }
   }
@@ -96,37 +105,41 @@ class ViperCoreServer(val config: ViperConfig)(implicit val executor: Verificati
     *
     * Expects a non-null backend config and Viper AST.
     * */
-  def verify(programId: String, backend_config: ViperBackendConfig, program: Program): VerJobId = {
+  def verify(programId: String, backend_config: ViperBackendConfig, program: Program, localLogger: Option[Logger] = None): VerJobId = {
     require(program != null && backend_config != null)
 
+    val logger = combineLoggers(localLogger)
+
     val args: List[String] = backend_config.toList
-    val task_backend = new VerificationWorker(args, programId, program, logger.get)(executor)
+    val task_backend = new VerificationWorker(args, programId, program, logger)(executor)
     val ver_id = initializeVerificationProcess(Future.successful(Some(task_backend)), None)
 
     if (ver_id.id >= 0) {
-      logger.get.info(s"Verification process #${ver_id.id} has successfully started.")
+      logger.info(s"Verification process #${ver_id.id} has successfully started.")
     } else {
-      logger.get.error(s"Could not start verification process. " +
+      logger.error(s"Could not start verification process. " +
         s"The maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
     }
     ver_id
   }
 
   override def streamMessages(jid: VerJobId, clientActor: ActorRef): Option[Future[Done]] = {
-    logger.get.info(s"Streaming results for job #${jid.id}.")
+    globalLogger.info(s"Streaming results for job #${jid.id}.")
     super.streamMessages(jid, clientActor)
   }
 
-  def flushCache(): Unit = {
+  def flushCache(localLogger: Option[Logger] = None): Boolean = {
+    val logger = combineLoggers(localLogger)
     if(!isRunning) {
       throw new IllegalStateException("Instance of ViperCoreServer already stopped")
     }
-    ViperCache.resetCache()
-    logger.get.info(s"The cache has been flushed.")
+    val res = ViperCache.resetCache()
+    logger.info(s"The cache has been flushed.")
+    res
   }
 
   override def stop(): Future[List[String]] = {
-    logger.get.info(s"Stopping ViperCoreServer")
+    globalLogger.info(s"Stopping ViperCoreServer")
     super.stop()
   }
 }

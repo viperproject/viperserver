@@ -7,7 +7,6 @@
 package viper.server.vsi
 
 import java.util.concurrent.{Callable, FutureTask}
-
 import scala.language.postfixOps
 import akka.actor.ActorRef
 import akka.pattern.ask
@@ -73,10 +72,7 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
       Await.result(currentOffer, Duration.Inf)
     } catch {
       case ex: Exception =>
-        // print exception such that one sees that something went wrong:
-        val errorMsg = s"exception in enqueueMessage occurred: $ex"
-        println(errorMsg)
-        logger.error(errorMsg)
+        logger.error(s"exception in enqueueMessage occurred: $ex")
         // rethrow exception:
         throw ex
     }

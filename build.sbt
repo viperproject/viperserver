@@ -29,7 +29,7 @@ lazy val server = (project in file("."))
 
         // Fork test to a different JVM than SBT's, avoiding SBT's classpath interfering with
         // classpath used by Scala's reflection.
-        Test / fork := true,
+        fork := true,
 
         libraryDependencies += "net.liftweb" %% "lift-json" % "3.5.0",
         libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.6.10",

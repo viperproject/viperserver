@@ -51,12 +51,12 @@ class AstGenerationTests extends AnyWordSpec with Matchers with ScalatestRouteTe
 
     s"have 'generateViperAst()' return an empty option for the file 'type_error.vpr'" in {
       test_ast = ast_gen.generateViperAst(typeErrorFile)
-      assert(!test_ast.isDefined)
+      assert(test_ast.isEmpty)
     }
 
     s"have 'generateViperAst()' return an empty option for the file 'parse_error.vpr'" in {
       test_ast = ast_gen.generateViperAst(parseErrorFile)
-      assert(!test_ast.isDefined)
+      assert(test_ast.isEmpty)
     }
 
     s"have 'generateViperAst()' throw an exception for a non-existing file." in {

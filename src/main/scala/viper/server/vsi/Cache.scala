@@ -181,9 +181,10 @@ abstract class Cache {
 
   /** Resets the entire cache.
     * */
-  def resetCache(): Unit = {
+  def resetCache(): Boolean = {
     _program_cache = Map()
     _cache = Map()
+    true
   }
 
   /**
