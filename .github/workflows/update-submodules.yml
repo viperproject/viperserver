@@ -41,12 +41,12 @@ jobs:
 
       - name: Create PR body
         run: |
-          if [["${{ env.PREV_SILICON_REF }}" != "${{ env.CUR_SILICON_REF }}"]]; then
+          if [[ "${{ env.PREV_SILICON_REF }}" != "${{ env.CUR_SILICON_REF }}" ]]; then
             echo "PR_BODY_LINE1=* Updates Silicon from `${{ env.PREV_SILICON_REF }}` to `${{ env.CUR_SILICON_REF }}`." >> $GITHUB_ENV
           else
             echo "PR_BODY_LINE1=" >> $GITHUB_ENV
           fi
-          if [["${{ env.PREV_CARBON_REF }}" != "${{ env.CUR_CARBON_REF }}"]]; then
+          if [[ "${{ env.PREV_CARBON_REF }}" != "${{ env.CUR_CARBON_REF }}" ]]; then
             echo "PR_BODY_LINE2=* Updates Carbon from `${{ env.PREV_CARBON_REF }}` to `${{ env.CUR_CARBON_REF }}`." >> $GITHUB_ENV
           else
             echo "PR_BODY_LINE2=" >> $GITHUB_ENV
