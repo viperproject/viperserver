@@ -150,6 +150,7 @@ jobs:
 
 
   test:
+    name: test - ${{ matrix.os }}
     needs: build
     strategy:
       # tests should not be stopped when they fail on one of the OSes:

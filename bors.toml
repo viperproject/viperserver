@@ -4,5 +4,5 @@
 #
 # Copyright (c) 2011-2022 ETH Zurich.
 
-status = ["check-license-headers", "test"]
+status = ["check-license-headers", "test - macos-latest", "test - ubuntu-latest", "test - windows-latest"]
 timeout_sec = 7200
