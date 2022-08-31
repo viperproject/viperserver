@@ -57,7 +57,7 @@ class ClientCoordinator(val server: ViperServerService) {
       if (oldBackend.isEmpty) {
         client.notifyBackendStarted(BackendStartedParams(newBackend.backend_type))
       } else {
-        val param = BackendReadyParams(newBackend.backend_type, restarted = false, isViperServer = true)
+        val param = BackendReadyParams(newBackend.backend_type, restarted = true, isViperServer = true)
         client.notifyBackendReady(param)
       }
     }

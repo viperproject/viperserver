@@ -126,8 +126,8 @@ case class BackendOutput(
 case class Hint(msg: String, showButton1: Boolean, showButton2: Boolean)
 
 case class BackendReadyParams(
-              name: String,  //name of the backend ready to use
-              restarted: Boolean,
+              name: String,  // name of the backend ready to use
+              restarted: Boolean, // should the open file be reverified
               isViperServer: Boolean)
 
 case class BackendStartedParams(
