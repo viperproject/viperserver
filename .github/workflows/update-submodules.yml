@@ -54,8 +54,8 @@ jobs:
           labels: |
             automated pr
           body: |
-            ${{ (env.PREV_SILICON_REF != env.CUR_SILICON_REF && '* Updates Silicon from `${{ env.PREV_SILICON_REF }}` to `${{ env.CUR_SILICON_REF }}`.') || '' }}
-            ${{ (env.PREV_CARBON_REF != env.CUR_CARBON_REF && '* Updates Carbon from `${{ env.PREV_CARBON_REF }}` to `${{ env.CUR_CARBON_REF }}`.') || '' }}
+            ${{ (env.PREV_SILICON_REF != env.CUR_SILICON_REF && "* Updates Silicon from `${{ env.PREV_SILICON_REF }}` to `${{ env.CUR_SILICON_REF }}`.") || "" }}
+            ${{ (env.PREV_CARBON_REF != env.CUR_CARBON_REF && "* Updates Carbon from `${{ env.PREV_CARBON_REF }}` to `${{ env.CUR_CARBON_REF }}`.") || "" }}
 
       - name: Enable auto-merge of PR
         uses: peter-evans/create-or-update-comment@v2
