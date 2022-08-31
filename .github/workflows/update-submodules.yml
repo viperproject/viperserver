@@ -1,0 +1,63 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2011-2022 ETH Zurich.
+
+name: Update Submodules
+
+on:
+  workflow_dispatch: # allow to manually trigger this workflow
+  schedule:
+    - cron: '0 6 * * *' # run every day at 06:00 UTC
+
+jobs:
+  # Update the submodules and create a PR if there are any changes
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Get current commits
+        run: |
+          echo "PREV_SILICON_REF=$(git -C silicon rev-parse HEAD)" >> $GITHUB_ENV
+          echo "PREV_CARBON_REF=$(git -C carbon rev-parse HEAD)" >> $GITHUB_ENV
+
+      - name: Update Silicon submodule
+        run: git checkout master && git pull
+        working-directory: silicon
+
+      - name: Update Carbon submodule
+        run: git checkout master && git pull
+        working-directory: carbon
+
+      - name: Get new commits
+        run: |
+          echo "CUR_SILICON_REF=$(git -C silicon rev-parse HEAD)" >> $GITHUB_ENV
+          echo "CUR_CARBON_REF=$(git -C carbon rev-parse HEAD)" >> $GITHUB_ENV
+
+      - name: Open a pull request
+        id: pr
+        uses: peter-evans/create-pull-request@v3
+        if: (env.PREV_SILICON_REF != env.CUR_SILICON_REF) || (env.PREV_CARBON_REF != env.CUR_CARBON_REF)
+        with:
+          # Use viper-admin's token to workaround a restriction of GitHub.
+          # See: https://github.com/peter-evans/create-pull-request/issues/48
+          token: ${{ secrets.VIPER_ADMIN_TOKEN }}
+          commit-message: Updates submodules
+          title: Update Submodules
+          branch: auto-update-submodules
+          delete-branch: true
+          body: |
+            ${{ (env.PREV_SILICON_REF != env.CUR_SILICON_REF && '* Updates Silicon from `${{ env.PREV_SILICON_REF }}` to `${{ env.CUR_SILICON_REF }}`.') || '' }}
+            ${{ (env.PREV_CARBON_REF != env.CUR_CARBON_REF && '* Updates Carbon from `${{ env.PREV_CARBON_REF }}` to `${{ env.CUR_CARBON_REF }}`.') || '' }}
+
+      - name: Enable auto-merge of PR
+        uses: peter-evans/create-or-update-comment@v2
+        if: (env.PREV_SILICON_REF != env.CUR_SILICON_REF) || (env.PREV_CARBON_REF != env.CUR_CARBON_REF)
+        with:
+          issue-number: ${{ steps.pr.outputs.pull-request-number }}"
+          body: bors merge
