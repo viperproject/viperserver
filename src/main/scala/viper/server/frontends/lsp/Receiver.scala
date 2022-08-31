@@ -6,28 +6,29 @@
 
 package viper.server.frontends.lsp
 
-import java.util.concurrent.{CompletableFuture => CFuture}
+import java.util.concurrent.{CompletableFuture, CompletionStage}
 import org.eclipse.lsp4j.jsonrpc.services.{JsonNotification, JsonRequest}
 import org.eclipse.lsp4j.services.{LanguageClient, LanguageClientAware}
 import org.eclipse.lsp4j.{DidChangeConfigurationParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams, DocumentSymbolParams, InitializeParams, InitializeResult, InitializedParams, Location, Range, ServerCapabilities, SymbolInformation, TextDocumentPositionParams, TextDocumentSyncKind}
+import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp.VerificationState._
 
 import scala.annotation.unused
+import scala.jdk.FutureConverters._
 
 
-
-abstract class StandardReceiver(server: ViperServerService) extends LanguageClientAware {
+abstract class StandardReceiver(server: ViperServerService)(implicit executor: VerificationExecutionContext) extends LanguageClientAware {
   val coordinator = new ClientCoordinator(server)
 
   @JsonRequest("initialize")
-  def onInitialize(@unused params: InitializeParams): CFuture[InitializeResult] = {
+  def onInitialize(@unused params: InitializeParams): CompletionStage[InitializeResult] = {
     coordinator.logger.info("initialize")
     val capabilities = new ServerCapabilities()
 
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Full)
     capabilities.setDefinitionProvider(true)
     capabilities.setDocumentSymbolProvider(true)
-    CFuture.completedFuture(new InitializeResult(capabilities))
+    CompletableFuture.completedFuture(new InitializeResult(capabilities))
   }
 
   @JsonNotification("initialized")
@@ -40,7 +41,7 @@ abstract class StandardReceiver(server: ViperServerService) extends LanguageClie
     coordinator.logger.info("On opening document")
     try {
       val uri: String = params.getTextDocument.getUri
-      coordinator.isViperSourceFile(uri).thenAccept(_ => {
+      coordinator.isViperSourceFile(uri).map(_ => {
         // notify client
         coordinator.client.notifyFileOpened(uri)
         //create new task for opened file
@@ -87,13 +88,13 @@ abstract class StandardReceiver(server: ViperServerService) extends LanguageClie
   }
 
   @JsonRequest("textDocument/documentSymbol")
-  def onGetDocumentSymbol(params: DocumentSymbolParams): CFuture[Array[SymbolInformation]] = {
+  def onGetDocumentSymbol(params: DocumentSymbolParams): CompletionStage[Array[SymbolInformation]] = {
     coordinator.logger.info("On getting document symbol")
-    CFuture.completedFuture(coordinator.getSymbolsForFile(params.getTextDocument.getUri))
+    CompletableFuture.completedFuture(coordinator.getSymbolsForFile(params.getTextDocument.getUri))
   }
 
   @JsonRequest("textDocument/definition")
-  def onGetDefinition(params: TextDocumentPositionParams): CFuture[Location] = {
+  def onGetDefinition(params: TextDocumentPositionParams): CompletionStage[Location] = {
     coordinator.logger.debug(s"Handling definitions request for params: $params}")
     val uri = params.getTextDocument.getUri
     val pos = params.getPosition
@@ -119,7 +120,7 @@ abstract class StandardReceiver(server: ViperServerService) extends LanguageClie
     coordinator.logger.info("On closing document")
     try {
       val uri = params.getTextDocument.getUri
-      coordinator.isViperSourceFile(uri).thenAccept(isViperFile => {
+      coordinator.isViperSourceFile(uri).map(isViperFile => {
         if (isViperFile) coordinator.client.notifyFileClosed(uri)
       })
     } catch {
@@ -129,9 +130,9 @@ abstract class StandardReceiver(server: ViperServerService) extends LanguageClie
 
   // 'shutdown' is called before 'exit'
   @JsonRequest(value = "shutdown")
-  def onShutdown(): CFuture[AnyRef] = {
+  def onShutdown(): CompletionStage[AnyRef] = {
     coordinator.logger.debug("shutdown")
-    coordinator.stopAllRunningVerifications().thenApply(_ => null)
+    coordinator.stopAllRunningVerifications().asJava.thenApply(_ => null) // .thenApply(_ => null)
   }
 
   @JsonNotification(value = "exit")
@@ -141,7 +142,7 @@ abstract class StandardReceiver(server: ViperServerService) extends LanguageClie
   }
 }
 
-class CustomReceiver(server: ViperServerService, serverUrl: String) extends StandardReceiver(server) {
+class CustomReceiver(server: ViperServerService, serverUrl: String)(implicit executor: VerificationExecutionContext) extends StandardReceiver(server) {
 
   @JsonNotification(S2C_Commands.FileClosed)
   def onFileClosed(uri: String): Unit = {
@@ -150,16 +151,16 @@ class CustomReceiver(server: ViperServerService, serverUrl: String) extends Stan
   }
 
   @JsonRequest(C2S_Commands.RemoveDiagnostics)
-  def onRemoveDiagnostics(uri: String): CFuture[Boolean] = {
+  def onRemoveDiagnostics(uri: String): CompletionStage[Boolean] = {
     coordinator.logger.debug("On removing diagnostics")
     coordinator.resetDiagnostics(uri)
-    CFuture.completedFuture(true)
+    CompletableFuture.completedFuture(true)
   }
 
   @JsonRequest("GetLanguageServerUrl")
-  def onGetServerUrl(): CFuture[String] = {
+  def onGetServerUrl(): CompletionStage[String] = {
     coordinator.logger.debug("On getting server URL")
-    CFuture.completedFuture(serverUrl)
+    CompletableFuture.completedFuture(serverUrl)
   }
 
   @JsonNotification(C2S_Commands.StartBackend)
@@ -185,9 +186,9 @@ class CustomReceiver(server: ViperServerService, serverUrl: String) extends Stan
   }
 
   @JsonRequest(C2S_Commands.RequestBackendNames)
-  def onGetNames(backendName: String): CFuture[Array[String]] = {
+  def onGetNames(backendName: String): CompletionStage[Array[String]] = {
     coordinator.logger.debug(s"on getting backend names $backendName")
-    CFuture.completedFuture(Array("Silicon", "Carbon"))
+    CompletableFuture.completedFuture(Array("Silicon", "Carbon"))
   }
 
   @JsonNotification(C2S_Commands.StopBackend)
@@ -202,7 +203,7 @@ class CustomReceiver(server: ViperServerService, serverUrl: String) extends Stan
     coordinator.logger.debug("On verifying")
     if (coordinator.canVerificationBeStarted(data.uri, data.manuallyTriggered)) {
       // stop all other verifications because the backend crashes if multiple verifications are run in parallel
-      coordinator.stopAllRunningVerifications().thenAccept(_ => {
+      coordinator.stopAllRunningVerifications().map(_ => {
         coordinator.logger.info("start or restart verification")
 
         val verificationStarted = coordinator.startVerification(data.uri, data.manuallyTriggered)
@@ -211,10 +212,9 @@ class CustomReceiver(server: ViperServerService, serverUrl: String) extends Stan
         } else {
           coordinator.client.notifyVerificationNotStarted(data.uri)
         }
-      }).exceptionally(e => {
+      }).recover(e => {
         coordinator.logger.debug(s"Error handling verify request: $e")
         coordinator.client.notifyVerificationNotStarted(data.uri)
-        null
       })
     } else {
       coordinator.logger.info("The verification cannot be started.")
@@ -230,14 +230,14 @@ class CustomReceiver(server: ViperServerService, serverUrl: String) extends Stan
   }
 
   @JsonNotification(C2S_Commands.StopVerification)
-  def onStopVerification(uri: String): CFuture[Boolean] = {
+  def onStopVerification(uri: String): CompletionStage[Boolean] = {
     coordinator.logger.debug("on stopping verification")
     try {
-      coordinator.stopRunningVerification(uri)
+      coordinator.stopRunningVerification(uri).asJava
     } catch {
       case e: Throwable =>
         coordinator.logger.debug(s"Error handling stop verification request (critical): $e")
-        CFuture.completedFuture(false)
+        CompletableFuture.completedFuture(false)
     }
   }
 

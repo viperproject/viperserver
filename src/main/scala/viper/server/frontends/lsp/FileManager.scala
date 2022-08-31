@@ -8,9 +8,9 @@ package viper.server.frontends.lsp
 
 import java.net.URI
 import java.nio.file.{Path, Paths}
-import java.util.concurrent.{CompletableFuture => CFuture}
 import akka.actor.{Actor, Props, Status}
 import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, Location, Position, PublishDiagnosticsParams, Range, SymbolInformation, SymbolKind}
+import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
@@ -20,8 +20,10 @@ import viper.silver.reporter._
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
+import scala.concurrent.Future
 
-class FileManager(coordinator: ClientCoordinator, file_uri: String) {
+
+class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit executor: VerificationExecutionContext) {
   // File information
   var uri: URI = URI.create(file_uri)
   var path: Path = Paths.get(uri)
@@ -76,19 +78,22 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String) {
     internalErrorMessage = ""
   }
 
-  def stopVerification(): CFuture[Void] = {
+  def stopVerification(): Future[Unit] = {
     if (!is_verifying) {
-      return CFuture.completedFuture(null)
+      return Future.successful()
     }
     coordinator.logger.info("Aborting running verification.")
     is_aborting = true
-    coordinator.server.stopVerification(VerJobId(jid), Some(coordinator.logger)).thenAccept(_ => {
-      is_verifying = false
-      lastSuccess = Aborted
-    }).exceptionally(e => {
-      coordinator.logger.debug(s"Error aborting verification of $filename: $e")
-      null
-    })
+    coordinator.server.stopVerification(VerJobId(jid), Some(coordinator.logger)).transform(
+      _ => {
+        is_verifying = false
+        lastSuccess = Aborted
+      },
+      e => {
+        coordinator.logger.debug(s"Error aborting verification of $filename: $e")
+        e
+      }
+    )
   }
 
   def getVerificationCommand(fileToVerify: String): Option[String] = {

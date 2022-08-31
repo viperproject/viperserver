@@ -8,14 +8,16 @@ package viper.server.frontends.lsp
 
 import ch.qos.logback.classic.Logger
 import org.eclipse.lsp4j.SymbolInformation
+import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp.LogLevel.LogLevel
 import viper.server.frontends.lsp.VerificationState.Ready
 
-import java.util.concurrent.CompletableFuture
 import scala.collection.mutable.ArrayBuffer
+import scala.concurrent.Future
+import scala.jdk.FutureConverters._
 
 /** manages per-client state and interacts with the server instance (which is shared among all clients) */
-class ClientCoordinator(val server: ViperServerService) {
+class ClientCoordinator(val server: ViperServerService)(implicit executor: VerificationExecutionContext) {
   val logger: Logger = ClientLogger(this, "Client logger", server.config.logLevel()).get
   private var _client: Option[IdeLanguageClient] = None
   private var _backend: Option[BackendProperties] = None // currently selected backend
@@ -123,14 +125,16 @@ class ClientCoordinator(val server: ViperServerService) {
     }
   }
 
-  def stopRunningVerification(uri: String): CompletableFuture[Boolean] = {
+  def stopRunningVerification(uri: String): Future[Boolean] = {
     _files.get(uri)
-      .map[CompletableFuture[Boolean]](fm => fm.stopVerification().thenApply(_ => {
-        val params = StateChangeParams(Ready.id, verificationCompleted = 0, verificationNeeded = 0, uri = uri)
-        sendStateChangeNotification(params, Some(fm))
-        true
-      }))
-      .getOrElse(CompletableFuture.completedFuture(false))
+      .map(fm => fm.stopVerification()
+        .map(_ => {
+          val params = StateChangeParams(Ready.id, verificationCompleted = 0, verificationNeeded = 0, uri = uri)
+          sendStateChangeNotification(params, Some(fm))
+          true
+        })
+        .recover(_ => false))
+      .getOrElse(Future.successful(false))
   }
 
   /** Stops all running verifications.
@@ -138,13 +142,9 @@ class ClientCoordinator(val server: ViperServerService) {
     * Returns a CF that is successfully completed if all running verifications were stopped
     * successfully. Otherwise, a failed CF is returned
     * */
-  def stopAllRunningVerifications(): CompletableFuture[Void] = {
-    if (files.nonEmpty) {
-      val promises = files.values.map(task => task.stopVerification()).toSeq
-      CompletableFuture.allOf(promises:_*)
-    } else {
-      CompletableFuture.completedFuture(null)
-    }
+  def stopAllRunningVerifications(): Future[Unit] = {
+    val tasks = files.values.map(fm => fm.stopVerification())
+    Future.sequence(tasks).map(_ => ())
   }
 
   /** returns true if verification was started */
@@ -188,18 +188,21 @@ class ClientCoordinator(val server: ViperServerService) {
     }
   }
 
-  def refreshEndings(): CompletableFuture[Array[String]] = {
-    client.requestVprFileEndings().thenApply((s: Array[String]) => {
-      _vprFileEndings = Some(s)
-      s
+  def refreshEndings(): Future[Array[String]] = {
+    client.requestVprFileEndings().asScala.map(endings => {
+      _vprFileEndings = Some(endings)
+      endings
     })
   }
 
-  def isViperSourceFile(uri: String): CompletableFuture[Boolean] = {
+  def isViperSourceFile(uri: String): Future[Boolean] = {
     _vprFileEndings
-      .map(endings => CompletableFuture.completedFuture(endings))
+      // if available, take it:
+      .map(endings => Future.successful(endings))
+      // if file endings are not yet available, get them from the client:
       .getOrElse(refreshEndings())
-      .thenApply(endings => endings.exists(ending => uri.endsWith(ending)))
+      // now check that `uri` ends with one of the file endings:
+      .map(endings => endings.exists(ending => uri.endsWith(ending)))
   }
 
   private var lastProgress: Double = 0

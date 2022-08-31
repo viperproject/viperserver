@@ -7,7 +7,6 @@
 package viper.server.frontends.lsp
 
 import scala.language.postfixOps
-import java.util.concurrent.{CompletableFuture => CFuture}
 import akka.actor.{PoisonPill, Props}
 import akka.pattern.ask
 import akka.util.Timeout
@@ -18,7 +17,6 @@ import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.vsi.VerificationProtocol.StopVerification
 import viper.server.vsi.{VerJobId, VerificationServer}
 
-import scala.compat.java8.FutureConverters._
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
@@ -66,7 +64,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     streamMessages(jid, relay_actor)
   }
 
-  def stopVerification(jid: VerJobId, localLogger: Option[Logger] = None): CFuture[Boolean] = {
+  def stopVerification(jid: VerJobId, localLogger: Option[Logger] = None): Future[Boolean] = {
     val logger = combineLoggers(localLogger)
     ver_jobs.lookupJob(jid) match {
       case Some(handle_future) =>
@@ -75,13 +73,13 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
           val interrupt: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
           handle.job_actor ! PoisonPill // the actor played its part.
           interrupt
-        }).toJava.toCompletableFuture.thenApply(msg => {
+        }).map(msg => {
           logger.info(msg)
           true
         })
       case _ =>
         // Did not find a job with this jid.
-        CFuture.completedFuture({throw new Throwable(s"The verification job #$jid does not exist.")})
+        Future.failed(new Throwable(s"The verification job #$jid does not exist."))
     }
   }
 
