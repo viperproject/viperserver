@@ -51,7 +51,7 @@ jobs:
           title: Update Submodules
           branch: auto-update-submodules
           delete-branch: true
-          lables: |
+          labels: |
             automated pr
           body: |
             ${{ (env.PREV_SILICON_REF != env.CUR_SILICON_REF && '* Updates Silicon from `${{ env.PREV_SILICON_REF }}` to `${{ env.CUR_SILICON_REF }}`.') || '' }}
@@ -61,5 +61,6 @@ jobs:
         uses: peter-evans/create-or-update-comment@v2
         if: (env.PREV_SILICON_REF != env.CUR_SILICON_REF) || (env.PREV_CARBON_REF != env.CUR_CARBON_REF)
         with:
+          token: ${{ secrets.VIPER_ADMIN_TOKEN }}
           issue-number: ${{ steps.pr.outputs.pull-request-number }}"
           body: bors merge

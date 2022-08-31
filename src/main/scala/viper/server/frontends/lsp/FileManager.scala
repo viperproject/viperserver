@@ -80,7 +80,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
 
   def stopVerification(): Future[Unit] = {
     if (!is_verifying) {
-      return Future.successful()
+      return Future.successful(())
     }
     coordinator.logger.info("Aborting running verification.")
     is_aborting = true
