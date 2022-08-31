@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@v2
         with:
           path: viperserver
-          submodules: true
+          submodules: recursive
 
       - name: Java Version
         run: java --version
