@@ -27,20 +27,9 @@ For more details about using Viper, please visit: http://viper.ethz.ch/downloads
 
 ### Installation Instructions ###
 
-* Clone [silicon](https://github.com/viperproject/silicon/) and [carbon](https://github.com/viperproject/carbon/) repositories in your computer, in separate directories.
-* Execute `git submodule init; git submodule update` in both, the silicon and carbon, directories to fetch their depending `silver` repository. Even though silicon's silver repository is actually used for compilation of ViperServer, we assume that they reference the same silver commit.
-* Clone **viperserver** (this repository) in your computer, in another directory.
-* From within the directory where you installed viperserver, create a symbolic links to the directories where you installed silicon and carbon.
-* On Linux/Mac OS X:  
-``` 
-ln -s <relative path to diretory where you installed silicon> silicon
-ln -s <relative path to diretory where you installed carbon> carbon
-```
-* On Windows:  
-```
-mklink /D silicon <relative path to diretory where you installed silicon>
-mklink /D carbon <relative path to diretory where you installed carbon>
-```
+* Clone **viperserver** (this repository) in your computer.
+* Execute `git submodule update --init --recursive` in the cloned directory to fetch the `carbon`, `silicon`, and (transitively) the `silver` repositories. Note that both `carbon` and `silicon` have a `silver` submodule. Even though `silicon`'s `silver` repository is actually used for compilation of ViperServer, we assume that both reference the same `silver` commit.
+
 * Compile by typing: ```sbt compile```
 
 * Other supported SBT commands are: ```sbt stage``` (produces fine-grained jar files), ```sbt assembly``` (produces a single fat jar file).
