@@ -12,8 +12,10 @@ import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp.LogLevel.LogLevel
 import viper.server.frontends.lsp.VerificationState.Ready
 
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.Future
+import scala.jdk.CollectionConverters._
 import scala.jdk.FutureConverters._
 
 /** manages per-client state and interacts with the server instance (which is shared among all clients) */
@@ -21,7 +23,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   val logger: Logger = ClientLogger(this, "Client logger", server.config.logLevel()).get
   private var _client: Option[IdeLanguageClient] = None
   private var _backend: Option[BackendProperties] = None // currently selected backend
-  private var _files: Map[String, FileManager] = Map.empty // each file is managed individually.
+  private val _files: ConcurrentMap[String, FileManager] = new ConcurrentHashMap() // each file is managed individually.
   private var _vprFileEndings: Option[Array[String]] = None
   private var _exited: Boolean = false
 
@@ -39,7 +41,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     _exited = true
     _client = None
     _backend = None
-    _files = Map.empty
+    _files.clear()
   }
 
   def isAlive: Boolean = {
@@ -65,23 +67,19 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     }
   }
 
-  private def files: Map[String, FileManager] = _files
-
   def addFileIfNecessary(uri: String): Unit = {
-    if (!_files.contains(uri)) {
-      _files += (uri -> new FileManager(this, uri))
-    }
+    _files.putIfAbsent(uri, new FileManager(this, uri))
+    logger.trace(s"FileManager created for $uri")
   }
 
   def removeFileIfExists(uri: String): Unit = {
-    if (_files.contains(uri)) {
-      _files -= uri
-    }
+    logger.trace(s"Removing FileManager for $uri")
+    _files.remove(uri)
   }
 
   /** clears definitions and symbols associated with a file */
   def resetFile(uri: String): Unit = {
-    _files.get(uri)
+    Option(_files.get(uri))
       .foreach(fm => {
         fm.symbolInformation = ArrayBuffer.empty
         fm.definitions = ArrayBuffer.empty
@@ -89,18 +87,18 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   }
 
   def resetDiagnostics(uri: String): Unit = {
-    _files.get(uri)
+    Option(_files.get(uri))
       .foreach(fm => fm.resetDiagnostics())
   }
 
   def getSymbolsForFile(uri: String): Array[SymbolInformation]= {
-    _files.get(uri)
+    Option(_files.get(uri))
       .map(fm => fm.symbolInformation.toArray)
       .getOrElse(Array.empty)
   }
 
   def getDefinitionsForFile(uri: String): ArrayBuffer[Definition] = {
-    _files.get(uri)
+    Option(_files.get(uri))
       .map(fm => fm.definitions)
       .getOrElse(ArrayBuffer.empty)
   }
@@ -111,7 +109,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     * */
   def canVerificationBeStarted(uri: String, manuallyTriggered: Boolean): Boolean = {
     // check if there is already a verification task for that file
-    if(!files.contains(uri)){
+    if(!_files.containsKey(uri)){
       logger.debug(s"No verification task found for file: $uri")
       false
     } else if (!server.isRunning) {
@@ -126,7 +124,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   }
 
   def stopRunningVerification(uri: String): Future[Boolean] = {
-    _files.get(uri)
+    Option(_files.get(uri))
       .map(fm => fm.stopVerification()
         .map(_ => {
           val params = StateChangeParams(Ready.id, verificationCompleted = 0, verificationNeeded = 0, uri = uri)
@@ -143,13 +141,13 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     * successfully. Otherwise, a failed CF is returned
     * */
   def stopAllRunningVerifications(): Future[Unit] = {
-    val tasks = files.values.map(fm => fm.stopVerification())
+    val tasks = _files.values().asScala.map(fm => fm.stopVerification())
     Future.sequence(tasks).map(_ => ())
   }
 
   /** returns true if verification was started */
   def startVerification(uri: String, manuallyTriggered: Boolean): Boolean = {
-    _files.get(uri)
+    Option(_files.get(uri))
       .exists(fm => fm.startVerification(manuallyTriggered))
   }
 

@@ -38,9 +38,9 @@ abstract class StandardReceiver(server: ViperServerService)(implicit executor: V
 
   @JsonNotification("textDocument/didOpen")
   def onDidOpenDocument(params: DidOpenTextDocumentParams): Unit = {
-    coordinator.logger.info("On opening document")
+    val uri: String = params.getTextDocument.getUri
+    coordinator.logger.info(s"On opening document $uri")
     try {
-      val uri: String = params.getTextDocument.getUri
       coordinator.isViperSourceFile(uri).map(_ => {
         // notify client
         coordinator.client.notifyFileOpened(uri)
@@ -146,7 +146,7 @@ class CustomReceiver(server: ViperServerService, serverUrl: String)(implicit exe
 
   @JsonNotification(S2C_Commands.FileClosed)
   def onFileClosed(uri: String): Unit = {
-    coordinator.logger.debug("On closing file")
+    coordinator.logger.debug(s"On closing file $uri")
     coordinator.removeFileIfExists(uri)
   }
 
