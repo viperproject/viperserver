@@ -108,18 +108,15 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     * Informs client differently depending on whether or not verification attempt was triggered manually
     * */
   def canVerificationBeStarted(uri: String, manuallyTriggered: Boolean): Boolean = {
-    // check if there is already a verification task for that file
-    if(!_files.containsKey(uri)){
-      logger.debug(s"No verification task found for file: $uri")
-      false
-    } else if (!server.isRunning) {
+    if (server.isRunning) {
+      addFileIfNecessary(uri)
+      true
+    } else {
       if (manuallyTriggered) {
         hint("The server is not ready yet")
       }
       logger.debug("The server is not ready yet")
       false
-    } else {
-      true
     }
   }
 
