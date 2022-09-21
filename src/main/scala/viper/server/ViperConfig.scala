@@ -60,10 +60,24 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
   val serverMode: ScallopOption[String] = opt[String]("serverMode",
     descr = s"One of the supported protocols: ${server_modes.mkString(",")}.",
     default = Some(SERVER_MODE_HTTP),
-    validate = (ll: String) => server_modes.contains(ll.toUpperCase),
+    validate = (mode: String) => server_modes.contains(mode.toUpperCase),
     noshort = true,
     hidden = false
-  )(singleArgConverter(level => level.toUpperCase))
+  )(singleArgConverter(mode => mode.toUpperCase))
+
+  val singleClientMode: ScallopOption[Boolean] = opt[Boolean]("singleClient",
+    descr = "Handles only a single client in LSP mode and terminates automatically afterwards",
+    // single client can only be specified for LSP mode:
+    validate = input => if (input) {
+      val isLSP = serverMode.map(_ == SERVER_MODE_LSP).getOrElse(false)
+      if (!isLSP) {
+        println(s"${singleClientMode.name} is only valid in server mode '$SERVER_MODE_LSP'")
+      }
+      isLSP
+    } else true,
+    default = Some(false),
+    noshort = true
+  )
 
   val port: ScallopOption[Int] = opt[Int]("port", 'p',
     descr = ("Specifies the port on which ViperServer will be started."

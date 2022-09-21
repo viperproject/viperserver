@@ -63,7 +63,7 @@ object ViperServerRunner {
           val serverUrl = s"$url:$port"
           announcePort(port)
           println(s"going to listen on port $port for LSP")
-          processRequests(serverSocket, server, serverUrl)
+          processRequests(config, serverSocket, server, serverUrl)
         }
 
       // wait until server is done:
@@ -93,14 +93,14 @@ object ViperServerRunner {
     println(s"<ViperServerPort:$port>")
   }
 
-  private def processRequests(serverSocket: ServerSocket, server: ViperServerService, serverUrl: String)(implicit executor: VerificationExecutionContext): Future[Unit] = {
+  private def processRequests(config: ViperConfig, serverSocket: ServerSocket, server: ViperServerService, serverUrl: String)(implicit executor: VerificationExecutionContext): Future[Unit] = {
     var clientFutures: Set[Future[Unit]] = Set.empty
 
-    while (!serverSocket.isClosed) {
+    do {
       val socket = serverSocket.accept()
       val clientFuture = handleClient(server, socket, serverUrl)
       clientFutures += clientFuture
-    }
+    } while (!serverSocket.isClosed && !config.singleClientMode())
 
     Future.sequence[Unit, Set, Set[Unit]](clientFutures)
       .map(_ => ())
