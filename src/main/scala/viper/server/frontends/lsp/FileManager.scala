@@ -17,6 +17,7 @@ import viper.server.frontends.lsp.VerificationSuccess._
 import viper.server.vsi.VerJobId
 import viper.silver.ast.{Domain, Field, Function, Method, Predicate, SourcePosition}
 import viper.silver.reporter._
+import viper.silver.verifier.AbstractError
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
@@ -195,6 +196,8 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         progress = new Progress(coordinator, p, f, m)
         val params = StateChangeParams(VerificationRunning.id, progress = 0, filename = filename)
         coordinator.sendStateChangeNotification(params, Some(task))
+      case AstConstructionFailureMessage(_, res) =>
+        processErrors(res.errors)
       case EntitySuccessMessage(_, concerning, _, _) =>
         if (progress == null) {
           coordinator.logger.debug("The backend must send a VerificationStart message before the ...Verified message.")
@@ -206,40 +209,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
           coordinator.sendStateChangeNotification(params, Some(task))
         }
       case EntityFailureMessage(_, _, _, res, _) =>
-        res.errors.foreach(err => {
-          if (err.fullId != null && err.fullId == "typechecker.error") {
-            typeCheckingCompleted = false
-          } else if (err.fullId != null && err.fullId == "parser.error") {
-            parsingCompleted = false
-            typeCheckingCompleted = false
-          }
-          val err_start = err.pos.asInstanceOf[SourcePosition].start
-          val err_end = err.pos.asInstanceOf[SourcePosition].end
-          val start_pos = new Position(err_start.line - 1, err_start.column - 1)
-          val end_pos = if(err_end.isDefined) {
-            new Position(err_end.get.line - 1, err_end.get.column - 1)
-          } else {
-            null
-          }
-          val range = new Range(start_pos, end_pos)
-          val backendType = coordinator.backend match {
-            case Some(backend) => backend.backend_type
-            case _ => "unknown"
-          }
-          coordinator.logger.debug(s"Verification error: [$backendType] " +
-            s"${if(err.fullId != null) "[" + err.fullId + "] " else ""}" +
-            s"${range.getStart.getLine + 1}:${range.getStart.getCharacter + 1} ${err.readableMessage}s")
-
-
-          val cachFlag: String = if(err.cached) "(cached)" else ""
-          val diag = new Diagnostic(range, err.readableMessage + cachFlag, DiagnosticSeverity.Error, "")
-          diagnostics.append(diag)
-
-          val params = StateChangeParams(
-            VerificationRunning.id, filename = filename,
-            uri = file_uri, diagnostics = diagnostics.toArray)
-          coordinator.sendStateChangeNotification(params, Some(task))
-        })
+        processErrors(res.errors)
       case OverallSuccessMessage(_, verificationTime) =>
         state = VerificationReporting
         timeMs = verificationTime
@@ -257,24 +227,63 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         completionHandler(-1) // no success
       case e: Throwable => coordinator.logger.debug(s"RelayActor received throwable: $e")
     }
+
+    private def processErrors(errors: Seq[AbstractError]): Unit = {
+      errors.foreach(err => {
+        var errorType: String = ""
+        if (err.fullId != null && err.fullId == "typechecker.error") {
+          typeCheckingCompleted = false
+          errorType = "Typechecker error"
+        } else if (err.fullId != null && err.fullId == "parser.error") {
+          parsingCompleted = false
+          typeCheckingCompleted = false
+          errorType = "Parser error"
+        } else {
+          errorType = "Verification error"
+        }
+        val err_start = err.pos.asInstanceOf[SourcePosition].start
+        val err_end = err.pos.asInstanceOf[SourcePosition].end
+        val start_pos = new Position(err_start.line - 1, err_start.column - 1)
+        val end_pos = if(err_end.isDefined) {
+          new Position(err_end.get.line - 1, err_end.get.column - 1)
+        } else {
+          null
+        }
+        val range = new Range(start_pos, end_pos)
+        val backendType = coordinator.backend match {
+          case Some(backend) => backend.backend_type
+          case _ => "unknown"
+        }
+        coordinator.logger.debug(s"$errorType: [$backendType] " +
+          s"${if(err.fullId != null) "[" + err.fullId + "] " else ""}" +
+          s"${range.getStart.getLine + 1}:${range.getStart.getCharacter + 1} ${err.readableMessage}s")
+
+
+        val cachFlag: String = if(err.cached) "(cached)" else ""
+        val diag = new Diagnostic(range, err.readableMessage + cachFlag, DiagnosticSeverity.Error, "")
+        diagnostics.append(diag)
+
+        val params = StateChangeParams(
+          VerificationRunning.id, filename = filename,
+          uri = file_uri, diagnostics = diagnostics.toArray)
+        coordinator.sendStateChangeNotification(params, Some(task))
+      })
+    }
   }
 
   private def determineSuccess(code: Int): VerificationSuccess = {
-    if (diagnostics.isEmpty && code == 0) {
-      VerificationSuccess.Success
-    } else if (diagnostics.nonEmpty) {
-      //use tag and backend trace as indicators for completed parsing
-      if (!parsingCompleted) {
-        ParsingFailed
-      } else if (parsingCompleted && !typeCheckingCompleted) {
-        TypecheckingFailed
-      } else {
-        VerificationFailed
-      }
+    if (code != 0) {
+      Error
+    } else if (!parsingCompleted) {
+      ParsingFailed
+    } else if (!typeCheckingCompleted) {
+      TypecheckingFailed
     } else if (is_aborting) {
       Aborted
+    } else if (diagnostics.nonEmpty) {
+      VerificationFailed
     } else {
-      Error
+      VerificationSuccess.Success
     }
   }
 
