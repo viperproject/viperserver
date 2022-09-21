@@ -13,6 +13,7 @@ import org.eclipse.lsp4j.jsonrpc.Launcher.Builder
 import viper.server.core.{DefaultVerificationExecutionContext, VerificationExecutionContext}
 import viper.server.frontends.http.ViperHttpServer
 import viper.server.frontends.lsp.{CustomReceiver, IdeLanguageClient, ViperServerService}
+import viper.viperserver.BuildInfo
 
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration.Duration
@@ -22,6 +23,7 @@ object ViperServerRunner {
   var viperServerHttp: ViperHttpServer = _
 
   def main(args: Array[String]): Unit = {
+    println(s"${BuildInfo.projectName} ${BuildInfo.projectVersionExtended}")
     val config = new ViperConfig(args.toIndexedSeq)
     val executor = new DefaultVerificationExecutionContext(threadPoolSize = Some(config.nThreads()))
     if (config.serverMode() == config.SERVER_MODE_LSP) {

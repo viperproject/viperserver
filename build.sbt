@@ -1,3 +1,5 @@
+import scala.sys.process.Process
+import scala.util.Try
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -77,5 +79,25 @@ lazy val server = (project in file("."))
             fallbackStrategy(x)
         }
     )
+  .enablePlugins(BuildInfoPlugin)
+  .settings(
+    buildInfoKeys := Seq[BuildInfoKey](
+      "projectName" -> name.value,
+      "projectVersion" -> version.value,
+      scalaVersion,
+      sbtVersion,
+      "gitRevision" -> gitInfo.value._1,
+      "gitBranch" -> gitInfo.value._2,
+      // combine version with branch name (if not 'master') and the git revision:
+      "projectVersionExtended" -> s"${version.value} (${gitInfo.value._1}${if (gitInfo.value._2 == "master") "" else s"@${gitInfo.value._2}"})"
+    ),
+    buildInfoPackage := "viper.viperserver"
+  )
+
+// Pair of git revision and branch information
+lazy val gitInfo: Def.Initialize[(String, String)] = Def.setting {
+  (Try(Process("git rev-parse --short HEAD").!!.trim).getOrElse("<revision>"),
+    Try(Process("git rev-parse --abbrev-ref HEAD").!!.trim).getOrElse("<branch>"))
+}
 
 lazy val LogbackConfigurationFilePattern = """logback.*?\.xml""".r
