@@ -57,7 +57,7 @@ object ViperServerRunner {
   private def runLspServer(config: ViperConfig)(implicit executor: VerificationExecutionContext): Unit = {
     try {
       val done = startServer(config)
-        .map { case (serverSocket, server) =>
+        .flatMap { case (serverSocket, server) =>
           val url = serverSocket.getInetAddress.getHostAddress
           val port = serverSocket.getLocalPort
           val serverUrl = s"$url:$port"
