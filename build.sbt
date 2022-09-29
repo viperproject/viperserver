@@ -41,6 +41,9 @@ lazy val server = (project in file("."))
         libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.2.1" % Test,
         libraryDependencies += "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.8.1", // Java implementation of language server protocol
 
+        silicon / excludeFilter := "logback.xml", /* Ignore Silicon's Logback configuration */
+        carbon / excludeFilter := "logback.xml", /* Ignore Carbon's Logback configuration */
+
         // Run settings
         run / javaOptions += "-Xss128m",
 
