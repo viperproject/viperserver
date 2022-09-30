@@ -67,7 +67,7 @@ object ViperServerRunner {
         }
 
       // wait until server is done:
-      Await.ready(done, Duration.Inf)
+      Await.result(done, Duration.Inf)
       println("all clients have been processed")
       executor.terminate()
       println("executor service has been shut down")
@@ -94,25 +94,24 @@ object ViperServerRunner {
   }
 
   private def processRequests(config: ViperConfig, serverSocket: ServerSocket, server: ViperServerService, serverUrl: String)(implicit executor: VerificationExecutionContext): Future[Unit] = {
-    var clientFutures: Set[Future[Unit]] = Set.empty
+    var clientFutures: Seq[Future[Unit]] = Seq.empty
 
     do {
       val socket = serverSocket.accept()
-      val clientFuture = handleClient(server, socket, serverUrl)
-      clientFutures += clientFuture
+      val clientFuture = handleClient(config, server, socket, serverUrl)
+      clientFutures = clientFutures :+ clientFuture
     } while (!serverSocket.isClosed && !config.singleClientMode())
 
-    Future.sequence[Unit, Set, Set[Unit]](clientFutures)
-      .map(_ => ())
+    Future.sequence(clientFutures).map(_ => ())
   }
 
   /**
     * processes client requests arriving on `socket`.
     * The returned future completes when stream is closed.
     */
-  private def handleClient(server: ViperServerService, socket: Socket, serverUrl: String)(implicit executor: VerificationExecutionContext): Future[Unit] = {
+  private def handleClient(config: ViperConfig, server: ViperServerService, socket: Socket, serverUrl: String)(implicit executor: VerificationExecutionContext): Future[Unit] = {
     println(s"client connected: ${socket.toString}")
-    val receiver: CustomReceiver = new CustomReceiver(server, serverUrl)
+    val receiver: CustomReceiver = new CustomReceiver(config, server, serverUrl)
     val launcher = createLauncher(receiver, socket)(executor)
     receiver.connect(launcher.getRemoteProxy)
     // convert Java Future to Scala Future:

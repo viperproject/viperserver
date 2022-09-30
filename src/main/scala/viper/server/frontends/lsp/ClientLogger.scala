@@ -11,6 +11,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.classic.{Level, Logger, LoggerContext}
 import ch.qos.logback.core.UnsynchronizedAppenderBase
 import org.slf4j.LoggerFactory
+import viper.server.frontends.lsp.LogLevel.LogLevel
 
 class ClientLogger(coordinator: ClientCoordinator, name: String, level: String) {
 
@@ -37,15 +38,18 @@ object ClientLogger {
 
 class ClientAppender(coordinator: ClientCoordinator) extends UnsynchronizedAppenderBase[ILoggingEvent] {
   override def append(event: ILoggingEvent): Unit = {
+    def getParams(logLevel: LogLevel): LogParams =
+      LogParams(event.getMessage, logLevel.id)
+
     if (!coordinator.isAlive) return
     event.getLevel match {
       case Level.OFF =>
-      case Level.ERROR => coordinator.client.notifyLog(event.getMessage, LogLevel.Info.id)
-      case Level.WARN => coordinator.client.notifyLog(event.getMessage, LogLevel.Info.id)
-      case Level.INFO => coordinator.client.notifyLog(event.getMessage, LogLevel.Info.id)
-      case Level.DEBUG => coordinator.client.notifyLog(event.getMessage, LogLevel.Debug.id)
-      case Level.TRACE => coordinator.client.notifyLog(event.getMessage, LogLevel.LowLevelDebug.id)
-      case Level.ALL => coordinator.client.notifyLog(event.getMessage, LogLevel.LowLevelDebug.id)
+      case Level.ERROR => coordinator.client.notifyLog(getParams(LogLevel.Info))
+      case Level.WARN => coordinator.client.notifyLog(getParams(LogLevel.Info))
+      case Level.INFO => coordinator.client.notifyLog(getParams(LogLevel.Info))
+      case Level.DEBUG => coordinator.client.notifyLog(getParams(LogLevel.Debug))
+      case Level.TRACE => coordinator.client.notifyLog(getParams(LogLevel.LowLevelDebug))
+      case Level.ALL => coordinator.client.notifyLog(getParams(LogLevel.LowLevelDebug))
     }
   }
 }

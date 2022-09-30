@@ -6,28 +6,19 @@ import scala.util.Try
 //
 // Copyright (c) 2011-2020 ETH Zurich.
 
-// Import general settings from Silver, Silicon and Carbon
-
-// we assume that carbon/silver and silicon/silver point to the same version of the silver repo
-lazy val silver = project in file("silicon/silver")
 lazy val silicon = project in file("silicon")
 lazy val carbon = project in file("carbon")
 
-lazy val common = project in file("common")
-
 // Viper Server specific project settings
 lazy val server = (project in file("."))
-    .dependsOn(silver % "compile->compile;test->test")
     .dependsOn(silicon % "compile->compile;test->test")
     .dependsOn(carbon % "compile->compile;test->test")
-    .dependsOn(common)
-    .aggregate(common)
     .enablePlugins(JavaAppPackaging)
     .settings(
         // General settings
         name := "ViperServer",
         organization := "viper",
-        version := "1.1-SNAPSHOT",
+        version := "2.0.0", // has to be a proper semver
 
         // Fork test to a different JVM than SBT's, avoiding SBT's classpath interfering with
         // classpath used by Scala's reflection.
@@ -39,7 +30,10 @@ lazy val server = (project in file("."))
         libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.6.10",
         libraryDependencies += "com.typesafe.akka" %% "akka-stream-testkit" % "2.6.10" % Test,
         libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.2.1" % Test,
-        libraryDependencies += "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.8.1", // Java implementation of language server protocol
+        libraryDependencies += "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.15.0", // Java implementation of language server protocol
+
+        silicon / excludeFilter := "logback.xml", /* Ignore Silicon's Logback configuration */
+        carbon / excludeFilter := "logback.xml", /* Ignore Carbon's Logback configuration */
 
         // Run settings
         run / javaOptions += "-Xss128m",

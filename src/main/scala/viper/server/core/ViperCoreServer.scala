@@ -38,7 +38,7 @@ class ViperCoreServer(val config: ViperConfig)(implicit val executor: Verificati
     logger.get
   }
 
-  protected def combineLoggers(localLogger: Option[Logger]): Logger = {
+  def combineLoggers(localLogger: Option[Logger]): Logger = {
     localLogger match {
       case Some(ll) => MultiLogger("Combined logger for ViperCoreServer", Seq(globalLogger, ll)).get
       case _ => globalLogger

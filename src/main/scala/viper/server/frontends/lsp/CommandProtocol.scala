@@ -13,13 +13,11 @@ package viper.server.frontends.lsp
   * */
 
 object C2S_Commands {
-  final val RequestBackendNames = "RequestBackendNames"
+  final val GetVersion = "GetVersion"
   final val Verify = "Verify"
   final val StopVerification = "StopVerification"
+  final val GetLanguageServerUrl = "GetLanguageServerUrl"
   // final val ShowHeap = "ShowHeap"
-  final val StartBackend = "StartBackend"
-  final val StopBackend = "StopBackend"
-  final val SwapBackend = "SwapBackend"
   // final val GetExecutionTrace = "GetExecutionTrace"
   final val RemoveDiagnostics = "RemoveDiagnostics"
   final val GetViperFileEndings = "GetViperFileEndings"
@@ -28,19 +26,12 @@ object C2S_Commands {
 }
 
 object S2C_Commands {
-  final val BackendChange = "BackendChange"
-  final val CheckIfSettingsVersionsSpecified = "CheckIfSettingsVersionsSpecified"
   final val StateChange = "StateChange"
   final val Log = "Log"
   final val Hint = "Hint"
-  final val Progress = "Progress"
-  final val FileOpened = "FileOpened"
-  final val FileClosed = "FileClosed"
   final val VerificationNotStarted = "VerificationNotStarted"
   // final val StopDebugging = "StopDebugging"
-  final val BackendReady = "BackendReady"
   // final val StepsAsDecorationOptions = "StepsAsDecorationOptions"
   // final val HeapGraph = "HeapGraph"
   final val UnhandledViperServerMessageType = "UnhandledViperServerMessageType"
-  final val BackendStarted = "BackendStarted"
 }

@@ -6,7 +6,7 @@
 
 package viper.server.frontends.lsp
 
-class Progress(coordinator: ClientCoordinator, val nofPredicates: Int, val nofFunctions: Int, val nofMethods: Int) {
+class ProgressCoordinator(coordinator: ClientCoordinator, val nofPredicates: Int, val nofFunctions: Int, val nofMethods: Int) {
 
   var currentFunctions = 0
   var currentMethods = 0
