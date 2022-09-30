@@ -79,7 +79,8 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
         })
       case _ =>
         // Did not find a job with this jid.
-        Future.failed(new Throwable(s"The verification job #$jid does not exist."))
+        logger.warn(s"stopVerification - The verification job #$jid does not exist and can thus not be stopped.")
+        Future.successful(false)
     }
   }
 

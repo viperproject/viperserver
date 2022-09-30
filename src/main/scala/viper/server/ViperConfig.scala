@@ -79,6 +79,20 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     noshort = true
   )
 
+  val disableClientVersionCheck: ScallopOption[Boolean] = opt[Boolean]("disableVersionCheck",
+    descr = "Disables the client's version check.",
+    // version check can only be disable for LSP mode:
+    validate = input => if (input) {
+      val isLSP = serverMode.map(_ == SERVER_MODE_LSP).getOrElse(false)
+      if (!isLSP) {
+        println(s"${disableClientVersionCheck.name} is only valid in server mode '$SERVER_MODE_LSP'")
+      }
+      isLSP
+    } else true,
+    default = Some(false),
+    noshort = true
+  )
+
   val port: ScallopOption[Int] = opt[Int]("port", 'p',
     descr = ("Specifies the port on which ViperServer will be started."
       + s"The port must be an integer in range [${ibm.Socket.MIN_PORT_NUMBER}-${ibm.Socket.MAX_PORT_NUMBER}]"

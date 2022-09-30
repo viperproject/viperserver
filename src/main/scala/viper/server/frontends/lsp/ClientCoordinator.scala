@@ -9,7 +9,6 @@ package viper.server.frontends.lsp
 import ch.qos.logback.classic.Logger
 import org.eclipse.lsp4j.SymbolInformation
 import viper.server.core.VerificationExecutionContext
-import viper.server.frontends.lsp.LogLevel.LogLevel
 import viper.server.frontends.lsp.VerificationState.Ready
 
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
@@ -20,9 +19,9 @@ import scala.jdk.FutureConverters._
 
 /** manages per-client state and interacts with the server instance (which is shared among all clients) */
 class ClientCoordinator(val server: ViperServerService)(implicit executor: VerificationExecutionContext) {
-  val logger: Logger = ClientLogger(this, "Client logger", server.config.logLevel()).get
+  val localLogger: Logger = ClientLogger(this, "Client logger", server.config.logLevel()).get
+  val logger: Logger = server.combineLoggers(Some(localLogger))
   private var _client: Option[IdeLanguageClient] = None
-  private var _backend: Option[BackendProperties] = None // currently selected backend
   private val _files: ConcurrentMap[String, FileManager] = new ConcurrentHashMap() // each file is managed individually.
   private var _vprFileEndings: Option[Array[String]] = None
   private var _exited: Boolean = false
@@ -40,7 +39,6 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   def exit(): Unit = {
     _exited = true
     _client = None
-    _backend = None
     _files.clear()
   }
 
@@ -48,28 +46,17 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     !_exited
   }
 
-  def backend: Option[BackendProperties] = _backend
-
-  def changeBackendIfNecessary(newBackend: BackendProperties): Unit = {
-    if (backend.contains(newBackend)) {
-      logger.debug("No need to restart backend. It is still the same")
-      val param = BackendReadyParams(newBackend.backend_type, restarted = false, isViperServer = true)
-      client.notifyBackendReady(param)
-    } else {
-      val oldBackend = _backend
-      _backend = Some(newBackend)
-      if (oldBackend.isEmpty) {
-        client.notifyBackendStarted(BackendStartedParams(newBackend.backend_type))
-      } else {
-        val param = BackendReadyParams(newBackend.backend_type, restarted = true, isViperServer = true)
-        client.notifyBackendReady(param)
+  def addFileIfNecessary(uri: String): Unit = {
+    logger.trace(s"Adding FileManager for $uri if it does not exist yet")
+    val coordinator = this
+    val createFMFunc = new java.util.function.Function[String, FileManager]() {
+      override def apply(t: String): FileManager = {
+        logger.trace(s"FileManager created for $uri")
+        new FileManager(coordinator, uri)
       }
     }
-  }
-
-  def addFileIfNecessary(uri: String): Unit = {
-    _files.putIfAbsent(uri, new FileManager(this, uri))
-    logger.trace(s"FileManager created for $uri")
+    // we use `computeIfAbsent` instead of `putIfAbsent` such that a new FileManager is only created if it's absent
+    _files.computeIfAbsent(uri, createFMFunc)
   }
 
   def removeFileIfExists(uri: String): Unit = {
@@ -108,10 +95,13 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     * Informs client differently depending on whether or not verification attempt was triggered manually
     * */
   def canVerificationBeStarted(uri: String, manuallyTriggered: Boolean): Boolean = {
+    logger.trace("canVerificationBeStarted")
     if (server.isRunning) {
+      logger.trace("server is running")
       addFileIfNecessary(uri)
       true
     } else {
+      logger.trace("server is not running")
       if (manuallyTriggered) {
         hint("The server is not ready yet")
       }
@@ -138,33 +128,42 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     * successfully. Otherwise, a failed CF is returned
     * */
   def stopAllRunningVerifications(): Future[Unit] = {
-    val tasks = _files.values().asScala.map(fm => fm.stopVerification())
-    Future.sequence(tasks).map(_ => ())
+    val tasks = _files.values().asScala.map(fm =>
+      fm.stopVerification().map(_ => {
+        logger.trace(s"stopVerification has completed for ${fm.uri}")
+      }))
+    Future.sequence(tasks).map(_ => {
+      logger.debug("all running verifications have been stopped")
+    })
   }
 
   /** returns true if verification was started */
-  def startVerification(uri: String, manuallyTriggered: Boolean): Boolean = {
+  def startVerification(backendClassName: String, customArgs: String, uri: String, manuallyTriggered: Boolean): Boolean = {
     Option(_files.get(uri))
-      .exists(fm => fm.startVerification(manuallyTriggered))
+      .exists(fm => fm.startVerification(backendClassName, customArgs, manuallyTriggered))
   }
 
   /** flushes verification cache, optionally only for a particular file */
-  def flushCache(uriOpt: Option[String]): Unit = {
-    (uriOpt, backend) match {
-      case (Some(uri), Some(backendProps)) =>
-        val success = server.flushCachePartially(Some((uri, backendProps.backend_type)), Some(logger))
-        if (!success) {
-          hint(s"Flushing the cache failed because no cache for backend ${backendProps.backend_type} and file $uri not found")
+  def flushCache(uriOpt: Option[String], backendOpt: Option[String]): Future[Unit] = {
+    (uriOpt, backendOpt) match {
+      case (Some(uri), Some(backend)) =>
+        val success = server.flushCachePartially(Some((uri, backend)), Some(localLogger))
+        if (success) {
+          Future.unit
+        } else {
+          Future.failed(new Exception(s"Flushing the cache failed because no cache for backend ${backend} and file $uri not found"))
         }
 
       case (Some(_), None) =>
-        hint(s"Flushing the cache failed because no backend is currently selected")
+        Future.failed(new Exception(s"Flushing the cache failed because no backend is currently selected"))
 
       case (None, _) =>
         logger.info("Flushing entire cache...")
-        val success = server.flushCachePartially(None, Some(logger))
-        if (!success) {
-          hint(s"Flushing the cache failed")
+        val success = server.flushCachePartially(None, Some(localLogger))
+        if (success) {
+          Future.unit
+        } else {
+          Future.failed(new Exception(s"Flushing the cache failed"))
         }
     }
   }
@@ -184,9 +183,9 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   }
 
   def refreshEndings(): Future[Array[String]] = {
-    client.requestVprFileEndings().asScala.map(endings => {
-      _vprFileEndings = Some(endings)
-      endings
+    client.requestVprFileEndings().asScala.map(response => {
+      _vprFileEndings = Some(response.fileEndings)
+      response.fileEndings
     })
   }
 
@@ -200,24 +199,8 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
       .map(endings => endings.exists(ending => uri.endsWith(ending)))
   }
 
-  private var lastProgress: Double = 0
-
-  def startProgress(): Unit = {
-    lastProgress = 0
-  }
-
-  def progress(domain: String, cur: Double, len: Double, logLevel: LogLevel): Unit = {
-    if (!isAlive) return
-    val progress = 100.0 * cur / len
-    if (Math.floor(progress) > lastProgress) {
-      lastProgress = progress
-      val data = ProgressReport(domain, cur, len, progress, Double.NaN)
-      client.notifyProgress(data, logLevel.id)
-    }
-  }
-
   def hint(message: String, showSettingsButton: Boolean = false, showViperToolsUpdateButton: Boolean = false): Unit = {
     if (!isAlive) return
-    client.notifyHint(S2C_Commands.Hint, Hint(message, showSettingsButton, showViperToolsUpdateButton ))
+    client.notifyHint(HintMessage(message, showSettingsButton, showViperToolsUpdateButton ))
   }
 }

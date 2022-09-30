@@ -56,20 +56,24 @@ class VerificationWorker(private val command: List[String],
   }
 
   def run(): Unit = {
+    var success: Boolean = false
     try {
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
           backend = new ViperBackend(new SiliconFrontend(new ActorReporter("silicon"), logger), programId, program)
           backend.execute(args)
+          success = true
         case "carbon" :: args =>
           logger.info("Creating new Carbon verification backend.")
           backend = new ViperBackend(new CarbonFrontend(new ActorReporter("carbon"), logger), programId, program)
           backend.execute(args)
+          success = true
         case "custom" :: custom :: args =>
           logger.info(s"Creating new verification backend based on class $custom.")
           backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(custom)).get, programId, program)
           backend.execute(args)
+          success = true
         case args =>
           logger.error(s"invalid arguments: ${args.toString}",
             "You need to specify the verification backend, e.g., `silicon [args]`")
@@ -89,7 +93,7 @@ class VerificationWorker(private val command: List[String],
           logger.trace(s"Stopping the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
       }
     }
-    if (backend != null) {
+    if (success) {
       logger.info(s"The command `${command.mkString(" ")}` has been executed.")
       registerTaskEnd(true)
     } else {

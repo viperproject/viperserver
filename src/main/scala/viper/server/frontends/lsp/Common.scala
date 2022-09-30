@@ -38,4 +38,17 @@ object Common {
       1
     }
   }
+
+  /** returns 0 if equal, 1 if v1 is bigger than v2, -1 otherwise */
+  def compareSemVer(v1: String, v2: String): Int = {
+    val v1Parts = v1.split('.') // single quotes to use it as string and not as regex
+      .map(part => part.toInt)
+    val v2Parts = v2.split('.') // single quotes to use it as string and not as regex
+      .map(part => part.toInt)
+    val zippedParts = v1Parts.zipAll(v2Parts, 0, 0)
+    zippedParts.collectFirst {
+      case (component1, component2) if component1 > component2 => 1
+      case (component1, component2) if component1 < component2 => -1
+    }.getOrElse(0)
+  }
 }

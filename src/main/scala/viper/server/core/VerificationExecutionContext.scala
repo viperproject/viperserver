@@ -25,11 +25,11 @@ trait VerificationExecutionContext extends ExecutionContext {
 }
 
 object DefaultVerificationExecutionContext {
-  // at least 2 threads are needed if the actor system is also using the same thread pool. Otherwise, if the actor
-  // sytem is started using its own (default) executor, a single thread is sufficient.
+  // at least 3 threads seem to be needed if the actor system is also using the same thread pool. Otherwise, if the actor
+  // system is started using its own (default) executor, a different number of thread might be sufficient.
   // actor system with the default executor like `ActorSystem(actorSystemName)`)
   /** minimum number of threads needed for the thread pool in the DefaultVerificationExecutionContext */
-  val minNumberOfThreads: Int = 1
+  val minNumberOfThreads: Int = 3
 }
 
 /**

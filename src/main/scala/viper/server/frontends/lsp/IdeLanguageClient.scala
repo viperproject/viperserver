@@ -14,41 +14,24 @@ import org.eclipse.lsp4j.services.LanguageClient
 
 
 trait IdeLanguageClient extends LanguageClient {
-  @JsonNotification(S2C_Commands.FileOpened)
-  def notifyFileOpened(uri: String): Unit
-
-  @JsonNotification(S2C_Commands.FileClosed)
-  def notifyFileClosed(uri: String): Unit
 
   @JsonRequest(C2S_Commands.GetIdentifier)
-  def requestIdentifier(pos: Position): CompletableFuture[String]
+  def requestIdentifier(pos: Position): CompletableFuture[GetIdentifierResponse]
 
   @JsonRequest(C2S_Commands.GetViperFileEndings)
-  def requestVprFileEndings(): CompletableFuture[Array[String]]
-
-  @JsonNotification(S2C_Commands.BackendReady)
-  def notifyBackendReady(param: BackendReadyParams): Unit
-
-  @JsonNotification(S2C_Commands.BackendStarted)
-  def notifyBackendStarted(params: BackendStartedParams): Unit
-
-  @JsonNotification(S2C_Commands.BackendChange)
-  def notifyBackendChanged(name: String): Unit
-
-  @JsonNotification(S2C_Commands.Progress)
-  def notifyProgress(progress: ProgressReport, logLevel: Int): Unit
+  def requestVprFileEndings(): CompletableFuture[GetViperFileEndingsResponse]
 
   @JsonNotification(S2C_Commands.Log)
-  def notifyLog(msg: String, logLevel: Int): Unit
+  def notifyLog(param: LogParams): Unit
 
   @JsonNotification(S2C_Commands.Hint)
-  def notifyHint(msg: String, hint: Hint): Unit
+  def notifyHint(param: HintMessage): Unit
 
   @JsonNotification(S2C_Commands.UnhandledViperServerMessageType)
-  def notifyUnhandledViperServerMessage(msgType: String, msg: String, logLevel: Int): Unit
+  def notifyUnhandledViperServerMessage(params: UnhandledViperServerMessageTypeParams): Unit
 
   @JsonNotification(S2C_Commands.VerificationNotStarted)
-  def notifyVerificationNotStarted(uri: String): Unit
+  def notifyVerificationNotStarted(params: VerificationNotStartedParams): Unit
 
   @JsonNotification(S2C_Commands.StateChange)
   def notifyStateChanged(params: StateChangeParams): Unit
