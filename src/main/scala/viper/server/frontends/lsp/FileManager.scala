@@ -299,28 +299,26 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
     is_verifying = false
     try {
       coordinator.logger.debug(s"completionHandler is called with code $code")
-      if (is_aborting) {
-        return
-      }
+
       var params: StateChangeParams = null
       var success = NA
+      val mt = if (this.manuallyTriggered) 1 else 0
 
       val isVerifyingStage = true
 
-      //do we need to start a followUp Stage?
+      // do we need to start a followUp Stage?
       if (isVerifyingStage) {
         if (partialData != null && partialData.nonEmpty) {
           coordinator.logger.debug(s"Some unparsed output was detected: $partialData")
           partialData = ""
         }
 
-        //inform client about postProcessing
+        // inform client about postProcessing
         success = determineSuccess(code)
         params = StateChangeParams(PostProcessing.id, filename = filename)
         coordinator.sendStateChangeNotification(params, Some(this))
 
-        //notify client about outcome of verification
-        val mt = if(this.manuallyTriggered) 1 else 0
+        // notify client about outcome of verification
         params = StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt,
           filename = filename, time = timeMs.toDouble / 1000, verificationCompleted = 1, uri = file_uri,
           error = internalErrorMessage, diagnostics = diagnostics.toArray)
@@ -330,15 +328,14 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
           coordinator.logger.debug(s"Verification Backend Terminated Abnormally: with code $code")
         }
       } else {
-        success = Success
-        val mt = if(this.manuallyTriggered) 1 else 0
+        success = if (is_aborting) Aborted else Success
         params = StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt,
           filename = filename, time = timeMs.toDouble / 1000, verificationCompleted = 0, uri = file_uri,
           error = internalErrorMessage, diagnostics = diagnostics.toArray)
         coordinator.sendStateChangeNotification(params, Some(this))
       }
 
-      //reset for next verification
+      // reset for next verification
       lastSuccess = success
       timeMs = 0
     } catch {
