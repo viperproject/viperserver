@@ -136,7 +136,7 @@ abstract class StandardReceiver(server: ViperServerService)(implicit executor: V
 
 class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl: String)(implicit executor: VerificationExecutionContext) extends StandardReceiver(server) {
 
-  val MIN_CLIENT_VERSION = "3.0.0"
+  val MIN_CLIENT_VERSION = "4.0.0"
 
   // receives version of client to perform some checks before replying with the server's version
   @JsonRequest(C2S_Commands.GetVersion)
