@@ -71,7 +71,6 @@ object ViperCache extends Cache {
         p: Program): (Program, List[CacheResult]) = {
     val file_key = getKey(file = file, backendName = backendName)
     val cacheable_ast = ViperAst(p)
-    logger.debug(s"Cache for file $file and backend $backendName: ${_cache.get(file_key)}")
     val (output_ast, cache_entries) = super.retrieve(file_key, cacheable_ast)
     val output_prog = output_ast.asInstanceOf[ViperAst].p
 
