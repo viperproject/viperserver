@@ -81,17 +81,17 @@ object ViperCache extends Cache {
         try {
           // Try to deserialize content of the cache entry
           val content = read[ViperCacheContent](ce.content.asInstanceOf[SerializedViperCacheContent].content)
-          logger.trace(s"Got a cache hit for method $concerning_method.name")
+          logger.trace(s"Got a cache hit for method ${concerning_method.name} and backend $backendName")
           // set cached flag:
           val cachedErrors = content.errors.map(setCached)
           CacheResult(concerning_method, cachedErrors)
         } catch {
           case e: Throwable =>
             // In case parsing of the cache entry fails, abort caching & evict cache entries for this file, since hey might come from an unsupported version
-            logger.warn(s"Parsing of CacheEntry for method $concerning_method.name failed, error is: ${e.getMessage}")
+            logger.warn(s"Parsing of CacheEntry for method ${concerning_method.name} and backend $backendName failed, error is: ${e.getMessage}")
             logger.debug(s"$e")
             super.forgetFile(file_key)
-            return(p, List())
+            return (p, List())
         }
     }).filter(e => e != null)
 
@@ -304,7 +304,7 @@ object ViperCache extends Cache {
         p: Program,
         errors: List[AbstractVerificationError]): SerializedViperCacheContent = {
 
-    implicit val key: String = getKey(file = file, backendName = backendName)
+    val key: String = getKey(file = file, backendName = backendName)
 
     implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.errorNodeHints(p, key))
     SerializedViperCacheContent(write(ViperCacheContent(errors)))

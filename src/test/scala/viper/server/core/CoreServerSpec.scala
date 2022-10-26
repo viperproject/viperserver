@@ -10,18 +10,21 @@ import java.nio.file.Paths
 import akka.actor.{Actor, Props, Status}
 import akka.pattern.ask
 import akka.util.Timeout
+import org.eclipse.lsp4j.{MessageActionItem, MessageParams, Position, PublishDiagnosticsParams, ShowMessageRequestParams}
 import org.scalatest.exceptions.TestFailedException
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.{Assertion, Outcome, Succeeded}
 import org.scalatest.wordspec.AnyWordSpec
 import viper.server.ViperConfig
+import viper.server.frontends.lsp.{ClientCoordinator, FileManager, GetIdentifierResponse, GetViperFileEndingsResponse, HintMessage, IdeLanguageClient, LogParams, StateChangeParams, UnhandledViperServerMessageTypeParams, VerificationNotStartedParams, ViperServerService}
 import viper.server.utility.AstGenerator
 import viper.server.vsi.{JobNotFoundException, VerJobId}
 import viper.silver.ast.{HasLineColumn, Program}
 import viper.silver.logger.SilentLogger
 import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessage, OverallSuccessMessage}
-import viper.silver.verifier.{VerificationResult, Failure => VerifierFailure, Success => VerifierSuccess}
+import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerifierFailure, Success => VerifierSuccess}
 
+import java.util.concurrent.CompletableFuture
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future, Promise}
 import scala.util.{Failure, Success}
@@ -77,7 +80,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     server.verify(programId, silicon_with_caching, ast)
   }
   def verifyCarbonWithCaching(server: ViperCoreServer, vprFile: String): VerJobId = {
-    val carbon_without_caching: CarbonConfig = CarbonConfig(List(/*"--boogieExe", "/Users/arquintlinard/Library/Application Support/Code/User/globalStorage/viper-admin.viper/Stable/ViperTools/boogie/Binaries/Boogie"*/))
+    val carbon_without_caching: CarbonConfig = CarbonConfig(List())
     server.verify(vprFile, carbon_without_caching, getAstByFileName(vprFile))
   }
 
@@ -89,9 +92,15 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     res
   }
 
+  implicit val viperCoreServerFactory: (ViperConfig, VerificationExecutionContext) => ViperCoreServer =
+    (config, context) => new ViperCoreServer(config)(context)
+  val viperServerServiceFactory: (ViperConfig, VerificationExecutionContext) => ViperServerService =
+    (config, context) => new ViperServerService(config)(context)
+
   /** loan-fixture taking care of starting and stopping a core server */
-  def withServer(testCode: (ViperCoreServer, VerificationExecutionContext) => Future[Assertion],
-                 afterStop: (ViperCoreServer, VerificationExecutionContext) => Future[Assertion] = (_, _) => Future.successful(Succeeded)): Assertion = {
+  def withServer[S <: ViperCoreServer](testCode: (S, VerificationExecutionContext) => Future[Assertion],
+                                       afterStop: (S, VerificationExecutionContext) => Future[Assertion] = (_: S, _: VerificationExecutionContext) => Future.successful(Succeeded))
+                                      (implicit serverFactory: (ViperConfig, VerificationExecutionContext) => S): Assertion = {
     // create a new execution context for each ViperCoreServer instance which keeps the tests independent since
     val verificationContext = new DefaultVerificationExecutionContext()
     // note that using a single log file per unit test seems to work, however there is an overlap that not only the
@@ -104,7 +113,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       case Some(name) => name
       case None => throw new Exception("no test name")
     }
-    val core = new ViperCoreServer(config)(verificationContext)
+    val core = serverFactory(config, verificationContext)
     val started = core.start().map({ _ =>
       core.globalLogger.debug(s"server started for test case '$testName'")
     })(verificationContext)
@@ -150,7 +159,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
 
   "ViperCoreServer" should {
 
-    s"be able to verify a single program with caching disabled" in withServer({ (core, context) =>
+    s"be able to verify a single program with caching disabled" in withServer[ViperCoreServer]({ (core, context) =>
       val jid = verifySiliconWithoutCaching(core, ver_error_file)
       assert(jid != null)
       assert(jid.id >= 0)
@@ -164,7 +173,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       })
     })
 
-    s"be able to verify a single program with caching enabled" in withServer({ (core, context) =>
+    s"be able to verify a single program with caching enabled" in withServer[ViperCoreServer]({ (core, context) =>
       val jid = verifySiliconWithCaching(core, correct_viper_file)
       assert(jid != null)
       assert(jid.id >= 0)
@@ -178,7 +187,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       })
     })
 
-    s"be able to verify a single program with weird program ID" in withServer({ (core, context) =>
+    s"be able to verify a single program with weird program ID" in withServer[ViperCoreServer]({ (core, context) =>
       // this test case checks that Silicon does not try to interpret programID and then fails because of an
       // unexpected `:` character.
       // note that this used to fail only on Windows.
@@ -196,7 +205,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       }(context)
     })
 
-    s"not be able to call `getMessagesFuture` with an non-existent JobId" in withServer({ (core, context) =>
+    s"not be able to call `getMessagesFuture` with an non-existent JobId" in withServer[ViperCoreServer]({ (core, context) =>
       val wrong_jid = VerJobId(42)
       ViperCoreServerUtils.getMessagesFuture(core, wrong_jid)(context).failed.transform({
         case JobNotFoundException => Succeeded
@@ -204,7 +213,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       }, ex => throw new TestFailedException(s"expected an exception but none occurred ($ex)", 0))(context)
     })
 
-    s"be able to eventually produce an OverallFailureMessage @$ver_error_file and retrieve the cached results upon requesting to verify the same AST" in withServer({ (core, context) =>
+    s"be able to eventually produce an OverallFailureMessage @$ver_error_file and retrieve the cached results upon requesting to verify the same AST" in withServer[ViperCoreServer]({ (core, context) =>
       val jid1 = verifySiliconWithCaching(core, ver_error_file)
       val firstVerification = ViperCoreServerUtils.getMessagesFuture(core, jid1)(context).map {
         messages: List[Message] =>
@@ -233,7 +242,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       })(context)
     })
 
-    s"report the same file location if the error is cached as when it's first verified - Issue #23" in withServer({ (core, context) =>
+    s"report the same file location if the error is cached as when it's first verified - Issue #23" in withServer[ViperCoreServer]({ (core, context) =>
       val file = "src/test/resources/viper/issues/00023.vpr"
       val lineNrOfExpectedVerificationError = 9
       val jid1 = verifySiliconWithCaching(core, file)
@@ -276,7 +285,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       })(context)
     })
 
-    s"be able to call flushCache and get an EntityFailure message with cleared cached flag" in withServer({ (core, context) =>
+    s"be able to call flushCache and get an EntityFailure message with cleared cached flag" in withServer[ViperCoreServer]({ (core, context) =>
       val jid1 = verifySiliconWithCaching(core, ver_error_file)
       val firstVerification = ViperCoreServerUtils.getMessagesFuture(core, jid1)(context).map {
         messages: List[Message] =>
@@ -311,7 +320,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       })(context)
     })
 
-    s"keep caches for different backends separate - Silver Issue #550" in withServer({ (core, context) =>
+    s"keep caches for different backends separate - Silver Issue #550" in withServer[ViperCoreServer]({ (core, context) =>
       implicit val ctx: VerificationExecutionContext = context
       val siliconJid = verifySiliconWithoutCaching(core, ver_error_file)
       val siliconVerification = ViperCoreServerUtils.getResultsFuture(core, siliconJid).map {
@@ -327,7 +336,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
         }
     })
 
-    s"run getMessagesFuture() to get Seq[Message] containing the expected verification result" in withServer({ (core, context) =>
+    s"run getMessagesFuture() to get Seq[Message] containing the expected verification result" in withServer[ViperCoreServer]({ (core, context) =>
       val jid = verifySiliconWithoutCaching(core, ver_error_file)
       ViperCoreServerUtils.getMessagesFuture(core, jid)(context).map { msgs =>
         msgs.last match {
@@ -337,7 +346,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       }(context)
     })
 
-    s"be able to verify multiple programs with caching disabled and retrieve results" in withServer({ (core, context) =>
+    s"be able to verify multiple programs with caching disabled and retrieve results" in withServer[ViperCoreServer]({ (core, context) =>
       implicit val ctx: VerificationExecutionContext = context
       val jobIds = files.map(file => (file, verifySiliconWithoutCaching(core, file)))
       val filesAndMessages = jobIds map { case (f, id) => (f, ViperCoreServerUtils.getMessagesFuture(core, id)) }
@@ -353,7 +362,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       Future.sequence(resultFutures).map(_ => Succeeded)
     })
 
-    s"be able to verify multiple programs with caching enabled and retrieve results" in withServer({ (core, context) =>
+    s"be able to verify multiple programs with caching enabled and retrieve results" in withServer[ViperCoreServer]({ (core, context) =>
       implicit val ctx: VerificationExecutionContext = context
       val jobIds = files.map(file => (file, verifySiliconWithCaching(core, file)))
       val filesAndMessages = jobIds map { case (f, id) => (f, ViperCoreServerUtils.getMessagesFuture(core, id)(context)) }
@@ -369,7 +378,49 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       Future.sequence(resultFutures).map(_ => Succeeded)
     })
 
-    s"verifyMultipleFiles behalves as expected" in withServer({ (core, context) =>
+    s"verification errors do not get filtered - Viper-IDE Issue #326" in withServer[ViperServerService]({ (core, context) =>
+      // this unit test checks that both errors are correctly collected by the RelayActor
+      // The reported errors are equal according to the standard equality on AbstractError even though they occur
+      // on different lines.
+      implicit val ctx: VerificationExecutionContext = context
+      val file = "src/test/resources/viper/issues/00326.vpr"
+      val lineNrsOfExpectedVerificationErrors = Seq(11, 18)
+
+      val coordinator = new ClientCoordinator(core)
+      coordinator.setClient(new MockClient())
+      val fileManager = new FileManager(coordinator, Paths.get(file).toAbsolutePath.toUri.toString)
+      val jid = verifyCarbonWithCaching(core, file)
+      val relayActorRef = context.actorSystem.actorOf(fileManager.RelayActor.props(fileManager, "carbon"))
+      implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
+      core.streamMessages(jid, relayActorRef).getOrElse(Future.failed(JobNotFoundException))
+        .flatMap(_ => (relayActorRef ? fileManager.RelayActor.GetReportedErrors()).mapTo[Seq[AbstractError]])
+        .map(actualErrors => {
+          val lineNrsOfActualVerificationErrors = actualErrors
+            .map(_.pos match {
+              case lc: HasLineColumn => lc.line
+              case p => fail(s"error should have positional information but got $p")
+            })
+            .sorted
+          assert(lineNrsOfExpectedVerificationErrors == lineNrsOfActualVerificationErrors)
+      })
+    })(viperServerServiceFactory)
+
+    class MockClient extends IdeLanguageClient {
+      override def requestIdentifier(pos: Position): CompletableFuture[GetIdentifierResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
+      override def requestVprFileEndings(): CompletableFuture[GetViperFileEndingsResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
+      override def notifyLog(param: LogParams): Unit = {}
+      override def notifyHint(param: HintMessage): Unit = {}
+      override def notifyUnhandledViperServerMessage(params: UnhandledViperServerMessageTypeParams): Unit = {}
+      override def notifyVerificationNotStarted(params: VerificationNotStartedParams): Unit = {}
+      override def notifyStateChanged(params: StateChangeParams): Unit = {}
+      override def telemetryEvent(`object`: Any): Unit = {}
+      override def publishDiagnostics(diagnostics: PublishDiagnosticsParams): Unit = {}
+      override def showMessage(messageParams: MessageParams): Unit = {}
+      override def showMessageRequest(requestParams: ShowMessageRequestParams): CompletableFuture[MessageActionItem] = CompletableFuture.failedFuture(new UnsupportedOperationException())
+      override def logMessage(message: MessageParams): Unit = {}
+    }
+
+    s"verifyMultipleFiles behalves as expected" in withServer[ViperCoreServer]({ (core, context) =>
       // this unit tests makes sure that verifying two identical files using `verifyMultipleFiles` actually
       // triggers the cache
 
@@ -386,7 +437,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       verifyMultipleFiles(core, List(file1, file2), handleResult)(context)
     })
 
-    s"adapting an axiom should invalidate the cache" in withServer({ (core, context) =>
+    s"adapting an axiom should invalidate the cache" in withServer[ViperCoreServer]({ (core, context) =>
       val fileBeforeModification = "src/test/resources/viper/changed-axiom/version1.vpr"
       val fileAfterModification = "src/test/resources/viper/changed-axiom/version2.vpr"
 
@@ -416,7 +467,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     })
     */
 
-    s"reordering of domains should not invalidate the cache" in withServer({ (core, context) =>
+    s"reordering of domains should not invalidate the cache" in withServer[ViperCoreServer]({ (core, context) =>
       val fileBeforeReordering = "src/test/resources/viper/reordered-domains/version1.vpr"
       val fileAfterReordering = "src/test/resources/viper/reordered-domains/version2.vpr"
 
@@ -434,7 +485,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       verifyMultipleFiles(core, List(fileBeforeReordering, fileAfterReordering), handleResult)(context)
     })
 
-    s"reordering domain components should not invalidate the cache - Issue #52" in withServer({ (core, context) =>
+    s"reordering domain components should not invalidate the cache - Issue #52" in withServer[ViperCoreServer]({ (core, context) =>
       val fileBeforeModification = "src/test/resources/viper/reordered-axioms/version1.vpr"
       val fileAfterReorderingDomainFunctions = "src/test/resources/viper/reordered-axioms/version2.vpr"
       val fileAfterReorderingDomainAxioms = "src/test/resources/viper/reordered-axioms/version3.vpr"
@@ -506,7 +557,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       }
     }
 
-    s"be able to verify multiple programs with caching disabled and retrieve results via `streamMessages()`" in withServer({ (core, context) =>
+    s"be able to verify multiple programs with caching disabled and retrieve results via `streamMessages()`" in withServer[ViperCoreServer]({ (core, context) =>
       implicit val ctx: VerificationExecutionContext = context
       val test_actors = 0 to 2 map (_ => context.actorSystem.actorOf(ClientActor.props()))
       val jids = files.map(file => verifySiliconWithoutCaching(core, file))
@@ -536,7 +587,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       assertionsFuture.map(_ => Succeeded)
     })
 
-    s"be able to start a new verification after maximum capacity was exceeded but earlier verifications have ended" in withServer({ (core, context) =>
+    s"be able to start a new verification after maximum capacity was exceeded but earlier verifications have ended" in withServer[ViperCoreServer]({ (core, context) =>
       implicit val ctx: VerificationExecutionContext = context
       // start 3 jobs:
       val jids = files.map(file => verifySiliconWithoutCaching(core, file))

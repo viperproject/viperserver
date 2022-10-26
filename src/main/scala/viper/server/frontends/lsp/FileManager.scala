@@ -9,7 +9,7 @@ package viper.server.frontends.lsp
 import java.net.URI
 import java.nio.file.{Path, Paths}
 import akka.actor.{Actor, Props, Status}
-import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, Location, Position, PublishDiagnosticsParams, Range, SymbolInformation, SymbolKind}
+import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, DocumentSymbol, Position, PublishDiagnosticsParams, Range, SymbolKind}
 import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp
 import viper.server.frontends.lsp.VerificationState._
@@ -19,7 +19,6 @@ import viper.silver.ast.{AbstractSourcePosition, Domain, Field, Function, HasLin
 import viper.silver.reporter._
 import viper.silver.verifier.{AbortedExceptionally, AbstractError}
 
-import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.Future
@@ -43,17 +42,17 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
   //verification results
   var jid: Int = -1
   var timeMs: Long = 0
-  var diagnostics: ArrayBuffer[Diagnostic] = _
+  var diagnostics: ArrayBuffer[Diagnostic] = ArrayBuffer.empty
   var parsingCompleted: Boolean = false
   var typeCheckingCompleted: Boolean = false
   var progress: ProgressCoordinator = _
-  var symbolInformation: ArrayBuffer[SymbolInformation] = ArrayBuffer()
+  var symbolInformation: ArrayBuffer[DocumentSymbol] = ArrayBuffer()
   var definitions: ArrayBuffer[lsp.Definition] = ArrayBuffer()
 
   private var partialData: String = ""
 
   def resetDiagnostics(): Unit = {
-    diagnostics = ArrayBuffer()
+    diagnostics = ArrayBuffer.empty
     val diagnosticParams = new PublishDiagnosticsParams()
     diagnosticParams.setUri(file_uri)
     diagnosticParams.setDiagnostics(diagnostics.asJava)
@@ -132,15 +131,18 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
 
   object RelayActor {
     def props(task: FileManager, backendClassName: String): Props = Props(new RelayActor(task, backendClassName))
+
+    case class GetReportedErrors()
   }
 
   class RelayActor(task: FileManager, backendClassName: String) extends Actor {
 
     /**
       * errors that have already been reported to the client; This is used to identify errors in OverallFailureMessage
-      * that have not been reported yet.
+      * that have not been reported yet. Note that this is a `Seq` instead of a `Set` because we have to use reference
+      * equality when comparing errors because two errors with offending nodes at different positions might be equal!
       */
-    val reportedErrors: mutable.Set[AbstractError] = mutable.Set.empty
+    var reportedErrors: Seq[AbstractError] = Seq.empty
 
     override def receive: PartialFunction[Any, Unit] = {
       case ProgramOutlineReport(members) =>
@@ -151,7 +153,6 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
           val range_start = new Position(member_start.line - 1, member_start.column - 1)
           val range_end = new Position(member_end.line - 1, member_end.column - 1)
           val range = new Range(range_start, range_end)
-          val location: Location = new Location(file_uri, range)
 
           val kind = m match {
             case _: Method => SymbolKind.Method
@@ -161,7 +162,9 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
             case _: Domain => SymbolKind.Class
             case _ => SymbolKind.Enum
           }
-          val info: SymbolInformation = new SymbolInformation(m.name, kind, location)
+          // for now, we use `range` as range & selectionRange. The latter one is supposed to be only a sub-range
+          // that should be selected when the user selects the symbol.
+          val info = new DocumentSymbol(m.name, kind, range, range)
           symbolInformation.append(info)
         })
       case ProgramDefinitionsReport(defs) =>
@@ -190,12 +193,12 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         val params = StateChangeParams(VerificationRunning.id, progress = 0, filename = filename)
         coordinator.sendStateChangeNotification(params, Some(task))
       case AstConstructionFailureMessage(_, res) =>
-        reportedErrors.addAll(res.errors)
+        reportedErrors = reportedErrors :++ res.errors
         processErrors(backendClassName, res.errors, Some("Constructing the AST has failed:"))
       case ExceptionReport(e) =>
         processErrors(backendClassName, Seq(AbortedExceptionally(e)))
       case InvalidArgumentsReport(_, errors) =>
-        reportedErrors.addAll(errors)
+        reportedErrors = reportedErrors :++ errors
         processErrors(backendClassName, errors, Some(s"Invalid arguments have been passed to the backend $backendClassName:"))
       case EntitySuccessMessage(_, concerning, _, _) =>
         if (progress == null) {
@@ -208,7 +211,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
           coordinator.sendStateChangeNotification(params, Some(task))
         }
       case EntityFailureMessage(_, _, _, res, _) =>
-        reportedErrors.addAll(res.errors)
+        reportedErrors = reportedErrors :++ res.errors
         processErrors(backendClassName, res.errors)
       case OverallSuccessMessage(_, verificationTime) =>
         state = VerificationReporting
@@ -221,7 +224,8 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         // this is important since Silicon provides errors as part of EntityFailureMessages and the OverallFailureMessage
         // where else Carbon does not produce EntityFailureMessages (except for cached members in which case
         // ViperServer produces EntitySuccessMessage and EntityFailureMessages)
-        val newErrors = failure.errors.filter(err => reportedErrors.add(err)) // add returns true if `err` is not yet in the set
+        val newErrors = failure.errors.filter(err => reportedErrors.forall(reportedErr => reportedErr ne err)) // note that we use reference equality here (as described in the comment related to `reportedErrors`
+        reportedErrors = reportedErrors :++ newErrors
         processErrors(backendClassName, newErrors)
       // the completion handler is not yet invoked (but as part of Status.Success)
       case m: Message => coordinator.client.notifyUnhandledViperServerMessage(UnhandledViperServerMessageTypeParams(m.name, m.toString, LogLevel.Info.id))
@@ -231,11 +235,12 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
       case Status.Failure(cause) =>
         coordinator.logger.info(s"Streaming messages has failed in RelayActor with cause $cause")
         completionHandler(-1) // no success
+      case RelayActor.GetReportedErrors() => sender() ! reportedErrors
       case e: Throwable => coordinator.logger.debug(s"RelayActor received throwable: $e")
     }
 
     private def processErrors(backendClassName: String, errors: Seq[AbstractError], errorMsgPrefix: Option[String] = None): Unit = {
-      errors.foreach(err => {
+      val diags = errors.map(err => {
         var errorType: String = ""
         if (err.fullId != null && err.fullId == "typechecker.error") {
           typeCheckingCompleted = false
@@ -268,14 +273,14 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
 
 
         val cachFlag: String = if(err.cached) "(cached)" else ""
-        val diag = new Diagnostic(range, errMsgPrefixWithWhitespace + err.readableMessage + cachFlag, DiagnosticSeverity.Error, "")
-        diagnostics.append(diag)
-
-        val params = StateChangeParams(
-          VerificationRunning.id, filename = filename,
-          uri = file_uri, diagnostics = diagnostics.toArray)
-        coordinator.sendStateChangeNotification(params, Some(task))
+        new Diagnostic(range, errMsgPrefixWithWhitespace + err.readableMessage + cachFlag, DiagnosticSeverity.Error, "")
       })
+
+      diagnostics.appendAll(diags)
+      val params = StateChangeParams(
+        VerificationRunning.id, filename = filename,
+        uri = file_uri, diagnostics = diagnostics.toArray)
+      coordinator.sendStateChangeNotification(params, Some(task))
     }
   }
 
