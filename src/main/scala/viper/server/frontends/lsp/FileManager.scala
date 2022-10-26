@@ -19,7 +19,6 @@ import viper.silver.ast.{AbstractSourcePosition, Domain, Field, Function, HasLin
 import viper.silver.reporter._
 import viper.silver.verifier.{AbortedExceptionally, AbstractError}
 
-import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.Future
@@ -140,9 +139,10 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
 
     /**
       * errors that have already been reported to the client; This is used to identify errors in OverallFailureMessage
-      * that have not been reported yet.
+      * that have not been reported yet. Note that this is a `Seq` instead of a `Set` because we have to use reference
+      * equality when comparing errors because two errors with offending nodes at different positions might be equal!
       */
-    val reportedErrors: mutable.Set[AbstractError] = mutable.Set.empty
+    var reportedErrors: Seq[AbstractError] = Seq.empty
 
     override def receive: PartialFunction[Any, Unit] = {
       case ProgramOutlineReport(members) =>
@@ -192,12 +192,12 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         val params = StateChangeParams(VerificationRunning.id, progress = 0, filename = filename)
         coordinator.sendStateChangeNotification(params, Some(task))
       case AstConstructionFailureMessage(_, res) =>
-        reportedErrors.addAll(res.errors)
+        reportedErrors = reportedErrors :++ res.errors
         processErrors(backendClassName, res.errors, Some("Constructing the AST has failed:"))
       case ExceptionReport(e) =>
         processErrors(backendClassName, Seq(AbortedExceptionally(e)))
       case InvalidArgumentsReport(_, errors) =>
-        reportedErrors.addAll(errors)
+        reportedErrors = reportedErrors :++ errors
         processErrors(backendClassName, errors, Some(s"Invalid arguments have been passed to the backend $backendClassName:"))
       case EntitySuccessMessage(_, concerning, _, _) =>
         if (progress == null) {
@@ -210,7 +210,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
           coordinator.sendStateChangeNotification(params, Some(task))
         }
       case EntityFailureMessage(_, _, _, res, _) =>
-        reportedErrors.addAll(res.errors)
+        reportedErrors = reportedErrors :++ res.errors
         processErrors(backendClassName, res.errors)
       case OverallSuccessMessage(_, verificationTime) =>
         state = VerificationReporting
@@ -223,7 +223,8 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         // this is important since Silicon provides errors as part of EntityFailureMessages and the OverallFailureMessage
         // where else Carbon does not produce EntityFailureMessages (except for cached members in which case
         // ViperServer produces EntitySuccessMessage and EntityFailureMessages)
-        val newErrors = failure.errors.filter(err => reportedErrors.add(err)) // add returns true if `err` is not yet in the set
+        val newErrors = failure.errors.filter(err => reportedErrors.forall(reportedErr => reportedErr ne err)) // note that we use reference equality here (as described in the comment related to `reportedErrors`
+        reportedErrors = reportedErrors :++ newErrors
         processErrors(backendClassName, newErrors)
       // the completion handler is not yet invoked (but as part of Status.Success)
       case m: Message => coordinator.client.notifyUnhandledViperServerMessage(UnhandledViperServerMessageTypeParams(m.name, m.toString, LogLevel.Info.id))
@@ -238,7 +239,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
     }
 
     private def processErrors(backendClassName: String, errors: Seq[AbstractError], errorMsgPrefix: Option[String] = None): Unit = {
-      errors.foreach(err => {
+      val diags = errors.map(err => {
         var errorType: String = ""
         if (err.fullId != null && err.fullId == "typechecker.error") {
           typeCheckingCompleted = false
@@ -271,14 +272,14 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
 
 
         val cachFlag: String = if(err.cached) "(cached)" else ""
-        val diag = new Diagnostic(range, errMsgPrefixWithWhitespace + err.readableMessage + cachFlag, DiagnosticSeverity.Error, "")
-        diagnostics.append(diag)
-
-        val params = StateChangeParams(
-          VerificationRunning.id, filename = filename,
-          uri = file_uri, diagnostics = diagnostics.toArray)
-        coordinator.sendStateChangeNotification(params, Some(task))
+        new Diagnostic(range, errMsgPrefixWithWhitespace + err.readableMessage + cachFlag, DiagnosticSeverity.Error, "")
       })
+
+      diagnostics.appendAll(diags)
+      val params = StateChangeParams(
+        VerificationRunning.id, filename = filename,
+        uri = file_uri, diagnostics = diagnostics.toArray)
+      coordinator.sendStateChangeNotification(params, Some(task))
     }
   }
 

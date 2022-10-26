@@ -25,7 +25,6 @@ import viper.silver.reporter.{EntityFailureMessage, Message, OverallFailureMessa
 import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerifierFailure, Success => VerifierSuccess}
 
 import java.util.concurrent.CompletableFuture
-import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future, Promise}
 import scala.util.{Failure, Success}
@@ -394,16 +393,15 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       val relayActorRef = context.actorSystem.actorOf(fileManager.RelayActor.props(fileManager, "carbon"))
       implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
       core.streamMessages(jid, relayActorRef).getOrElse(Future.failed(JobNotFoundException))
-        .flatMap(_ => (relayActorRef ? fileManager.RelayActor.GetReportedErrors()).mapTo[mutable.Set[AbstractError]])
+        .flatMap(_ => (relayActorRef ? fileManager.RelayActor.GetReportedErrors()).mapTo[Seq[AbstractError]])
         .map(actualErrors => {
-        val lineNrsOfActualVerificationErrors = actualErrors
-          .toSeq
-          .map(_.pos match {
-            case lc: HasLineColumn => lc.line
-            case p => fail(s"error should have positional information but got $p")
-          })
-          .sorted
-        assert(lineNrsOfExpectedVerificationErrors == lineNrsOfActualVerificationErrors)
+          val lineNrsOfActualVerificationErrors = actualErrors
+            .map(_.pos match {
+              case lc: HasLineColumn => lc.line
+              case p => fail(s"error should have positional information but got $p")
+            })
+            .sorted
+          assert(lineNrsOfExpectedVerificationErrors == lineNrsOfActualVerificationErrors)
       })
     })(viperServerServiceFactory)
 

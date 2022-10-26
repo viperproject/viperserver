@@ -223,9 +223,9 @@ class ViperBackend(private val _frontend: SilFrontend, private val programId: St
         if (cacheable_errors.isDefined) {
           ViperCache.update(backendName, programId, m, transformed_prog, cacheable_errors.get) match {
             case e :: es =>
-              _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}): $e. Other entries for this method: ($es)")
+              _frontend.logger.trace(s"Storing new entry in cache for method '${m.name}' and backend '$backendName': $e. Other entries for this method: ($es)")
             case Nil =>
-              _frontend.logger.trace(s"Storing new entry in cache for method (${m.name}) FAILED.")
+              _frontend.logger.trace(s"Storing new entry in cache for method '${m.name}' and backend '$backendName' FAILED.")
           }
         }
       }
