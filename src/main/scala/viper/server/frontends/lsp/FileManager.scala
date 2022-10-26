@@ -9,7 +9,7 @@ package viper.server.frontends.lsp
 import java.net.URI
 import java.nio.file.{Path, Paths}
 import akka.actor.{Actor, Props, Status}
-import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, Location, Position, PublishDiagnosticsParams, Range, SymbolInformation, SymbolKind}
+import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, DocumentSymbol, Position, PublishDiagnosticsParams, Range, SymbolKind}
 import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp
 import viper.server.frontends.lsp.VerificationState._
@@ -46,7 +46,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
   var parsingCompleted: Boolean = false
   var typeCheckingCompleted: Boolean = false
   var progress: ProgressCoordinator = _
-  var symbolInformation: ArrayBuffer[SymbolInformation] = ArrayBuffer()
+  var symbolInformation: ArrayBuffer[DocumentSymbol] = ArrayBuffer()
   var definitions: ArrayBuffer[lsp.Definition] = ArrayBuffer()
 
   private var partialData: String = ""
@@ -153,7 +153,6 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
           val range_start = new Position(member_start.line - 1, member_start.column - 1)
           val range_end = new Position(member_end.line - 1, member_end.column - 1)
           val range = new Range(range_start, range_end)
-          val location: Location = new Location(file_uri, range)
 
           val kind = m match {
             case _: Method => SymbolKind.Method
@@ -163,7 +162,9 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
             case _: Domain => SymbolKind.Class
             case _ => SymbolKind.Enum
           }
-          val info: SymbolInformation = new SymbolInformation(m.name, kind, location)
+          // for now, we use `range` as range & selectionRange. The latter one is supposed to be only a sub-range
+          // that should be selected when the user selects the symbol.
+          val info = new DocumentSymbol(m.name, kind, range, range)
           symbolInformation.append(info)
         })
       case ProgramDefinitionsReport(defs) =>

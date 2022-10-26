@@ -7,7 +7,7 @@
 package viper.server.frontends.lsp
 
 import ch.qos.logback.classic.Logger
-import org.eclipse.lsp4j.SymbolInformation
+import org.eclipse.lsp4j.DocumentSymbol
 import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp.VerificationState.Ready
 
@@ -78,7 +78,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
       .foreach(fm => fm.resetDiagnostics())
   }
 
-  def getSymbolsForFile(uri: String): Array[SymbolInformation]= {
+  def getSymbolsForFile(uri: String): Array[DocumentSymbol]= {
     Option(_files.get(uri))
       .map(fm => fm.symbolInformation.toArray)
       .getOrElse(Array.empty)
