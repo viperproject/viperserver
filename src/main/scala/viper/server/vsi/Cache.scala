@@ -168,8 +168,7 @@ abstract class Cache {
     }
   }
 
-  /** Resets the cache for a particular file.
-    * */
+  /** Resets the cache for a particular file. */
   def forgetFile(file_key: String): Option[String] = {
     val key = _cache.get(file_key) match {
       case Some(_) => Some(file_key)

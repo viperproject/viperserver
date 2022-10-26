@@ -138,6 +138,26 @@ class ViperCoreServer(val config: ViperConfig)(implicit val executor: Verificati
     res
   }
 
+  /** if a file path is provided, only the cache for the particular file is flushed */
+  def flushCachePartially(backendAndFilePath: Option[(String, String)], localLogger: Option[Logger] = None): Boolean = {
+    val logger = combineLoggers(localLogger)
+    backendAndFilePath match {
+      case Some((backend, file)) =>
+        logger.info(s"Requesting ViperServer to flush the cache for backend $backend and file $file...")
+        val flushed_file_opt = ViperCache.forgetFile(backend, file)
+
+        if (flushed_file_opt.isDefined) {
+          logger.debug(s"ViperServer has confirmed that the cache for backend $backend and file $file has been flushed.")
+        } else {
+          logger.debug(s"Error while requesting ViperServer to flush the cache for backend $backend and $file: not found.")
+        }
+        flushed_file_opt.isDefined
+      case None =>
+        logger.info("Flush entire cache...")
+        flushCache(localLogger)
+    }
+  }
+
   override def stop(): Future[List[String]] = {
     globalLogger.info(s"Stopping ViperCoreServer")
     super.stop()

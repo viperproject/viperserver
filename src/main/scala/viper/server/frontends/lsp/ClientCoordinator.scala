@@ -147,11 +147,11 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   def flushCache(uriOpt: Option[String], backendOpt: Option[String]): Future[Unit] = {
     (uriOpt, backendOpt) match {
       case (Some(uri), Some(backend)) =>
-        val success = server.flushCachePartially(Some((uri, backend)), Some(localLogger))
+        val success = server.flushCachePartially(Some((backend, uri)), Some(localLogger))
         if (success) {
           Future.unit
         } else {
-          Future.failed(new Exception(s"Flushing the cache failed because no cache for backend ${backend} and file $uri not found"))
+          Future.failed(new Exception(s"Flushing the cache failed because no cache for backend $backend and file $uri not found"))
         }
 
       case (Some(_), None) =>

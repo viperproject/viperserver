@@ -61,17 +61,17 @@ class VerificationWorker(private val command: List[String],
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
-          backend = new ViperBackend(new SiliconFrontend(new ActorReporter("silicon"), logger), programId, program)
+          backend = new ViperBackend("silicon", new SiliconFrontend(new ActorReporter("silicon"), logger), programId, program)
           backend.execute(args)
           success = true
         case "carbon" :: args =>
           logger.info("Creating new Carbon verification backend.")
-          backend = new ViperBackend(new CarbonFrontend(new ActorReporter("carbon"), logger), programId, program)
+          backend = new ViperBackend("carbon", new CarbonFrontend(new ActorReporter("carbon"), logger), programId, program)
           backend.execute(args)
           success = true
         case "custom" :: custom :: args =>
           logger.info(s"Creating new verification backend based on class $custom.")
-          backend = new ViperBackend(resolveCustomBackend(custom, new ActorReporter(custom)).get, programId, program)
+          backend = new ViperBackend(custom, resolveCustomBackend(custom, new ActorReporter(custom)).get, programId, program)
           backend.execute(args)
           success = true
         case args =>
@@ -105,9 +105,7 @@ class VerificationWorker(private val command: List[String],
   override def call(): Unit = run()
 }
 
-class ViperBackend(private val _frontend: SilFrontend, private val programId: String, private val _ast: Program) {
-
-  def backendName: String = _frontend.verifier.getClass.getName
+class ViperBackend(val backendName: String, private val _frontend: SilFrontend, private val programId: String, private val _ast: Program) {
 
   override def toString: String = {
     if ( _frontend.verifier == null )

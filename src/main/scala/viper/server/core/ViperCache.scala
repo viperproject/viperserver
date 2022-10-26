@@ -92,7 +92,7 @@ object ViperCache extends Cache {
             logger.warn(s"Parsing of CacheEntry for method ${concerning_method.name} and backend $backendName failed, error is: ${e.getMessage}")
             logger.debug(s"$e")
             super.forgetFile(file_key)
-            return(p, List())
+            return (p, List())
         }
     }).filter(e => e != null)
 
