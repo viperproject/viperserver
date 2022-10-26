@@ -43,7 +43,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
   //verification results
   var jid: Int = -1
   var timeMs: Long = 0
-  var diagnostics: ArrayBuffer[Diagnostic] = _
+  var diagnostics: ArrayBuffer[Diagnostic] = ArrayBuffer.empty
   var parsingCompleted: Boolean = false
   var typeCheckingCompleted: Boolean = false
   var progress: ProgressCoordinator = _
@@ -53,7 +53,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
   private var partialData: String = ""
 
   def resetDiagnostics(): Unit = {
-    diagnostics = ArrayBuffer()
+    diagnostics = ArrayBuffer.empty
     val diagnosticParams = new PublishDiagnosticsParams()
     diagnosticParams.setUri(file_uri)
     diagnosticParams.setDiagnostics(diagnostics.asJava)
@@ -132,6 +132,8 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
 
   object RelayActor {
     def props(task: FileManager, backendClassName: String): Props = Props(new RelayActor(task, backendClassName))
+
+    case class GetReportedErrors()
   }
 
   class RelayActor(task: FileManager, backendClassName: String) extends Actor {
@@ -231,6 +233,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
       case Status.Failure(cause) =>
         coordinator.logger.info(s"Streaming messages has failed in RelayActor with cause $cause")
         completionHandler(-1) // no success
+      case RelayActor.GetReportedErrors() => sender() ! reportedErrors
       case e: Throwable => coordinator.logger.debug(s"RelayActor received throwable: $e")
     }
 
