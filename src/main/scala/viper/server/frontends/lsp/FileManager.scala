@@ -8,21 +8,23 @@ package viper.server.frontends.lsp
 
 import java.net.URI
 import java.nio.file.{Path, Paths}
-import java.util.concurrent.{CompletableFuture => CFuture}
-
-import akka.actor.{Actor, Props}
-import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, Location, Position, PublishDiagnosticsParams, Range, SymbolInformation, SymbolKind}
+import akka.actor.{Actor, Props, Status}
+import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, DocumentSymbol, Position, PublishDiagnosticsParams, Range, SymbolKind}
+import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.server.vsi.VerJobId
-import viper.silver.ast.{Domain, Field, Function, Method, Predicate, SourcePosition}
+import viper.silver.ast.{AbstractSourcePosition, Domain, Field, Function, HasLineColumn, Method, Predicate, SourcePosition}
 import viper.silver.reporter._
+import viper.silver.verifier.{AbortedExceptionally, AbstractError}
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
+import scala.concurrent.Future
 
-class FileManager(file_uri: String) {
+
+class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit executor: VerificationExecutionContext) {
   // File information
   var uri: URI = URI.create(file_uri)
   var path: Path = Paths.get(uri)
@@ -39,23 +41,22 @@ class FileManager(file_uri: String) {
 
   //verification results
   var jid: Int = -1
-  var time: Long = 0
-  var diagnostics: ArrayBuffer[Diagnostic] = _
+  var timeMs: Long = 0
+  var diagnostics: ArrayBuffer[Diagnostic] = ArrayBuffer.empty
   var parsingCompleted: Boolean = false
   var typeCheckingCompleted: Boolean = false
-  var backendType: String = _
-  var progress: Progress = _
-  var symbolInformation: ArrayBuffer[SymbolInformation] = ArrayBuffer()
+  var progress: ProgressCoordinator = _
+  var symbolInformation: ArrayBuffer[DocumentSymbol] = ArrayBuffer()
   var definitions: ArrayBuffer[lsp.Definition] = ArrayBuffer()
 
   private var partialData: String = ""
 
   def resetDiagnostics(): Unit = {
-    diagnostics = ArrayBuffer()
+    diagnostics = ArrayBuffer.empty
     val diagnosticParams = new PublishDiagnosticsParams()
     diagnosticParams.setUri(file_uri)
     diagnosticParams.setDiagnostics(diagnostics.asJava)
-    Coordinator.client.publishDiagnostics(diagnosticParams)
+    coordinator.client.publishDiagnostics(diagnosticParams)
   }
 
   def resetLastSuccess(): Unit = {
@@ -66,73 +67,62 @@ class FileManager(file_uri: String) {
     is_verifying = true
     is_aborting = false
     state = Stopped
-    if (partialData.length > 0) {
-      Log.debug("Some unparsed output was detected:\n" + partialData)
+    if (partialData.nonEmpty) {
+      coordinator.logger.debug(s"Some unparsed output has been detected: $partialData")
       partialData = ""
     }
-    time = 0
+    timeMs = 0
     resetDiagnostics()
     parsingCompleted = true
     typeCheckingCompleted = true
     internalErrorMessage = ""
   }
 
-  def abortVerification(): CFuture[Void] = {
+  def stopVerification(): Future[Unit] = {
+    coordinator.logger.trace(s"stop verification of $file_uri")
     if (!is_verifying) {
-      return CFuture.completedFuture(null)
+      coordinator.logger.trace(s"verification of $file_uri did not have to be stopped because there is no ongoing verification")
+      return Future.unit
     }
-    Log.info("Aborting running verification.")
+    coordinator.logger.info("Aborting running verification.")
     is_aborting = true
-    Coordinator.verifier.stopVerification(VerJobId(jid)).thenAccept(_ => {
-      is_verifying = false
-      lastSuccess = Aborted
-    }).exceptionally(e => {
-      Log.debug("Error aborting verification of " + filename + ": " + e)
-      null
-    })
+    coordinator.server.stopVerification(VerJobId(jid), Some(coordinator.localLogger)).transform(
+      _ => {
+        is_verifying = false
+        lastSuccess = Aborted
+      },
+      e => {
+        coordinator.logger.debug(s"Error aborting verification of $filename: $e")
+        e
+      }
+    )
   }
 
-
-  def getVerificationCommand(fileToVerify: String): Option[String] = {
-    try {
-      val args: String = getViperBackendClassName() + s" $fileToVerify"
-      Log.debug(args)
-      Some(args)
-    } catch {
-      case e: Throwable =>
-        Log.debug("Error finding backend: ", e)
-        None
+  /** the file that should be verified has to already be part of `customArgs` */
+  def getVerificationCommand(backendClassName: String, customArgs: String): String = {
+    if (backendClassName != "silicon" && backendClassName != "carbon") {
+      throw new Error(s"Invalid verification backend value. " +
+        s"Possible values are [silicon | carbon] " +
+        s"but found $backendClassName")
     }
+    s"$backendClassName $customArgs"
   }
 
-  def getViperBackendClassName(): String = {
-    Coordinator.backend.backend_type match {
-      case "Silicon" => "silicon"
-      case "Carbon" => "carbon"
-      case _ => throw new Error(s"Invalid verification backend value. " +
-        s"Possible values are [silicon | carbon | other] " +
-        s"but found ${Coordinator.backend}")
-    }
-  }
-
-  def startVerification(manuallyTriggered: Boolean): Boolean = {
+  def startVerification(backendClassName: String, customArgs: String, manuallyTriggered: Boolean): Boolean = {
     prepareVerification()
     this.manuallyTriggered = manuallyTriggered
 
-    Log.info(s"verify $filename")
-    Log.info(s"${Coordinator.backend.name} verification started")
+    coordinator.logger.info(s"verify $filename")
 
     val params = StateChangeParams(VerificationRunning.id, filename = filename)
-    println("state change params created")
-    Coordinator.sendStateChangeNotification(params, Some(this))
-    println("state change params sent")
+    coordinator.sendStateChangeNotification(params, Some(this))
 
-    val command = getVerificationCommand(path.toString).getOrElse(return false)
-    Log.info(s"Successfully generated command: $command")
-    val handle = Coordinator.verifier.verify(command)
+    val command = getVerificationCommand(backendClassName, customArgs)
+    coordinator.logger.debug(s"verification command: $command")
+    val handle = coordinator.server.verifyWithCommand(command, Some(coordinator.localLogger))
     jid = handle.id
     if (jid >= 0) {
-      Coordinator.verifier.startStreaming(handle, RelayActor.props(this))
+      coordinator.server.startStreaming(handle, RelayActor.props(this, backendClassName), Some(coordinator.localLogger))
       true
     } else {
       false
@@ -140,10 +130,19 @@ class FileManager(file_uri: String) {
   }
 
   object RelayActor {
-    def props(task: FileManager): Props = Props(new RelayActor(task))
+    def props(task: FileManager, backendClassName: String): Props = Props(new RelayActor(task, backendClassName))
+
+    case class GetReportedErrors()
   }
 
-  class RelayActor(task: FileManager) extends Actor {
+  class RelayActor(task: FileManager, backendClassName: String) extends Actor {
+
+    /**
+      * errors that have already been reported to the client; This is used to identify errors in OverallFailureMessage
+      * that have not been reported yet. Note that this is a `Seq` instead of a `Set` because we have to use reference
+      * equality when comparing errors because two errors with offending nodes at different positions might be equal!
+      */
+    var reportedErrors: Seq[AbstractError] = Seq.empty
 
     override def receive: PartialFunction[Any, Unit] = {
       case ProgramOutlineReport(members) =>
@@ -154,7 +153,6 @@ class FileManager(file_uri: String) {
           val range_start = new Position(member_start.line - 1, member_start.column - 1)
           val range_end = new Position(member_end.line - 1, member_end.column - 1)
           val range = new Range(range_start, range_end)
-          val location: Location = new Location(file_uri, range)
 
           val kind = m match {
             case _: Method => SymbolKind.Method
@@ -164,7 +162,9 @@ class FileManager(file_uri: String) {
             case _: Domain => SymbolKind.Class
             case _ => SymbolKind.Enum
           }
-          val info: SymbolInformation = new SymbolInformation(m.name, kind, location)
+          // for now, we use `range` as range & selectionRange. The latter one is supposed to be only a sub-range
+          // that should be selected when the user selects the symbol.
+          val info = new DocumentSymbol(m.name, kind, range, range)
           symbolInformation.append(info)
         })
       case ProgramDefinitionsReport(defs) =>
@@ -188,136 +188,166 @@ class FileManager(file_uri: String) {
           val definition: lsp.Definition = lsp.Definition(d.typ, d.name, location, range)
           definitions.append(definition)
         })
-    case StatisticsReport(m, f, p, _, _) =>
-      progress = new Progress(p, f, m)
-      val params = StateChangeParams(VerificationRunning.id, progress = 0, filename = filename)
-      Coordinator.sendStateChangeNotification(params, Some(task))
-    case EntitySuccessMessage(_, concerning, _, _) =>
-      if (progress == null) {
-        Log.debug("The backend must send a VerificationStart message before the ...Verified message.")
-      } else {
-        val output = BackendOutput(BackendOutputType.FunctionVerified, name = concerning.name)
-        progress.updateProgress(output)
-        val progressPercentage = progress.toPercent
-        val params = StateChangeParams(VerificationRunning.id, progress = progressPercentage, filename = filename)
-        Coordinator.sendStateChangeNotification(params, Some(task))
-      }
-    case EntityFailureMessage(_, _, _, res, _) =>
-      res.errors.foreach(err => {
+      case StatisticsReport(m, f, p, _, _) =>
+        progress = new ProgressCoordinator(coordinator, p, f, m)
+        val params = StateChangeParams(VerificationRunning.id, progress = 0, filename = filename)
+        coordinator.sendStateChangeNotification(params, Some(task))
+      case AstConstructionFailureMessage(_, res) =>
+        reportedErrors = reportedErrors :++ res.errors
+        processErrors(backendClassName, res.errors, Some("Constructing the AST has failed:"))
+      case ExceptionReport(e) =>
+        processErrors(backendClassName, Seq(AbortedExceptionally(e)))
+      case InvalidArgumentsReport(_, errors) =>
+        reportedErrors = reportedErrors :++ errors
+        processErrors(backendClassName, errors, Some(s"Invalid arguments have been passed to the backend $backendClassName:"))
+      case EntitySuccessMessage(_, concerning, _, _) =>
+        if (progress == null) {
+          coordinator.logger.debug("The backend must send a VerificationStart message before the ...Verified message.")
+        } else {
+          val output = BackendOutput(BackendOutputType.FunctionVerified, name = concerning.name)
+          progress.updateProgress(output)
+          val progressPercentage = progress.toPercent
+          val params = StateChangeParams(VerificationRunning.id, progress = progressPercentage, filename = filename)
+          coordinator.sendStateChangeNotification(params, Some(task))
+        }
+      case EntityFailureMessage(_, _, _, res, _) =>
+        reportedErrors = reportedErrors :++ res.errors
+        processErrors(backendClassName, res.errors)
+      case OverallSuccessMessage(_, verificationTime) =>
+        state = VerificationReporting
+        timeMs = verificationTime
+        // the completion handler is not yet invoked (but as part of Status.Success)
+      case OverallFailureMessage(_, verificationTime, failure) =>
+        state = VerificationReporting
+        timeMs = verificationTime
+        // we filter `failure.errors` such that only new errors are reported
+        // this is important since Silicon provides errors as part of EntityFailureMessages and the OverallFailureMessage
+        // where else Carbon does not produce EntityFailureMessages (except for cached members in which case
+        // ViperServer produces EntitySuccessMessage and EntityFailureMessages)
+        val newErrors = failure.errors.filter(err => reportedErrors.forall(reportedErr => reportedErr ne err)) // note that we use reference equality here (as described in the comment related to `reportedErrors`
+        reportedErrors = reportedErrors :++ newErrors
+        processErrors(backendClassName, newErrors)
+      // the completion handler is not yet invoked (but as part of Status.Success)
+      case m: Message => coordinator.client.notifyUnhandledViperServerMessage(UnhandledViperServerMessageTypeParams(m.name, m.toString, LogLevel.Info.id))
+      case Status.Success =>
+        // Success is sent when the stream is completed
+        completionHandler(0)
+      case Status.Failure(cause) =>
+        coordinator.logger.info(s"Streaming messages has failed in RelayActor with cause $cause")
+        completionHandler(-1) // no success
+      case RelayActor.GetReportedErrors() => sender() ! reportedErrors
+      case e: Throwable => coordinator.logger.debug(s"RelayActor received throwable: $e")
+    }
+
+    private def processErrors(backendClassName: String, errors: Seq[AbstractError], errorMsgPrefix: Option[String] = None): Unit = {
+      val diags = errors.map(err => {
+        var errorType: String = ""
         if (err.fullId != null && err.fullId == "typechecker.error") {
           typeCheckingCompleted = false
-        }
-        else if (err.fullId != null && err.fullId == "parser.error") {
+          errorType = "Typechecker error"
+        } else if (err.fullId != null && err.fullId == "parser.error") {
           parsingCompleted = false
           typeCheckingCompleted = false
-        }
-        val err_start = err.pos.asInstanceOf[SourcePosition].start
-        val err_end = err.pos.asInstanceOf[SourcePosition].end
-        val start_pos = new Position(err_start.line - 1, err_start.column - 1)
-        val end_pos = if(err_end.isDefined) {
-          new Position(err_end.get.line - 1, err_end.get.column - 1)
+          errorType = "Parser error"
         } else {
-          null
+          errorType = "Verification error"
         }
-        val range = new Range(start_pos, end_pos)
-        Log.toLogFile(s"Error: [${Coordinator.backend.name}] " +
+
+        val range = {
+          val startPos = err.pos match {
+            case p: HasLineColumn => new Position(p.line - 1, p.column - 1) // in case of SourcePosition, this indeed corresponds to the start position
+            case _ => new Position(0, 0)
+          }
+          val endPos = err.pos match {
+            // returning `startPos` instead of (0, 0) ensures that we do not create an end position that occurs before the start position
+            case sp: AbstractSourcePosition => sp.end.map(end => new Position(end.line - 1, end.column - 1)).getOrElse(startPos)
+            case _ => startPos
+          }
+          new Range(startPos, endPos)
+        }
+
+        val errMsgPrefixWithWhitespace = errorMsgPrefix.map(s => s"$s ").getOrElse("")
+        coordinator.logger.debug(s"$errorType: [$backendClassName] " +
           s"${if(err.fullId != null) "[" + err.fullId + "] " else ""}" +
-          s"${range.getStart.getLine + 1}:${range.getStart.getCharacter + 1} ${err.readableMessage}s")
+          s"${range.getStart.getLine + 1}:${range.getStart.getCharacter + 1} $errMsgPrefixWithWhitespace${err.readableMessage}s")
 
 
         val cachFlag: String = if(err.cached) "(cached)" else ""
-        val diag = new Diagnostic(range, err.readableMessage + cachFlag, DiagnosticSeverity.Error, "")
-        diagnostics.append(diag)
-
-        val params = StateChangeParams(
-                      VerificationRunning.id, filename = filename, nofErrors = diagnostics.length,
-                      uri = file_uri, diagnostics = diagnostics.toArray)
-        Coordinator.sendStateChangeNotification(params, Some(task))
+        new Diagnostic(range, errMsgPrefixWithWhitespace + err.readableMessage + cachFlag, DiagnosticSeverity.Error, "")
       })
-    case OverallSuccessMessage(_, verificationTime) =>
-      state = VerificationReporting
-      time = verificationTime
-      completionHandler(0)
-    case OverallFailureMessage(_, verificationTime, _) =>
-      state = VerificationReporting
-      time = verificationTime
-      completionHandler(0)
-    case m: Message => Coordinator.client.notifyUnhandledViperServerMessage(m.toString, 2)
-    case e: Throwable => Log.debug("RelayActor received throwable: ", e)
+
+      diagnostics.appendAll(diags)
+      val params = StateChangeParams(
+        VerificationRunning.id, filename = filename,
+        uri = file_uri, diagnostics = diagnostics.toArray)
+      coordinator.sendStateChangeNotification(params, Some(task))
     }
   }
 
   private def determineSuccess(code: Int): VerificationSuccess = {
-    if (diagnostics.isEmpty && code == 0) {
-      VerificationSuccess.Success
-    } else if (diagnostics.nonEmpty) {
-      //use tag and backend trace as indicators for completed parsing
-      if (!parsingCompleted) {
-        ParsingFailed
-      } else if (parsingCompleted && !typeCheckingCompleted) {
-        TypecheckingFailed
-      } else {
-        VerificationFailed
-      }
+    if (code != 0) {
+      Error
+    } else if (!parsingCompleted) {
+      ParsingFailed
+    } else if (!typeCheckingCompleted) {
+      TypecheckingFailed
     } else if (is_aborting) {
       Aborted
+    } else if (diagnostics.nonEmpty) {
+      VerificationFailed
     } else {
-      Error
+      VerificationSuccess.Success
     }
   }
 
   private def completionHandler(code: Int): Unit = {
+    is_verifying = false
     try {
-      Log.debug(s"completionHandler is called with code ${code}")
-      if (is_aborting) {
-        is_verifying = false
-        return
-      }
+      coordinator.logger.debug(s"completionHandler is called with code $code")
+
       var params: StateChangeParams = null
       var success = NA
+      val mt = if (this.manuallyTriggered) 1 else 0
 
       val isVerifyingStage = true
 
-      //do we need to start a followUp Stage?
+      // do we need to start a followUp Stage?
       if (isVerifyingStage) {
-        if (partialData != null && partialData.length > 0) {
-          Log.debug("Some unparsed output was detected:\n" + partialData)
+        if (partialData != null && partialData.nonEmpty) {
+          coordinator.logger.debug(s"Some unparsed output was detected: $partialData")
           partialData = ""
         }
 
-        //inform client about postProcessing
+        // inform client about postProcessing
         success = determineSuccess(code)
         params = StateChangeParams(PostProcessing.id, filename = filename)
-        Coordinator.sendStateChangeNotification(params, Some(this));
+        coordinator.sendStateChangeNotification(params, Some(this))
 
-        //notify client about outcome of verification
-        val mt = if(this.manuallyTriggered) 1 else 0
+        // notify client about outcome of verification
         params = StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt,
-          filename = filename, nofErrors = diagnostics.length, time = time.toDouble,
-          verificationCompleted = 1, uri = file_uri, error = internalErrorMessage)
-        Coordinator.sendStateChangeNotification(params, Some(this))
+          filename = filename, time = timeMs.toDouble / 1000, verificationCompleted = 1, uri = file_uri,
+          error = internalErrorMessage, diagnostics = diagnostics.toArray)
+        coordinator.sendStateChangeNotification(params, Some(this))
 
         if (code != 0 && code != 1 && code != 899) {
-          Log.debug("Verification Backend Terminated Abnormally: with code " + code)
+          coordinator.logger.debug(s"Verification Backend Terminated Abnormally: with code $code")
         }
       } else {
-        success = Success
-        val mt = if(this.manuallyTriggered) 1 else 0
+        success = if (is_aborting) Aborted else Success
         params = StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt,
-          filename = filename, nofErrors = 0, time = time.toDouble,
-          verificationCompleted = 0, uri = file_uri, error = internalErrorMessage)
-        Coordinator.sendStateChangeNotification(params, Some(this))
+          filename = filename, time = timeMs.toDouble / 1000, verificationCompleted = 0, uri = file_uri,
+          error = internalErrorMessage, diagnostics = diagnostics.toArray)
+        coordinator.sendStateChangeNotification(params, Some(this))
       }
 
-      //reset for next verification
+      // reset for next verification
       lastSuccess = success
-      time = 0
-      is_verifying = false
+      timeMs = 0
     } catch {
       case e: Throwable =>
         is_verifying = false
-        Coordinator.client.notifyVerificationNotStarted(file_uri)
-        Log.debug("Error handling verification completion: ", e)
+        coordinator.client.notifyVerificationNotStarted(VerificationNotStartedParams(file_uri))
+        coordinator.logger.debug(s"Error handling verification completion: $e")
     }
   }
 }

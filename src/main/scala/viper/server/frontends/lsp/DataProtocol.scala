@@ -13,10 +13,10 @@ object VerificationSuccess extends Enumeration {
   type VerificationSuccess = Value
 
   val NA, Success, ParsingFailed, TypecheckingFailed = Value
-  val VerificationFailed = Value  // Manually aborted verification
-  val Aborted = Value             // Caused by internal error
-  val Error = Value               // Caused by verification taking too long
-  val Timeout = Value
+  val VerificationFailed: VerificationSuccess = Value  // Manually aborted verification
+  val Aborted: VerificationSuccess = Value             // Caused by internal error
+  val Error: VerificationSuccess = Value               // Caused by verification taking too long
+  val Timeout: VerificationSuccess = Value
 }
 import viper.server.frontends.lsp.VerificationSuccess._
 
@@ -25,10 +25,7 @@ object VerificationState extends Enumeration {
 
   val Stopped, Starting = Value
   val VerificationRunning, VerificationPrintingHelp, VerificationReporting = Value
-  val PostProcessing = Value
-  val Ready = Value
-  val Stopping = Value
-  val Stage = Value
+  val PostProcessing, Ready, Stopping, Stage = Value
 }
 
 object SettingsErrorType extends Enumeration {
@@ -41,12 +38,12 @@ import viper.server.frontends.lsp.SettingsErrorType._
 object LogLevel extends Enumeration {
   type LogLevel = Value
 
-  val None = Value // No output
-  val Default = Value // Only verification specific output
-  val Info = Value // Some info about internal state, critical errors
-  val Verbose = Value // More info about internal state
-  val Debug = Value // Detailed information about internal state, non critical errors
-  val LowLevelDebug = Value // all output of used tools is written to logFile, some of it also to the console
+  val None: LogLevel = Value // No output
+  val Default: LogLevel = Value // Only verification specific output
+  val Info: LogLevel = Value // Some info about internal state, critical errors
+  val Verbose: LogLevel = Value // More info about internal state
+  val Debug: LogLevel = Value // Detailed information about internal state, non critical errors
+  val LowLevelDebug: LogLevel = Value // all output of used tools is written to logFile, some of it also to the console
 }
 
 object BackendOutputType {
@@ -63,7 +60,9 @@ object BackendOutputType {
   val Stopped = "Stopped"
 }
 
-case class ProgressReport (
+case class ProgressParams(data: Progress, logLevel: Int)
+
+case class Progress (
               domain: String,
               current: Double,
               total: Double,
@@ -80,10 +79,12 @@ case class BackendProperties(
               stoppingTimeout: Int = 5000,
               version: String = null)
 
-case class VerifyRequest (
+case class VerifyParams (
               uri: String,                  // file to verify
               manuallyTriggered: Boolean,   // was the verification triggered manually
-              workspace: String)            // the path to the open workspace folder
+              workspace: String,            // the path to the open workspace folder
+              backend: String,
+              customArgs: String)            // contains the path of the file that should be verified
 
 case class SettingsError (errorType: SettingsErrorType, msg: String)
 
@@ -126,11 +127,20 @@ case class BackendOutput(
 //////              SETTINGS                                                                 ///////
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-case class Hint(msg: String, showButton1: Boolean, showButton2: Boolean)
+case class GetVersionRequest(clientVersion: String)
+
+case class GetVersionResponse(
+                               serverVersion: String,
+                               error: String = null // error message if client is not supported by server, null otherwise
+                             )
+
+case class LogParams(data: String, logLevel: Int)
+
+case class HintMessage(message: String, showSettingsButton: Boolean, showViperToolsUpdateButton: Boolean)
 
 case class BackendReadyParams(
-              name: String,  //name of the backend ready to use
-              restarted: Boolean,
+              name: String,  // name of the backend ready to use
+              restarted: Boolean, // should the open file be reverified
               isViperServer: Boolean)
 
 case class BackendStartedParams(
@@ -146,13 +156,37 @@ case class StateChangeParams(
               manuallyTriggered: Double = -1,
               filename: String = null,
               backendName: String = null,
-              time: Double = -1,
-              nofErrors: Double = -1,
+              time: Double = -1, /** [sec] */
               verificationNeeded: Double = -1,
               uri: String = null,
               stage: String = null,
               error: String = null,
               diagnostics: Array[Diagnostic] = null)
+
+case class UnhandledViperServerMessageTypeParams(msgType: String, msg: String, logLevel: Int)
+
+/**
+  *
+  * @param uri nullable (null indicates that the cache for all files should be flushed)
+  * @param backend non-null
+  */
+case class FlushCacheParams(uri: String, backend: String)
+
+case class StopVerificationRequest(uri: String)
+
+case class StopVerificationResponse(success: Boolean)
+
+case class GetLanguageServerUrlResponse(url: String)
+
+case class RemoveDiagnosticsRequest(uri: String)
+
+case class RemoveDiagnosticsResponse(success: Boolean)
+
+case class GetViperFileEndingsResponse(fileEndings: Array[String])
+
+case class GetIdentifierResponse(identifier: String)
+
+case class VerificationNotStartedParams(uri: String)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //////              SETTINGS                                                                 ///////

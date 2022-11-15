@@ -29,7 +29,8 @@
     "include": [
       "**/Dockerfile",
       "**/*.sh",
-      "**/*.conf"
+      "**/*.conf",
+      "**/*.toml"
     ],
     "exclude": [
       "carbon/**",

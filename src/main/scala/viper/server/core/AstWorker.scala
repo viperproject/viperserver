@@ -36,20 +36,16 @@ class AstWorker(val arg_list: List[String],
       astGen.generateViperAst(file)
     } catch {
       case _: java.nio.file.NoSuchFileException =>
-        val msg = s"The file ($file) for which verification has been requested was not found."
-        println(msg)
-        logger.error(msg)
+        logger.error(s"The file ($file) for which verification has been requested was not found.")
         registerTaskEnd(false)
         throw ViperFileNotFoundException
       case e@ (_: InterruptedException | _: java.nio.channels.ClosedByInterruptException) =>
-        logger.info(s"AstWorker ($file) has been interrupted", e)
+        logger.info(s"AstWorker ($file) has been interrupted: $e")
         registerTaskEnd(false)
         throw AstConstructionInterrupted
       case e: Throwable =>
         reporter report ExceptionReport(e)
-        val msg = s"Creation/Execution of an AstGenerator instance ($file) resulted in $e."
-        println(msg)
-        logger.error(msg, e)
+        logger.error(s"Creation/Execution of an AstGenerator instance ($file) resulted in $e.")
         registerTaskEnd(false)
         throw ServerCrashException(e)
     }
