@@ -12,7 +12,7 @@ import akka.pattern.ask
 import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
-import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCache, ViperCoreServer}
+import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.vsi.VerificationProtocol.StopVerification
 import viper.server.vsi.{VerJobId, VerificationServer}
