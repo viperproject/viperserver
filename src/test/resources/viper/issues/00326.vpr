@@ -13,7 +13,7 @@ method test0(n: Int)
 
 method test12(n: Int)
 {
-    assume forall x: Int :: {f(x), f(42)} g(x)
+    assume forall x: Int :: {f(x)} g(x) // LA 27.11.22: removed `f(42)` as trigger expression because it does not contain the quantified variable
 
     assert g(n) // fails due to missing triggering
 }
