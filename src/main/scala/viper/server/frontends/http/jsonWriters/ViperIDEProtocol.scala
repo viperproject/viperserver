@@ -13,7 +13,7 @@ import akka.util.ByteString
 import edu.mit.csail.sdg.translator.A4Solution
 import spray.json.DefaultJsonProtocol
 import viper.server.vsi.{AstJobId, VerJobId}
-import viper.silicon.logger.SymbLog
+import viper.silicon.logger.{LogConfig, MemberSymbExLog}
 import viper.silicon.logger.writer.{SymbExLogReportWriter, TermWriter}
 import viper.silicon.state.terms.Term
 import viper.silver.ast._
@@ -377,9 +377,9 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
 
   implicit val symbExLogReport_writer: RootJsonFormat[ExecutionTraceReport] = lift(new RootJsonWriter[ExecutionTraceReport] {
     override def write(obj: ExecutionTraceReport): JsObject = obj match {
-      case ExecutionTraceReport(members: Seq[SymbLog] @unchecked, axioms: List[Term] @unchecked, functionPostAxioms: List[Term] @unchecked) =>
+      case ExecutionTraceReport(members: Seq[MemberSymbExLog] @unchecked, axioms: List[Term] @unchecked, functionPostAxioms: List[Term] @unchecked) =>
         JsObject(
-          "members" -> SymbExLogReportWriter.toJSON(members),
+          "members" -> SymbExLogReportWriter.toJSON(members, LogConfig.default()),
           "axioms" -> JsArray(axioms.map(TermWriter.toJSON).toVector),
           "functionPostAxioms" -> JsArray(functionPostAxioms.map(TermWriter.toJSON).toVector),
           "macros" -> JsArray(members.flatMap(m => m.macros().map(m => {
