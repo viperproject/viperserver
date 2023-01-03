@@ -306,8 +306,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       case viper.silver.ast.Ref => JsString("Ref")
       case viper.silver.ast.InternalType => JsString("Internal")
       case viper.silver.ast.Wand => JsString("Wand")
-      case viper.silver.ast.BackendType(boogieName, smtName) =>
-        JsObject("boogieName" -> JsString(boogieName), "smtName" -> JsString(smtName))
+      case viper.silver.ast.BackendType(viperName, interpretations) =>
+        JsObject("viperName" -> JsString(viperName), "interpretations" -> interpretations.toJson)
     }
   })
 
