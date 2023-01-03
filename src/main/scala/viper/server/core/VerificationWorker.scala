@@ -83,23 +83,31 @@ class VerificationWorker(private val command: List[String],
       case _: java.nio.channels.ClosedByInterruptException =>
       case e: Throwable =>
         enqueueMessage(ExceptionReport(e))
-        logger.trace(s"Creation/Execution of the verification backend " +
+        val stackTraceElements = e.getStackTrace
+        for (stackTrace <- stackTraceElements) {
+          logger.error(stackTrace.getClassName + "  " + stackTrace.getMethodName + " " + stackTrace.getLineNumber)
+        }
+        logger.error(s"Creation/Execution of the verification backend " +
           s"${if (backend == null) "<null>" else backend.toString} resulted in an exception.", e)
     } finally {
       try {
         backend.stop()
       } catch {
         case e: Throwable =>
-          logger.trace(s"Stopping the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
+          logger.error(s"Stopping the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
       }
     }
     if (success) {
       logger.info(s"The command `${command.mkString(" ")}` has been executed.")
       registerTaskEnd(true)
     } else {
-      logger.error(s"The command `${command.mkString(" ")}` did not result in initialization of verification backend.")
+      logger.error(s"The command `${command.mkString(" ")}` resulted in an exception.")
       registerTaskEnd(false)
     }
+  }
+
+  override def mapEntityVerificationResult(entity: Entity, result: VerificationResult): VerificationResult = {
+    backend.mapEntityVerificationResult(entity, result)
   }
 
   override def call(): Unit = run()
@@ -126,16 +134,19 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     if (!_frontend.prepare(argsWithDummyFilename)) return
     _frontend.init( _frontend.verifier )
 
-    val temp_result: Option[VerificationResult] = if (_frontend.config.disableCaching()) {
+    val res: Option[VerificationResult] = if (_frontend.config.disableCaching()) {
       _frontend.logger.info("Verification with caching disabled")
-      Some(_frontend.verifier.verify(_ast))
+      val rawResult = _frontend.verifier.verify(_ast)
+      // let plugins post-process the errors:
+      val mappedResult = _frontend.plugins.mapVerificationResult(rawResult)
+      Some(_frontend.plugins.beforeFinish(mappedResult))
     } else {
       _frontend.logger.info("Verification with caching enabled")
       doCachedVerification(_ast)
       _frontend.getVerificationResult
     }
 
-    temp_result match {
+    res match {
       case Some(Success) =>
         _frontend.logger.debug(s"Verification successful (members: ${_ast.members.map(_.name).mkString(", ")})")
         _frontend.reporter report OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime)
@@ -179,7 +190,10 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
         s" methodsToVerify: ${methodsToVerify.map(_.name)}.")
     _frontend.logger.trace(s"The cached program is equivalent to: \n${transformed_prog.toString()}")
 
-    val ver_result: VerificationResult = _frontend.verifier.verify(transformed_prog)
+    val rawResult: VerificationResult = _frontend.verifier.verify(transformed_prog)
+    // let plugins post-process the errors:
+    val mappedResult = _frontend.plugins.mapVerificationResult(rawResult)
+    val ver_result = _frontend.plugins.beforeFinish(mappedResult)
     _frontend.setVerificationResult(ver_result)
     _frontend.setState(DefaultStates.Verification)
 
@@ -289,6 +303,10 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
         throw new Exception("Error with unexpected type found: " + e)
     }
     Some(result.toList)
+  }
+
+  def mapEntityVerificationResult(entity: Entity, result: VerificationResult): VerificationResult = {
+    _frontend.plugins.mapEntityVerificationResult(entity, result)
   }
 
   def stop(): Unit = _frontend.verifier.stop()
