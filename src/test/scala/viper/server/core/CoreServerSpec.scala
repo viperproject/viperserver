@@ -615,54 +615,75 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       })
     })
 
-    s"be able to verify a program using a refute statement without caching" in withServer[ViperCoreServer]({ (core, context) =>
+    s"be able to successfully verify a program with a refute statement without caching" in withServer[ViperCoreServer]({ (core, context) =>
       implicit val ctx: VerificationExecutionContext = context
-      val refute_file = "src/test/resources/viper/refute.vpr"
+      val refute_file = "src/test/resources/viper/refute1.vpr"
       val refute_member_name = "foo"
       val jid = verifySiliconWithoutCaching(core, refute_file)
       val messages = ViperCoreServerUtils.getMessagesFuture(core, jid)(context)
-      messages.map(msgs => {
-        msgs.foreach {
-          case EntitySuccessMessage(_, entity, _, cached) =>
-            assert(entity.name == refute_member_name)
-            assert(!cached)
-          case m: EntityFailureMessage =>
-            fail(s"refute statement is expected to succeed but got entity failure ${m.result}")
-          case OverallSuccessMessage(_, _) => Succeeded
-          case m: OverallFailureMessage =>
-            fail(s"refute statement is expected to succeed but got overall failure ${m.result}")
-          case _ => Succeeded
-        }
-        Succeeded
-      })
+      messages.map(checkMessages(expectedSuccess = true, expectedEntityName = refute_member_name, expectedToBeCached = false))
     })
 
-    s"be able to verify a program using a refute statement with caching" in withServer[ViperCoreServer]({ (core, context) =>
+    s"be able to successfully verify a program with a refute statement with caching" in withServer[ViperCoreServer]({ (core, context) =>
       implicit val ctx: VerificationExecutionContext = context
-      val refute_file = "src/test/resources/viper/refute.vpr"
+      val refute_file = "src/test/resources/viper/refute1.vpr"
       val refute_member_name = "foo"
       val jid1 = verifySiliconWithCaching(core, refute_file)
       val messages1 = ViperCoreServerUtils.getMessagesFuture(core, jid1)(context)
 
-      def checkMessages(expectedToBeCached: Boolean)(msgs: List[Message]): Assertion = {
-        msgs.foreach {
-          case EntitySuccessMessage(_, entity, _, cached) =>
-            assert(entity.name == refute_member_name)
-            assert(cached == expectedToBeCached)
-          case m: EntityFailureMessage =>
-            fail(s"refute statement is expected to succeed but got entity failure ${m.result}")
-          case OverallSuccessMessage(_, _) => Succeeded
-          case m: OverallFailureMessage =>
-            fail(s"refute statement is expected to succeed but got overall failure ${m.result}")
-          case _ => Succeeded
-        }
-        Succeeded
-      }
-
-      messages1.map(checkMessages(expectedToBeCached = false))
+      messages1.map(checkMessages(expectedSuccess = true, expectedEntityName = refute_member_name, expectedToBeCached = false))
         .map(_ => verifySiliconWithCaching(core, refute_file))
         .flatMap(jid2 => ViperCoreServerUtils.getMessagesFuture(core, jid2)(context))
-        .map(checkMessages(expectedToBeCached = true))
+        .map(checkMessages(expectedSuccess = true, expectedEntityName = refute_member_name, expectedToBeCached = true))
     })
+
+    s"be able to verify a program with a failing refute statement without caching" in withServer[ViperCoreServer]({ (core, context) =>
+      implicit val ctx: VerificationExecutionContext = context
+      val refute_file = "src/test/resources/viper/refute2.vpr"
+      val refute_member_name = "foo"
+      val jid = verifySiliconWithoutCaching(core, refute_file)
+      val messages = ViperCoreServerUtils.getMessagesFuture(core, jid)(context)
+      messages.map(checkMessages(expectedSuccess = false, expectedEntityName = refute_member_name, expectedToBeCached = false))
+    })
+
+    s"be able to successfully verify a program with a failing refute statement with caching" in withServer[ViperCoreServer]({ (core, context) =>
+      implicit val ctx: VerificationExecutionContext = context
+      val refute_file = "src/test/resources/viper/refute2.vpr"
+      val refute_member_name = "foo"
+      val jid1 = verifySiliconWithCaching(core, refute_file)
+      val messages1 = ViperCoreServerUtils.getMessagesFuture(core, jid1)(context)
+
+      messages1.map(checkMessages(expectedSuccess = false, expectedEntityName = refute_member_name, expectedToBeCached = false))
+        .map(_ => verifySiliconWithCaching(core, refute_file))
+        .flatMap(jid2 => ViperCoreServerUtils.getMessagesFuture(core, jid2)(context))
+        .map(checkMessages(expectedSuccess = false, expectedEntityName = refute_member_name, expectedToBeCached = true))
+    })
+  }
+
+  private def checkMessages(expectedSuccess: Boolean, expectedEntityName: String, expectedToBeCached: Boolean)(msgs: List[Message]): Assertion = {
+    assert(msgs.exists {
+      case _: EntitySuccessMessage => true
+      case _: EntityFailureMessage => true
+      case _ => false
+    }, "expected at least one entity success or failure message")
+    assert(msgs.exists {
+      case _: OverallSuccessMessage => true
+      case _: OverallFailureMessage => true
+      case _ => false
+    }, "expected at least one overall success or failure message")
+    msgs.foreach {
+      case m: EntitySuccessMessage =>
+        assert(expectedSuccess, s"verification expected to fail but got entity success ${m.result}")
+        assert(m.concerning.name == expectedEntityName)
+        assert(m.cached == expectedToBeCached)
+      case m: EntityFailureMessage =>
+        assert(!expectedSuccess, s"verification expected to succeed but got entity failure ${m.result}")
+      case m: OverallSuccessMessage =>
+        assert(expectedSuccess, s"verification expected to fail but got overall success ${m.result}")
+      case m: OverallFailureMessage =>
+        assert(!expectedSuccess,s"verification expected to succeed but got overall failure ${m.result}")
+      case _ => Succeeded
+    }
+    Succeeded
   }
 }
