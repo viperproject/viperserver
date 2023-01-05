@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
-// Copyright (c) 2011-2020 ETH Zurich.
+// Copyright (c) 2011-2023 ETH Zurich.
 
 package viper.server.core
 
@@ -11,7 +11,7 @@ import viper.carbon.CarbonFrontend
 import viper.server.vsi.Envelope
 import viper.silicon.{Silicon, SiliconFrontend}
 import viper.silver.ast._
-import viper.silver.frontend.{DefaultStates, SilFrontend}
+import viper.silver.frontend.SilFrontend
 import viper.silver.reporter.{Reporter, _}
 import viper.silver.verifier.{AbstractVerificationError, VerificationResult, _}
 
@@ -87,15 +87,8 @@ class VerificationWorker(private val command: List[String],
         for (stackTrace <- stackTraceElements) {
           logger.error(stackTrace.getClassName + "  " + stackTrace.getMethodName + " " + stackTrace.getLineNumber)
         }
-        logger.error(s"Creation/Execution of the verification backend " +
+        logger.error(s"Creation or execution of the verification backend " +
           s"${if (backend == null) "<null>" else backend.toString} resulted in an exception.", e)
-    } finally {
-      try {
-        backend.stop()
-      } catch {
-        case e: Throwable =>
-          logger.error(s"Stopping the verification backend ${if (backend == null) "<null>" else backend.toString} resulted in exception.", e)
-      }
     }
     if (success) {
       logger.info(s"The command `${command.mkString(" ")}` has been executed.")
@@ -113,6 +106,10 @@ class VerificationWorker(private val command: List[String],
   override def call(): Unit = run()
 }
 
+/**
+  * ViperBackend that verifies `_ast` using `_frontend` when calling `execute`.
+  * Note that we wrap `_frontend` in this way to support custom backends (which are instances of `SilFrontend`).
+  */
 class ViperBackend(val backendName: String, private val _frontend: SilFrontend, private val programId: String, private val _ast: Program) {
 
   override def toString: String = {
@@ -122,50 +119,90 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       s"ViperBackend( ${_frontend.verifier.name} )"
   }
 
-  /** Run the backend verification functionality
-    * */
+  /** Run the backend verification functionality */
   def execute(args: Seq[String]): Unit = {
+    initialize(args)
+
+    /**
+      * the architecture is as follows:
+      * First, plugins can transform the AST (via their `beforeVerify` methods).
+      * Then, caching operates on the AST that would be sent to the verifier for verification. Caching turns methods
+      * for which a cache hit exists into abstract methods. The resulting AST is then sent to the verifier.
+      * Afterwards, the caching postprocessing happens: The verification results reported by the verifier are added to
+      * the cache and are combined with the verification results obtained from the cache for cached methods.
+      * As the last step, the combined verification results are handed to the plugins (as `mapVerificationResult`) to
+      * back-translate the errors according to the transformation they performed in `beforeVerify`.
+      *
+      * Caching is thus transparent to clients of ViperServer and in particular plugins. Additionally, plugins creating
+      * multiple methods benefit from partial caching: Imagine a termination plugin that creates additional methods to
+      * check termination. For small modifications to the input programs, a method might have changed (and thus lead to
+      * a cache miss) but as long long as the method checking for termination stays the same, the termination check might
+      * still be cached.
+      *
+      * Note however that the `cached` flag for verification errors is best effort: Since caching is (almost) transparent
+      * to plugins, it might sometimes not be possible for a plugin to correctly set the cache flag. E.g., the refute
+      * plugin can see the cached flag for assertion failures when mapping the verification results. Since it's not
+      * aware which errors belong to which member, the plugin cannot set the `cached` flag for refute errors, i.e.
+      * verification errors that were expected but did not occur.
+      */
+    val overallResult = try {
+      val res = for {
+        filteredProgram <- filter(_ast)
+        innerProgram <- beforeVerify(filteredProgram)
+        cachingResult = caching(innerProgram)
+        verificationResult <- verification(cachingResult.transformedProgram)
+        combinedVerificationResult = postCaching(cachingResult, verificationResult)
+        mappedVerificationResult = mapVerificationResult(innerProgram, combinedVerificationResult)
+      } yield mappedVerificationResult
+      turnEitherIntoVerificationResult(res)
+    } finally {
+      stop()
+    }
+
+    finish(overallResult)
+  }
+
+  def mapEntityVerificationResult(entity: Entity, verificationResult: VerificationResult): VerificationResult = {
+    _frontend.plugins.mapEntityVerificationResult(entity, verificationResult)
+  }
+
+  /** initializes frontend such that the associated verifier is ready for verification */
+  private def initialize(args: Seq[String]): Unit = {
     // --ignoreFile is not enough as Silicon still tries to parse the provided filepath unless
     // the following dummy file is used instead (see Silicon issue #552):
     val argsWithDummyFilename = args ++ Seq("--ignoreFile", Silicon.dummyInputFilename)
     _frontend.setStartTime()
     _frontend.setVerifier( _frontend.createVerifier(argsWithDummyFilename.mkString(" ")) )
 
-    if (!_frontend.prepare(argsWithDummyFilename)) return
-    _frontend.init( _frontend.verifier )
-
-    val res: Option[VerificationResult] = if (_frontend.config.disableCaching()) {
-      _frontend.logger.info("Verification with caching disabled")
-      val rawResult = _frontend.verifier.verify(_ast)
-      // let plugins post-process the errors:
-      val mappedResult = _frontend.plugins.mapVerificationResult(rawResult)
-      Some(_frontend.plugins.beforeFinish(mappedResult))
-    } else {
-      _frontend.logger.info("Verification with caching enabled")
-      doCachedVerification(_ast)
-      _frontend.getVerificationResult
+    if (!_frontend.prepare(argsWithDummyFilename)) {
+      return
     }
+    _frontend.init( _frontend.verifier )
+  }
 
-    res match {
-      case Some(Success) =>
-        _frontend.logger.debug(s"Verification successful (members: ${_ast.members.map(_.name).mkString(", ")})")
-        _frontend.reporter report OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime)
-      // TODO: Think again about where to detect and trigger SymbExLogging
-      case Some(f@Failure(_)) =>
-        // Cached errors will be reported as soon as they are retrieved from the cache.
-        _frontend.logger.debug(s"Verification has failed (errors: ${f.errors.map(_.readableMessage).mkString("\n")}; members: ${_ast.members.map(_.name).mkString(", ")})")
-        _frontend.reporter report OverallFailureMessage(_frontend.getVerifierName,
-                                                        System.currentTimeMillis() - _frontend.startTime,
-                                                        Failure(f.errors))
-      case None =>
+  private def filter(input: Program): Either[Seq[AbstractError], Program] = {
+    _frontend.plugins.beforeMethodFilter(input) match {
+      case Some(inputPlugin) =>
+        // Filter methods according to command-line arguments.
+        val verifyMethods =
+          if (_frontend.config != null && _frontend.config.methods() != ":all") Seq("methods", _frontend.config.methods())
+          else inputPlugin.methods map (_.name)
+        val methods = inputPlugin.methods filter (m => verifyMethods.contains(m.name))
+        Right(Program(inputPlugin.domains, inputPlugin.fields, inputPlugin.functions, inputPlugin.predicates, methods, inputPlugin.extensions)(inputPlugin.pos, inputPlugin.info, inputPlugin.errT))
+
+      case None => Left(_frontend.plugins.errors)
     }
   }
 
-  private def doCachedVerification(real_program: Program): Unit = {
-    /** Top level branch is here for the same reason as in
-      * {{{viper.silver.frontend.DefaultFrontend.verification()}}} */
+  case class CachingResult(transformedProgram: Program, cachedErrors: Seq[VerificationError])
 
-    val (transformed_prog, cached_results) = ViperCache.applyCache(backendName, programId, real_program)
+  private def caching(input: Program): CachingResult = {
+    if (_frontend.config.disableCaching()) {
+      // NOP
+      return CachingResult(input, Seq.empty)
+    }
+
+    val (transformed_prog, cached_results) = ViperCache.applyCache(backendName, programId, input)
 
     // collect and report errors
     val all_cached_errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
@@ -173,16 +210,15 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       val cached_errors = result.verification_errors
       if (cached_errors.isEmpty) {
         _frontend.reporter report
-          CachedEntityMessage(_frontend.getVerifierName, result.method, Success)
+          CachedEntityMessage(backendName, result.method, Success)
       } else {
         all_cached_errors ++= cached_errors
         _frontend.reporter report
-          CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(cached_errors))
+          CachedEntityMessage(backendName, result.method, Failure(cached_errors))
       }
     })
 
     val methodsToVerify: Seq[Method] = transformed_prog.methods.filter(_.body.isDefined)
-
     _frontend.logger.debug(
       s"Retrieved data from cache..." +
         s" cachedErrors: ${all_cached_errors.map(_.loggableMessage)};" +
@@ -190,18 +226,34 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
         s" methodsToVerify: ${methodsToVerify.map(_.name)}.")
     _frontend.logger.trace(s"The cached program is equivalent to: \n${transformed_prog.toString()}")
 
-    val rawResult: VerificationResult = _frontend.verifier.verify(transformed_prog)
-    // let plugins post-process the errors:
-    val mappedResult = _frontend.plugins.mapVerificationResult(rawResult)
-    val ver_result = _frontend.plugins.beforeFinish(mappedResult)
-    _frontend.setVerificationResult(ver_result)
-    _frontend.setState(DefaultStates.Verification)
+    CachingResult(transformed_prog, all_cached_errors.toSeq)
+  }
+
+  private def beforeVerify(input: Program): Either[Seq[AbstractError], Program] =
+    _frontend.plugins.beforeVerify(input) match {
+      case Some(programPlugin) => Right(programPlugin)
+      case None => Left(_frontend.plugins.errors)
+    }
+
+  private def verification(input: Program): Either[Seq[AbstractError], VerificationResult] =
+    Right(_frontend.verifier.verify(input))
+
+  private def mapVerificationResult(input: Program, result: VerificationResult): VerificationResult =
+    _frontend.plugins.mapVerificationResult(input, result)
+
+  private def postCaching(cachingResult: CachingResult, verificationResult: VerificationResult): VerificationResult = {
+    if (_frontend.config.disableCaching()) {
+      // NOP
+      return verificationResult
+    }
+
+    val astAfterApplyingCache = cachingResult.transformedProgram
+    val methodsToVerify: Seq[Method] = astAfterApplyingCache.methods.filter(_.body.isDefined)
 
     val meth_to_err_map: Seq[(Method, Option[List[AbstractVerificationError]])] = methodsToVerify.map((m: Method) => {
       // Results come back irrespective of program Member.
       val cacheable_errors: Option[List[AbstractVerificationError]] = for {
-        verRes <- _frontend.getVerificationResult
-        cache_errs <- verRes match {
+        cache_errs <- verificationResult match {
           case Failure(errs) =>
             val r = getMethodSpecificErrors(m, errs)
             _frontend.logger.debug(s"getMethodSpecificErrors returned $r")
@@ -218,7 +270,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     // (otherwise it is unsafe to cache the results)
     val update_cache_criterion: Boolean = {
       val all_errors_in_file = meth_to_err_map.flatMap(_._2).flatten
-      _frontend.getVerificationResult.get match {
+      verificationResult match {
         case Success =>
           all_errors_in_file.isEmpty
         case Failure(errors) =>
@@ -233,7 +285,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
         _frontend.logger.debug(s"Obtained cacheable errors: $cacheable_errors")
 
         if (cacheable_errors.isDefined) {
-          ViperCache.update(backendName, programId, m, transformed_prog, cacheable_errors.get) match {
+          ViperCache.update(backendName, programId, m, astAfterApplyingCache, cacheable_errors.get) match {
             case e :: es =>
               _frontend.logger.trace(s"Storing new entry in cache for method '${m.name}' and backend '$backendName': $e. Other entries for this method: ($es)")
             case Nil =>
@@ -249,13 +301,35 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     ViperCache.writeToFile()
 
     // combine errors:
-    if (all_cached_errors.nonEmpty) {
-      _frontend.getVerificationResult.get match {
+    if (cachingResult.cachedErrors.isEmpty) {
+      verificationResult // verificationResult remains unchanged as the cached errors (which are none) do not change the outcome
+    } else {
+      verificationResult match {
         case Failure(errorList) =>
-          _frontend.setVerificationResult(Failure(errorList ++ all_cached_errors))
+          Failure(errorList ++ cachingResult.cachedErrors)
         case Success =>
-          _frontend.setVerificationResult(Failure(all_cached_errors.toSeq))
+          Failure(cachingResult.cachedErrors)
       }
+    }
+  }
+
+  /**
+    * LA Jan 5 2023: unclear whether this is necessary at all. SilFrontend neither calls start nor stop on the verifier and ViperBackend used to call only stop in the past.
+    */
+  private def stop(): Unit = {
+    _frontend.verifier.stop()
+  }
+
+  private def finish(verificationResult: VerificationResult): Unit = {
+    _frontend.plugins.beforeFinish(verificationResult) match {
+      case Success =>
+        _frontend.logger.debug(s"Verification successful (members: ${_ast.members.map(_.name).mkString(", ")})")
+        _frontend.reporter report OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime)
+        // TODO: Think again about where to detect and trigger SymbExLogging
+      case f: Failure =>
+        // Cached errors will be reported as soon as they are retrieved from the cache.
+        _frontend.logger.debug(s"Verification has failed (errors: ${f.errors.map(_.readableMessage).mkString("\n")}; members: ${_ast.members.map(_.name).mkString(", ")})")
+        _frontend.reporter report OverallFailureMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime, f)
     }
   }
 
@@ -305,9 +379,10 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     Some(result.toList)
   }
 
-  def mapEntityVerificationResult(entity: Entity, result: VerificationResult): VerificationResult = {
-    _frontend.plugins.mapEntityVerificationResult(entity, result)
+  private def turnEitherIntoVerificationResult(input: Either[Seq[AbstractError], VerificationResult]): VerificationResult = {
+    input match {
+      case Left(errs) => Failure(errs)
+      case Right(res) => res
+    }
   }
-
-  def stop(): Unit = _frontend.verifier.stop()
 }

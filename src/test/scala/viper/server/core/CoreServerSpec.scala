@@ -19,7 +19,8 @@ import viper.server.ViperConfig
 import viper.server.frontends.lsp.{ClientCoordinator, FileManager, GetIdentifierResponse, GetViperFileEndingsResponse, HintMessage, IdeLanguageClient, LogParams, StateChangeParams, UnhandledViperServerMessageTypeParams, VerificationNotStartedParams, ViperServerService}
 import viper.server.utility.AstGenerator
 import viper.server.vsi.{JobNotFoundException, VerJobId}
-import viper.silver.ast.{HasLineColumn, Program}
+import viper.silver.ast
+import viper.silver.ast.{AbstractSourcePosition, HasLineColumn, Program}
 import viper.silver.logger.SilentLogger
 import viper.silver.reporter.{EntityFailureMessage, EntitySuccessMessage, Message, OverallFailureMessage, OverallSuccessMessage}
 import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerifierFailure, Success => VerifierSuccess}
@@ -228,16 +229,26 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
           assert(ofms.length === 1)
           // list of errors should not be empty:
           assert(ofms.head.result.errors.nonEmpty)
+          // no error should be cached:
+          assert(ofms.head.result.errors.forall(!_.cached))
       }(context)
       // verify same file again and check whether result comes from cache:
       firstVerification.flatMap (_ => {
         val jid2 = verifySiliconWithCaching(core, ver_error_file)
         ViperCoreServerUtils.getMessagesFuture(core, jid2)(context).map {
           messages: List[Message] =>
-            val efms: List[EntityFailureMessage] = messages collect {
+            val ofms = messages collect {
+              case ofm: OverallFailureMessage => ofm
+            }
+            val efms = messages collect {
               case efm: EntityFailureMessage => efm
             }
             assert(efms.length === 1 && efms.last.cached)
+            assert(ofms.length === 1)
+            // list of errors should not be empty:
+            assert(ofms.head.result.errors.nonEmpty)
+            // errors should be cached:
+            assert(ofms.head.result.errors.forall(_.cached))
         }(context)
       })(context)
     })
@@ -504,28 +515,6 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       verifyMultipleFiles(core, List(fileBeforeModification, fileAfterReorderingDomainFunctions, fileAfterReorderingDomainAxioms), handleResult)(context)
     })
 
-    /**
-      * verifies multiple files sequentially but uses identical program IDs for both files such that there can be
-      * caching behavior
-      * @param handleResult function taking file path and verification result as arguments and returning an assertion
-      */
-    def verifyMultipleFiles(server: ViperCoreServer,
-                                    files: List[String],
-                                    handleResult: (String, VerificationResult) => Assertion)
-                                   (implicit context: VerificationExecutionContext): Future[Assertion] = {
-      val filesAndAsts = files.map(file => (file, getAstByFileName(file)))
-
-      // use a common program ID
-      val programId = "some-program-id"
-      // iterate over all files & ASTs and verify one after the other:
-      filesAndAsts.foldLeft(Future.successful(succeed))((assFuture, fileAndAst) => {
-        assFuture
-          .map(_ => verifyAstSiliconWithCaching(server, programId, fileAndAst._2))
-          .flatMap(jobId => ViperCoreServerUtils.getResultsFuture(server, jobId)(context))
-          .map(res => handleResult(fileAndAst._1, res))
-      })
-    }
-
     object ClientActor {
       case object ReportOutcome
       def props(): Props = Props(new ClientActor())
@@ -657,6 +646,59 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
         .map(_ => verifySiliconWithCaching(core, refute_file))
         .flatMap(jid2 => ViperCoreServerUtils.getMessagesFuture(core, jid2)(context))
         .map(checkMessages(expectedSuccess = false, expectedEntityName = refute_member_name, expectedToBeCached = true))
+    })
+
+    s"reordering of methods with refutes should update position information correctly" in withServer[ViperCoreServer]({ (core, context) =>
+      val fileBeforeReordering = "src/test/resources/viper/reordered-refutes/version1.vpr"
+      val fileAfterReordering = "src/test/resources/viper/reordered-refutes/version2.vpr"
+
+      var errPosBeforeReordering: Option[ast.Position] = None
+      var errPosAfterReordering: Option[ast.Position] = None
+      def handleResult(file: String, res: VerificationResult): Assertion = (res: @unchecked) match {
+        case VerifierFailure(errors) =>
+          assert(errors.size == 1)
+          val err = errors.head
+          if (file == fileBeforeReordering) {
+            errPosBeforeReordering = Some(err.pos)
+          } else if (file == fileAfterReordering) {
+            errPosAfterReordering = Some(err.pos)
+          }
+          // note that we do not check here whether the `cached` flag is correctly set because this is best effort-only
+          // for plugins. In particular for the refute plugin, this flag's value cannot easily be decided and set
+          // accordingly.
+          succeed
+      }
+
+      verifyMultipleFiles(core, List(fileBeforeReordering, fileAfterReordering), handleResult)(context)
+        .map(_ => {
+          assert(errPosBeforeReordering.isDefined && errPosBeforeReordering.get.isInstanceOf[AbstractSourcePosition])
+          assert(errPosAfterReordering.isDefined && errPosAfterReordering.get.isInstanceOf[AbstractSourcePosition])
+          val errLineBeforeReordering = errPosBeforeReordering.get.asInstanceOf[AbstractSourcePosition].line
+          val errLineAfterReordering = errPosAfterReordering.get.asInstanceOf[AbstractSourcePosition].line
+          assert(errLineBeforeReordering > errLineAfterReordering, "we expect that the error occurs earlier after reordering the methods")
+        })(context)
+    })
+  }
+
+  /**
+    * verifies multiple files sequentially but uses identical program IDs for both files such that there can be
+    * caching behavior
+    * @param handleResult function taking file path and verification result as arguments and returning an assertion
+    */
+  private def verifyMultipleFiles(server: ViperCoreServer,
+                          files: List[String],
+                          handleResult: (String, VerificationResult) => Assertion)
+                         (implicit context: VerificationExecutionContext): Future[Assertion] = {
+    val filesAndAsts = files.map(file => (file, getAstByFileName(file)))
+
+    // use a common program ID
+    val programId = "some-program-id"
+    // iterate over all files & ASTs and verify one after the other:
+    filesAndAsts.foldLeft(Future.successful(succeed))((assFuture, fileAndAst) => {
+      assFuture
+        .map(_ => verifyAstSiliconWithCaching(server, programId, fileAndAst._2))
+        .flatMap(jobId => ViperCoreServerUtils.getResultsFuture(server, jobId)(context))
+        .map(res => handleResult(fileAndAst._1, res))
     })
   }
 
