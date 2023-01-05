@@ -8,8 +8,8 @@ package viper.server.core
 
 import ch.qos.logback.classic.Logger
 import viper.server.vsi.MessageStreamingTask
-import viper.silver.reporter.{Entity, EntityFailureMessage, EntitySuccessMessage, Message, Reporter, Time}
-import viper.silver.verifier.{Failure, Success, VerificationResult}
+import viper.silver.reporter.{Entity, EntityFailureMessage, EntitySuccessMessage, Message, Reporter, Time, VerificationResultMessage}
+import viper.silver.verifier.{Success, VerificationResult}
 
 trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
 
@@ -30,10 +30,7 @@ trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
   private def processEntityResultMessage(verifier: String, entity: Entity,
                                          verificationTime: Time, result: VerificationResult, cached: Boolean): Unit = {
     val mappedResult = mapEntityVerificationResult(entity, result)
-    mappedResult match {
-      case Success => enqueueMessage(EntitySuccessMessage(verifier, entity, verificationTime, cached))
-      case failure: Failure => enqueueMessage(EntityFailureMessage(verifier, entity, verificationTime, failure, cached))
-    }
+    enqueueMessage(VerificationResultMessage(verifier, entity, verificationTime, mappedResult, cached))
   }
 
   // Implementation of the Reporter interface used by the backend.

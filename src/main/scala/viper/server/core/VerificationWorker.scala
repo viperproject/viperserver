@@ -210,11 +210,11 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       val cached_errors = result.verification_errors
       if (cached_errors.isEmpty) {
         _frontend.reporter report
-          CachedEntityMessage(backendName, result.method, Success)
+          CachedEntityMessage(_frontend.getVerifierName, result.method, Success)
       } else {
         all_cached_errors ++= cached_errors
         _frontend.reporter report
-          CachedEntityMessage(backendName, result.method, Failure(cached_errors))
+          CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(cached_errors))
       }
     })
 
