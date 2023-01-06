@@ -651,7 +651,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     s"entity and overall result messages should agree" in withServer[ViperCoreServer]({ (core, context) =>
       implicit val ctx: VerificationExecutionContext = context
       // the following file contains a single member with 6 refute statements (3 succeeding and 3 failing)
-      val refute_file = "silicon/silver/src/test/resources/refute/simple.vpr"
+      val refute_file = "src/test/resources/viper/refute-simple.vpr"
       val jid = verifySiliconWithCaching(core, refute_file)
       val messages = ViperCoreServerUtils.getMessagesFuture(core, jid)(context)
       messages.map(msgs => {
