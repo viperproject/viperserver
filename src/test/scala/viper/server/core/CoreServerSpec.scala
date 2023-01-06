@@ -455,7 +455,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       def handleResult(file: String, res: VerificationResult): Assertion = res match {
         case VerifierSuccess => assert(file == fileBeforeModification)
         case VerifierFailure(errors) =>
-          assert( file == fileAfterModification)
+          assert(file == fileAfterModification)
           assert(errors.size == 1)
       }
 
@@ -646,6 +646,27 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
         .map(_ => verifySiliconWithCaching(core, refute_file))
         .flatMap(jid2 => ViperCoreServerUtils.getMessagesFuture(core, jid2)(context))
         .map(checkMessages(expectedSuccess = false, expectedEntityName = refute_member_name, expectedToBeCached = true))
+    })
+
+    s"entity and overall result messages should agree" in withServer[ViperCoreServer]({ (core, context) =>
+      implicit val ctx: VerificationExecutionContext = context
+      // the following file contains a single member with 6 refute statements (3 succeeding and 3 failing)
+      val refute_file = "silicon/silver/src/test/resources/refute/simple.vpr"
+      val jid = verifySiliconWithCaching(core, refute_file)
+      val messages = ViperCoreServerUtils.getMessagesFuture(core, jid)(context)
+      messages.map(msgs => {
+        val ofms = msgs collect {
+          case ofm: OverallFailureMessage => ofm
+        }
+        val efms = msgs collect {
+          case efm: EntityFailureMessage => efm
+        }
+        assert(ofms.length == 1)
+        val overallErrors = ofms.head.result.errors
+        assert(efms.length == 1)
+        val entityErrors = efms.head.result.errors
+        assert(overallErrors == entityErrors)
+      })
     })
 
     s"reordering of methods with refutes should update position information correctly" in withServer[ViperCoreServer]({ (core, context) =>

@@ -15,9 +15,10 @@ import viper.server.frontends.lsp
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.server.vsi.VerJobId
+import viper.silver.ast
 import viper.silver.ast.{AbstractSourcePosition, Domain, Field, Function, HasLineColumn, Method, Predicate, SourcePosition}
 import viper.silver.reporter._
-import viper.silver.verifier.{AbortedExceptionally, AbstractError}
+import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
@@ -138,11 +139,23 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
   class RelayActor(task: FileManager, backendClassName: String) extends Actor {
 
     /**
-      * errors that have already been reported to the client; This is used to identify errors in OverallFailureMessage
-      * that have not been reported yet. Note that this is a `Seq` instead of a `Set` because we have to use reference
-      * equality when comparing errors because two errors with offending nodes at different positions might be equal!
+      * errors together with the offending node's position (only for errors that have an offending node (i.e. implement
+      * `ErrorMessage`). Storing the position along with the error fixes the issue that two errors with offending nodes
+      * at different position just get dropped.
       */
-    var reportedErrors: Seq[AbstractError] = Seq.empty
+    var reportedErrors: Set[(AbstractError, Option[ast.Position])] = Set.empty
+    /** helper function to add an error to `reportedErrors` */
+    private def markErrorAsReported(err: AbstractError): Unit = err match {
+      case err: ErrorMessage => reportedErrors = reportedErrors + ((err, Some(err.offendingNode.pos)))
+      case _ => reportedErrors = reportedErrors + ((err, None))
+    }
+    /** helper function to add errors to `reportedErrors` */
+    private def markErrorsAsReported(errs: Seq[AbstractError]): Unit = errs.foreach(markErrorAsReported)
+    /** helper function to check whether an error is contained in `reportedErrors` */
+    private def hasAlreadyBeenReported(err: AbstractError): Boolean = err match {
+      case err: ErrorMessage => reportedErrors.contains((err, Some(err.offendingNode.pos)))
+      case _ => reportedErrors.contains((err, None))
+    }
 
     override def receive: PartialFunction[Any, Unit] = {
       case ProgramOutlineReport(members) =>
@@ -193,12 +206,12 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         val params = StateChangeParams(VerificationRunning.id, progress = 0, filename = filename)
         coordinator.sendStateChangeNotification(params, Some(task))
       case AstConstructionFailureMessage(_, res) =>
-        reportedErrors = reportedErrors :++ res.errors
+        markErrorsAsReported(res.errors)
         processErrors(backendClassName, res.errors, Some("Constructing the AST has failed:"))
       case ExceptionReport(e) =>
         processErrors(backendClassName, Seq(AbortedExceptionally(e)))
       case InvalidArgumentsReport(_, errors) =>
-        reportedErrors = reportedErrors :++ errors
+        markErrorsAsReported(errors)
         processErrors(backendClassName, errors, Some(s"Invalid arguments have been passed to the backend $backendClassName:"))
       case EntitySuccessMessage(_, concerning, _, _) =>
         if (progress == null) {
@@ -211,7 +224,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
           coordinator.sendStateChangeNotification(params, Some(task))
         }
       case EntityFailureMessage(_, _, _, res, _) =>
-        reportedErrors = reportedErrors :++ res.errors
+        markErrorsAsReported(res.errors)
         processErrors(backendClassName, res.errors)
       case OverallSuccessMessage(_, verificationTime) =>
         state = VerificationReporting
@@ -224,8 +237,8 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         // this is important since Silicon provides errors as part of EntityFailureMessages and the OverallFailureMessage
         // where else Carbon does not produce EntityFailureMessages (except for cached members in which case
         // ViperServer produces EntitySuccessMessage and EntityFailureMessages)
-        val newErrors = failure.errors.filter(err => reportedErrors.forall(reportedErr => reportedErr ne err)) // note that we use reference equality here (as described in the comment related to `reportedErrors`
-        reportedErrors = reportedErrors :++ newErrors
+        val newErrors = failure.errors.filterNot(hasAlreadyBeenReported)
+        markErrorsAsReported(newErrors)
         processErrors(backendClassName, newErrors)
       // the completion handler is not yet invoked (but as part of Status.Success)
       case m: Message => coordinator.client.notifyUnhandledViperServerMessage(UnhandledViperServerMessageTypeParams(m.name, m.toString, LogLevel.Info.id))
@@ -235,7 +248,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
       case Status.Failure(cause) =>
         coordinator.logger.info(s"Streaming messages has failed in RelayActor with cause $cause")
         completionHandler(-1) // no success
-      case RelayActor.GetReportedErrors() => sender() ! reportedErrors
+      case RelayActor.GetReportedErrors() => sender() ! reportedErrors.toSeq.map(_._1)
       case e: Throwable => coordinator.logger.debug(s"RelayActor received throwable: $e")
     }
 
