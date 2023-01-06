@@ -10,7 +10,8 @@ import ch.qos.logback.classic.Logger
 import viper.server.utility.AstGenerator
 import viper.server.vsi.AstConstructionException
 import viper.silver.ast.Program
-import viper.silver.reporter.ExceptionReport
+import viper.silver.reporter.{Entity, ExceptionReport}
+import viper.silver.verifier.VerificationResult
 
 
 object ViperFileNotFoundException extends AstConstructionException
@@ -57,6 +58,11 @@ class AstWorker(val arg_list: List[String],
       case _ =>
     }
     ast_option
+  }
+
+  override def mapEntityVerificationResult(entity: Entity, result: VerificationResult): VerificationResult = {
+    logger.error(s"unexpected operation: AstWorker received an entity success or entity failure message, which should not occur while constructing a Viper AST")
+    ???
   }
 
   override def call(): Option[Program] = constructAst()
