@@ -49,7 +49,7 @@ jobs:
     container: viperproject/viperserver:v4_z3_4.8.6
     steps:
       - name: Checkout ViperServer
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           path: viperserver
           submodules: recursive
@@ -81,7 +81,7 @@ jobs:
           echo "Silver: commit ${{ env.SILICON_SILVER_REF }}" >> versions.txt
         # first line overwrites versions.txt in case it already exists, all other append to the file
       - name: Upload version file
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: versions.txt
           path: versions.txt
@@ -91,7 +91,7 @@ jobs:
         # note that the cache path is relative to the directory in which sbt is invoked.
 
       - name: Cache SBT
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             viperserver/sbt-cache/.sbtboot
@@ -109,7 +109,7 @@ jobs:
 
       - name: Upload log files
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: TestLogs
           path: viperserver/logs
@@ -123,7 +123,7 @@ jobs:
         working-directory: viperserver/target/universal/stage/lib
 
       - name: Upload ViperServer skinny JARs
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: viperserver-skinny-jars
           path: viperserver/viperserver-skinny-jars.zip
@@ -133,7 +133,7 @@ jobs:
         working-directory: viperserver
 
       - name: Upload ViperServer fat JAR
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: viperserver-fat-jar
           path: viperserver/target/scala-2.13/viperserver.jar
@@ -143,7 +143,7 @@ jobs:
         working-directory: viperserver
 
       - name: Upload ViperServer test fat JAR
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: viperserver-test-fat-jar
           path: viperserver/target/scala-2.13/viperserver-test.jar
@@ -165,20 +165,20 @@ jobs:
     steps:
       # we need to checkout the repo to have access to the test files
       - name: Checkout ViperServer
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           path: viperserver
 
       # we need to checkout the silicon repo to have access to the logback configuration file
       # as we do not use anything else except the logback config, we simply take the latest master branch (in all configurations)
       - name: Checkout Silicon
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: viperproject/silicon
           path: silicon
 
       - name: Download ViperServer test fat JAR
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: viperserver-test-fat-jar
           path: viperserver
@@ -238,9 +238,10 @@ jobs:
         shell: bash
 
       - name: Setup Java JDK
-        uses: actions/setup-java@v1.4.3
+        uses: actions/setup-java@v3
         with:
           java-version: '11'
+          distribution: 'temurin'
 
       - name: Java Version
         run: java --version
@@ -258,7 +259,7 @@ jobs:
 
       - name: Upload log files
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: TestLogs-${{ runner.os }}
           path: viperserver/logs
@@ -274,19 +275,19 @@ jobs:
         run: sudo apt-get install curl
 
       - name: Download ViperServer skinny JARs
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: viperserver-skinny-jars
           path: deploy
 
       - name: Download ViperServer fat JAR
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: viperserver-fat-jar
           path: deploy
 
       - name: Download version file
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: versions.txt
 
@@ -376,19 +377,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download ViperServer skinny JARs
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: viperserver-skinny-jars
           path: deploy
 
       - name: Download ViperServer fat JAR
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: viperserver-fat-jar
           path: deploy
 
       - name: Download version file
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: versions.txt
 

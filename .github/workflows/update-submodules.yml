@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           submodules: true
 
@@ -54,7 +54,7 @@ jobs:
 
       - name: Open a pull request
         id: pr
-        uses: peter-evans/create-pull-request@v3
+        uses: peter-evans/create-pull-request@v4
         if: (env.PREV_SILICON_REF != env.CUR_SILICON_REF) || (env.PREV_CARBON_REF != env.CUR_CARBON_REF)
         with:
           # Use viper-admin's token to workaround a restriction of GitHub.
