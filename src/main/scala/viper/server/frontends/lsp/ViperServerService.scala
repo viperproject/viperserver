@@ -15,13 +15,13 @@ import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.vsi.VerificationProtocol.StopVerification
-import viper.server.vsi.{VerJobId, VerificationServer}
+import viper.server.vsi.{DefaultVerificationServerStart, VerJobId}
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
 class ViperServerService(config: ViperConfig)(override implicit val executor: VerificationExecutionContext)
-  extends ViperCoreServer(config)(executor) with VerificationServer {
+  extends ViperCoreServer(config)(executor) with DefaultVerificationServerStart {
 
   def verifyWithCommand(command: String, localLogger: Option[Logger] = None): VerJobId = {
     val logger = combineLoggers(localLogger)

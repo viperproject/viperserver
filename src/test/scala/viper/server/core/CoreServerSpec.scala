@@ -18,7 +18,7 @@ import org.scalatest.wordspec.AnyWordSpec
 import viper.server.ViperConfig
 import viper.server.frontends.lsp.{ClientCoordinator, FileManager, GetIdentifierResponse, GetViperFileEndingsResponse, HintMessage, IdeLanguageClient, LogParams, StateChangeParams, UnhandledViperServerMessageTypeParams, VerificationNotStartedParams, ViperServerService}
 import viper.server.utility.AstGenerator
-import viper.server.vsi.{JobNotFoundException, VerJobId}
+import viper.server.vsi.{DefaultVerificationServerStart, JobNotFoundException, VerJobId}
 import viper.silver.ast
 import viper.silver.ast.{AbstractSourcePosition, HasLineColumn, Program}
 import viper.silver.logger.SilentLogger
@@ -94,7 +94,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
   }
 
   implicit val viperCoreServerFactory: (ViperConfig, VerificationExecutionContext) => ViperCoreServer =
-    (config, context) => new ViperCoreServer(config)(context)
+    (config, context) => new ViperCoreServer(config)(context) with DefaultVerificationServerStart
   val viperServerServiceFactory: (ViperConfig, VerificationExecutionContext) => ViperServerService =
     (config, context) => new ViperServerService(config)(context)
 

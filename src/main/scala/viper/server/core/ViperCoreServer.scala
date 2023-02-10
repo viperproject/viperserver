@@ -19,7 +19,7 @@ import scala.concurrent.duration._
 import scala.concurrent.Future
 import scala.language.postfixOps
 
-class ViperCoreServer(val config: ViperConfig)(implicit val executor: VerificationExecutionContext) extends VerificationServer with ViperPost {
+abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: VerificationExecutionContext) extends VerificationServer with ViperPost {
 
   override type AST = Program
 
@@ -49,10 +49,10 @@ class ViperCoreServer(val config: ViperConfig)(implicit val executor: Verificati
     *
     * This function must be called before any other. Calling any other function before this one
     * will result in an IllegalStateException.
-    * */
+    */
   def start(): Future[Done] = {
     ViperCache.initialize(globalLogger, config.backendSpecificCache(), config.cacheFile.toOption)
-    super.start(config.maximumActiveJobs()) map { _ =>
+    start(config.maximumActiveJobs()) map { _ =>
       globalLogger.info(s"ViperCoreServer has started.")
       Done
     }
