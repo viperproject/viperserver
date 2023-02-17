@@ -62,6 +62,7 @@ sealed trait CustomizableHttp extends BasicHttp {
   * responses as type [[ToResponseMarshallable]].
   * */
 trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
+  import scala.language.postfixOps
 
   def setRoutes(): Route
 
