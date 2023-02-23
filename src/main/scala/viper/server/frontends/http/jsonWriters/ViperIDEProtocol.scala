@@ -446,6 +446,29 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: PongMessage): JsObject = JsObject("msg" -> JsString(obj.text))
   })
 
+  implicit val quantifierInstantiationsMessage_writer: RootJsonFormat[QuantifierInstantiationsMessage] = lift(new RootJsonWriter[QuantifierInstantiationsMessage] {
+    override def write(obj: QuantifierInstantiationsMessage): JsObject = JsObject(
+      "quantifier" -> JsString(obj.quantifier),
+      "instantiations" -> JsNumber(obj.instantiations),
+      "max_gen" -> JsNumber(obj.max_gen),
+      "max_cost" -> JsNumber(obj.max_cost),
+      )
+  })
+
+  implicit val quantifierChosenTriggersMessage_writer: RootJsonFormat[QuantifierChosenTriggersMessage] = lift(new RootJsonWriter[QuantifierChosenTriggersMessage] {
+    override def write(obj: QuantifierChosenTriggersMessage): JsObject = JsObject(
+      "quantifier_type" -> JsString(obj.quant_type),
+      "quantifier" -> JsString(obj.quantifier.toString),
+      "triggers" -> JsArray(obj.triggers.map((trigger) => JsArray(trigger.exps.map((exp) => JsString(exp.toString)).toVector)).toVector)
+      )
+  })
+
+  implicit val verificationTerminationMessage_writer: RootJsonFormat[VerificationTerminationMessage] = lift(new RootJsonWriter[VerificationTerminationMessage] {
+    override def write(obj: VerificationTerminationMessage): JsObject = JsObject(
+      "msg" -> JsString(obj.name)
+      )
+  })
+
   implicit val message_writer: RootJsonFormat[Message] = lift(new RootJsonWriter[Message] {
     override def write(obj: Message): JsValue = JsObject(
       "msg_type" -> JsString(obj.name),
@@ -463,6 +486,9 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case f: WarningsDuringParsing => f.toJson
         case f: WarningsDuringTypechecking => f.toJson
         case m: SimpleMessage => m.toJson
+        case q: QuantifierInstantiationsMessage => q.toJson
+        case q: QuantifierChosenTriggersMessage => q.toJson
+        case v: VerificationTerminationMessage => v.toJson
       }))
   })
 
