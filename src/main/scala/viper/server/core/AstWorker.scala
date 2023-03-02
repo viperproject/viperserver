@@ -7,6 +7,7 @@
 package viper.server.core
 
 import ch.qos.logback.classic.Logger
+import viper.server.ViperConfig
 import viper.server.utility.AstGenerator
 import viper.server.vsi.AstConstructionException
 import viper.silver.ast.Program
@@ -24,14 +25,16 @@ case class ServerCrashException(e: Throwable) extends Exception(e)
 
 
 class AstWorker(val arg_list: List[String],
-                override val logger: Logger)(override val executor: VerificationExecutionContext)
+                override val logger: Logger,
+                private val config: ViperConfig
+               )(override val executor: VerificationExecutionContext)
   extends MessageReportingTask[Option[Program]] {
 
   private def constructAst(): Option[Program] = {
     val file: String = arg_list.last
 
     val reporter = new ActorReporter("AstGenerationReporter")
-    val astGen = new AstGenerator(logger, reporter)
+    val astGen = new AstGenerator(logger, reporter, disablePlugins = config.disablePlugins())
 
     val ast_option: Option[Program] = try {
       astGen.generateViperAst(file)

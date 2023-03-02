@@ -8,6 +8,7 @@ package viper.server.core
 
 import ch.qos.logback.classic.Logger
 import viper.carbon.CarbonFrontend
+import viper.server.ViperConfig
 import viper.server.vsi.Envelope
 import viper.silicon.{Silicon, SiliconFrontend}
 import viper.silver.ast._
@@ -30,7 +31,8 @@ case class ViperEnvelope(m: Message) extends Envelope
 class VerificationWorker(private val command: List[String],
                          private val programId: String,
                          private val program: Program,
-                         override val logger: Logger)
+                         override val logger: Logger,
+                         private val config: ViperConfig)
                         (override val executor: VerificationExecutionContext)
   extends MessageReportingTask[Unit] {
 
@@ -61,17 +63,17 @@ class VerificationWorker(private val command: List[String],
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
-          backend = new ViperBackend("silicon", new SiliconFrontend(new ActorReporter("silicon"), logger), programId, program)
+          backend = new ViperBackend("silicon", new SiliconFrontend(new ActorReporter("silicon"), logger), programId, program, disablePlugins = config.disablePlugins())
           backend.execute(args)
           success = true
         case "carbon" :: args =>
           logger.info("Creating new Carbon verification backend.")
-          backend = new ViperBackend("carbon", new CarbonFrontend(new ActorReporter("carbon"), logger), programId, program)
+          backend = new ViperBackend("carbon", new CarbonFrontend(new ActorReporter("carbon"), logger), programId, program, disablePlugins = config.disablePlugins())
           backend.execute(args)
           success = true
         case "custom" :: custom :: args =>
           logger.info(s"Creating new verification backend based on class $custom.")
-          backend = new ViperBackend(custom, resolveCustomBackend(custom, new ActorReporter(custom)).get, programId, program)
+          backend = new ViperBackend(custom, resolveCustomBackend(custom, new ActorReporter(custom)).get, programId, program, disablePlugins = config.disablePlugins())
           backend.execute(args)
           success = true
         case args =>
@@ -110,7 +112,7 @@ class VerificationWorker(private val command: List[String],
   * ViperBackend that verifies `_ast` using `_frontend` when calling `execute`.
   * Note that we wrap `_frontend` in this way to support custom backends (which are instances of `SilFrontend`).
   */
-class ViperBackend(val backendName: String, private val _frontend: SilFrontend, private val programId: String, private val _ast: Program) {
+class ViperBackend(val backendName: String, private val _frontend: SilFrontend, private val programId: String, private val _ast: Program, private val disablePlugins: Boolean = false) {
 
   override def toString: String = {
     if ( _frontend.verifier == null )
@@ -162,10 +164,6 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     finish(overallResult)
   }
 
-  def mapEntityVerificationResult(entity: Entity, verificationResult: VerificationResult): VerificationResult = {
-    _frontend.plugins.mapEntityVerificationResult(entity, verificationResult)
-  }
-
   /** initializes frontend such that the associated verifier is ready for verification */
   private def initialize(args: Seq[String]): Unit = {
     // --ignoreFile is not enough as Silicon still tries to parse the provided filepath unless
@@ -181,7 +179,8 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
   }
 
   private def filter(input: Program): Either[Seq[AbstractError], Program] = {
-    _frontend.plugins.beforeMethodFilter(input) match {
+    if (disablePlugins) Right(input)
+    else _frontend.plugins.beforeMethodFilter(input) match {
       case Some(inputPlugin) =>
         // Filter methods according to command-line arguments.
         val verifyMethods =
@@ -229,17 +228,25 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     CachingResult(transformed_prog, all_cached_errors.toSeq)
   }
 
-  private def beforeVerify(input: Program): Either[Seq[AbstractError], Program] =
-    _frontend.plugins.beforeVerify(input) match {
+  private def beforeVerify(input: Program): Either[Seq[AbstractError], Program] = {
+    if (disablePlugins) Right(input)
+    else _frontend.plugins.beforeVerify(input) match {
       case Some(programPlugin) => Right(programPlugin)
       case None => Left(_frontend.plugins.errors)
     }
+  }
 
   private def verification(input: Program): Either[Seq[AbstractError], VerificationResult] =
     Right(_frontend.verifier.verify(input))
 
+  def mapEntityVerificationResult(entity: Entity, verificationResult: VerificationResult): VerificationResult = {
+    if (disablePlugins) verificationResult
+    else _frontend.plugins.mapEntityVerificationResult(entity, verificationResult)
+  }
+
   private def mapVerificationResult(input: Program, result: VerificationResult): VerificationResult =
-    _frontend.plugins.mapVerificationResult(input, result)
+    if (disablePlugins) result
+    else _frontend.plugins.mapVerificationResult(input, result)
 
   private def postCaching(cachingResult: CachingResult, verificationResult: VerificationResult): VerificationResult = {
     if (_frontend.config.disableCaching()) {
@@ -321,7 +328,8 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
   }
 
   private def finish(verificationResult: VerificationResult): Unit = {
-    _frontend.plugins.beforeFinish(verificationResult) match {
+    val finishedResult = if (disablePlugins) verificationResult else _frontend.plugins.beforeFinish(verificationResult)
+    finishedResult match {
       case Success =>
         _frontend.logger.debug(s"Verification successful (members: ${_ast.members.map(_.name).mkString(", ")})")
         _frontend.reporter report OverallSuccessMessage(_frontend.getVerifierName, System.currentTimeMillis() - _frontend.startTime)
