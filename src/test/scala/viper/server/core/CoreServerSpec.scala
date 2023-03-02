@@ -73,6 +73,10 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     val silicon_without_caching: SiliconConfig = SiliconConfig(List("--disableCaching"))
     server.verify(vprFile, silicon_without_caching, getAstByFileName(vprFile))
   }
+  def verifyAstSiliconWithoutCaching(server: ViperCoreServer, programId: String, ast: Program): VerJobId = {
+    val silicon_without_caching: SiliconConfig = SiliconConfig(List("--disableCaching"))
+    server.verify(programId, silicon_without_caching, ast)
+  }
   def verifySiliconWithCaching(server: ViperCoreServer, vprFile: String): VerJobId = {
     verifyAstSiliconWithCaching(server, vprFile, getAstByFileName(vprFile))
   }
@@ -193,8 +197,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       // unexpected `:` character.
       // note that this used to fail only on Windows.
       val programID = """_programID_d:\a\gobra-ide\gobra-ide\gobra-ide\client\src\test\data\failing_post.go"""
-      val silicon_without_caching: SiliconConfig = SiliconConfig(List("--disableCaching"))
-      val jid = core.verify(programID, silicon_without_caching, getAstByFileName(ver_error_file))
+      val jid = verifyAstSiliconWithoutCaching(core, programID, getAstByFileName(ver_error_file))
       assert(jid != null)
       assert(jid.id >= 0)
       ViperCoreServerUtils.getMessagesFuture(core, jid)(context).map {
