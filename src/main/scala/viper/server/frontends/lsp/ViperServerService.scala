@@ -14,8 +14,8 @@ import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
-import viper.server.vsi.VerificationProtocol.StopVerification
-import viper.server.vsi.{DefaultVerificationServerStart, VerJobId}
+import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
+import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -69,17 +69,49 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     ver_jobs.lookupJob(jid) match {
       case Some(handle_future) =>
         handle_future.flatMap(handle => {
-          implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-          val interrupt: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
-          handle.job_actor ! PoisonPill // the actor played its part.
-          interrupt
-        }).map(msg => {
-          logger.info(msg)
-          true
+          // first stop ast construction:
+          val astFuture = handle.prev_job_id.map(astJobId => stopAstConstruction(astJobId, logger)).getOrElse(Future.successful(true))
+          astFuture.flatMap(astResult => {
+            stopOnlyVerification(handle, logger)
+              .map(verResult => {
+                logger.info(s"verification stopped for job #$jid")
+                astResult && verResult
+              })
+          })
         })
       case _ =>
         // Did not find a job with this jid.
         logger.warn(s"stopVerification - The verification job #$jid does not exist and can thus not be stopped.")
+        Future.successful(false)
+    }
+  }
+
+  private def stopOnlyVerification(handle: VerHandle, combinedLogger: Logger): Future[Boolean] = {
+    implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
+    val interrupt: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
+    handle.job_actor ! PoisonPill // the actor played its part.
+    interrupt.map(msg => {
+      combinedLogger.info(msg)
+      true
+    })
+  }
+
+  private def stopAstConstruction(jid: AstJobId, combinedLogger: Logger): Future[Boolean] = {
+    ast_jobs.lookupJob(jid) match {
+      case Some(handle_future) =>
+        handle_future.flatMap(handle => {
+          implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
+          val interrupt: Future[String] = (handle.job_actor ? StopAstConstruction).mapTo[String]
+          handle.job_actor ! PoisonPill // the actor played its part.
+          interrupt
+        }).map(msg => {
+          combinedLogger.info(msg)
+          combinedLogger.info(s"ast construction stopped for job #$jid")
+          true
+        })
+      case _ =>
+        // Did not find a job with this jid.
+        combinedLogger.warn(s"stopVerification - The AST construction job #$jid does not exist and can thus not be stopped.")
         Future.successful(false)
     }
   }

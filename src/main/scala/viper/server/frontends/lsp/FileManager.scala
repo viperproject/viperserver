@@ -158,6 +158,9 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
     }
 
     override def receive: PartialFunction[Any, Unit] = {
+      case m if is_aborting =>
+        coordinator.logger.debug(s"ignoring message because we are aborting: $m")
+
       case ProgramOutlineReport(members) =>
         symbolInformation = ArrayBuffer()
         members.foreach(m => {
