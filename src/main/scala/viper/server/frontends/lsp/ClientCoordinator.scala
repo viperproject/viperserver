@@ -7,12 +7,11 @@
 package viper.server.frontends.lsp
 
 import ch.qos.logback.classic.Logger
-import org.eclipse.lsp4j.DocumentSymbol
+import org.eclipse.lsp4j.{DocumentSymbol, FoldingRange, Position, Range}
 import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp.VerificationState.Ready
 
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
-import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters._
 import scala.jdk.FutureConverters._
@@ -25,6 +24,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   private val _files: ConcurrentMap[String, FileManager] = new ConcurrentHashMap() // each file is managed individually.
   private var _vprFileEndings: Option[Array[String]] = None
   private var _exited: Boolean = false
+  private val _toProjectRoot: ConcurrentMap[String, String] = new ConcurrentHashMap()
 
   def client: IdeLanguageClient = {
     _client.getOrElse({assert(false, "getting client failed - client has not been set yet"); ???})
@@ -64,30 +64,65 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     _files.remove(uri)
   }
 
-  /** clears definitions and symbols associated with a file */
-  def resetFile(uri: String): Unit = {
-    Option(_files.get(uri))
-      .foreach(fm => {
-        fm.symbolInformation = ArrayBuffer.empty
-        fm.definitions = ArrayBuffer.empty
-      })
+  /** clears definitions and symbols associated with a file, when not verifying */
+  def resetFileInfo(uri: String): Unit = {
+    val project = toProjectRoot(uri)
+    Option(_files.get(project))
+      .foreach(_.resetFileInfo())
   }
 
   def resetDiagnostics(uri: String): Unit = {
-    Option(_files.get(uri))
-      .foreach(fm => fm.resetDiagnostics())
+    val project = toProjectRoot(uri)
+    Option(_files.get(project))
+      .foreach(_.resetDiagnostics())
   }
 
-  def getSymbolsForFile(uri: String): Array[DocumentSymbol]= {
-    Option(_files.get(uri))
-      .map(fm => fm.symbolInformation.toArray)
-      .getOrElse(Array.empty)
+  def handleChange(uri: String, range: Range, text: String): Unit = {
+    val project = toProjectRoot(uri)
+    Option(_files.get(project))
+      .foreach(_.handleChange(uri, range, text))
   }
 
-  def getDefinitionsForFile(uri: String): ArrayBuffer[Definition] = {
-    Option(_files.get(uri))
-      .map(fm => fm.definitions)
-      .getOrElse(ArrayBuffer.empty)
+  def getSymbolsForFile(uri: String): Seq[DocumentSymbol] = {
+    val project = toProjectRoot(uri)
+    Option(_files.get(project))
+      .map(_.dsm.symbolInformationForFile(uri))
+      .getOrElse(Seq.empty)
+  }
+
+  def getDefinitionsForPos(uri: String, pos: Position): Seq[Definition] = {
+    val project = toProjectRoot(uri)
+    Option(_files.get(project))
+      .map(_.definitions.filter(d =>
+        Common.isGlobalRange(d.scope) || (uri == d.uri && Common.containsPos(d.scope, pos))
+      ).toSeq)
+      .getOrElse(Seq.empty)
+  }
+
+  def getFoldingRangesForFile(uri: String): Seq[FoldingRange] = {
+    val project = toProjectRoot(uri)
+    Option(_files.get(project))
+      .map(_.foldingRanges.get(uri).toSeq.flatten)
+      .getOrElse(Seq.empty)
+  }
+
+  def getSemanticTokens(uri: String): Seq[SemanticToken] = {
+    val project = toProjectRoot(uri)
+    Option(_files.get(project))
+      .map(_.semanticTokens.get(uri).toSeq.flatten)
+      .getOrElse(Seq.empty)
+  }
+
+  def registerSignatureHelpStart(uri: String, pos: Position): Unit = {
+    val project = toProjectRoot(uri)
+    Option(_files.get(project))
+      .foreach(_.signatureHelp = Some(pos))
+  }
+
+  def getSignatureHelpStart(uri: String): Option[Position] = {
+    val project = toProjectRoot(uri)
+    Option(_files.get(project))
+      .flatMap(_.signatureHelp)
   }
 
   /** Checks if verification can be started for a given file.
@@ -98,6 +133,8 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     logger.trace("canVerificationBeStarted")
     if (server.isRunning) {
       logger.trace("server is running")
+      // This will be the new project root
+      removeFromProject(uri)
       addFileIfNecessary(uri)
       true
     } else {
@@ -175,7 +212,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     * */
   def sendStateChangeNotification(params: StateChangeParams, task: Option[FileManager]): Unit = {
     // update file manager's state:
-    task.foreach(fm => fm.state = VerificationState(params.newState))
+    task.foreach(fm => fm.data.state = VerificationState(params.newState))
     try {
       client.notifyStateChanged(params)
     } catch {
@@ -203,5 +240,21 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   def hint(message: String, showSettingsButton: Boolean = false, showViperToolsUpdateButton: Boolean = false): Unit = {
     if (!isAlive) return
     client.notifyHint(HintMessage(message, showSettingsButton, showViperToolsUpdateButton ))
+  }
+
+  def setupProject(root: String, otherUris: Array[String]) = {
+    for (uri <- otherUris) {
+      _toProjectRoot.put(uri, root)
+    }
+    val setupProject = SetupProjectParams(root, otherUris)
+    client.requestSetupProject(setupProject)
+  }
+
+  def removeFromProject(uri: String) = {
+    _toProjectRoot.remove(uri)
+  }
+
+  def toProjectRoot(uri: String): String = {
+    _toProjectRoot.getOrDefault(uri, uri)
   }
 }

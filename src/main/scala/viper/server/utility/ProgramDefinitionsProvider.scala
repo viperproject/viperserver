@@ -7,10 +7,12 @@
 package viper.server.utility
 
 import viper.silver.ast.{AbstractSourcePosition, Declaration, Domain, Field, Function, LocalVarDecl, Method, NamedDomainAxiom, Positioned, Predicate, Program, Scope, Typed}
+import viper.silver.ast.utility.HasSemanticTokens
 import viper.silver.frontend.SilFrontend
 import viper.silver.reporter._
 
 import scala.language.postfixOps
+import viper.silver.parser.Translator
 
 trait ProgramDefinitionsProvider {
   protected val _frontend: SilFrontend
@@ -139,6 +141,14 @@ trait ProgramDefinitionsProvider {
   }).view.mapValues(_.size).toMap
 
   def reportProgramStats(): Unit = {
+    val parsingResult = _frontend.parsingResult
+    val imports = parsingResult.imported.map(i => Import(i.file, Translator.liftWhere(i))).toList
+    _frontend.reporter.report(ProgramImportsReport(imports))
+    val tokens = parsingResult.deepCollect {
+      case n: HasSemanticTokens => n.semanticTokens
+    }.flatten
+    _frontend.reporter.report(SemanticTokensReport(tokens.toList))
+
     val prog = _frontend.program.get
     val stats = countInstances(prog)
 

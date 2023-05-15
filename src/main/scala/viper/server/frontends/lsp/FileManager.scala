@@ -2,95 +2,320 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
-// Copyright (c) 2011-2020 ETH Zurich.
+// Copyright (c) 2011-2023 ETH Zurich.
 
 package viper.server.frontends.lsp
 
 import java.net.URI
 import java.nio.file.{Path, Paths}
 import akka.actor.{Actor, Props, Status}
-import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, DocumentSymbol, Position, PublishDiagnosticsParams, Range, SymbolKind}
+import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, DocumentSymbol, FoldingRange, Position, PublishDiagnosticsParams, Range, SymbolKind}
 import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.server.vsi.VerJobId
 import viper.silver.ast
-import viper.silver.ast.{AbstractSourcePosition, Domain, Field, Function, HasLineColumn, Method, Predicate, SourcePosition}
+import viper.silver.ast.{AbstractSourcePosition, HasLineColumn}
 import viper.silver.reporter._
 import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
 
 import scala.jdk.CollectionConverters._
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.concurrent.Future
+import org.eclipse.lsp4j.ParameterInformation
+import org.eclipse.lsp4j.jsonrpc.messages.Tuple.Two
 
-
-class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit executor: VerificationExecutionContext) {
+case class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit executor: VerificationExecutionContext) {
   // File information
-  var uri: URI = URI.create(file_uri)
-  var path: Path = Paths.get(uri)
-  var filename: String = path.getFileName.toString
-  var lastSuccess: VerificationSuccess = NA
-  var internalErrorMessage: String = ""
+  val uri: URI = URI.create(file_uri)
+  val path: Path = Paths.get(uri)
+  val filename: String = path.getFileName.toString
 
-  //state specific to one verification
-  var is_aborting: Boolean = false
-  var is_verifying: Boolean = false
-  var global_failure: Boolean = false
-  var state: VerificationState = Stopped
-  var manuallyTriggered: Boolean = _
+  val dsm: DocumentSymbolManager = DocumentSymbolManager()
+  val definitions: ArrayBuffer[lsp.Definition] = ArrayBuffer()
+  val members: HashMap[(String, AbstractSourcePosition), ast.Declaration] = HashMap()
+  val foldingRanges: HashMap[String, ArrayBuffer[FoldingRange]] = HashMap()
+  val semanticTokens: HashMap[String, ArrayBuffer[lsp.SemanticToken]] = HashMap()
+  var signatureHelp: Option[Position] = None
+  // All files that are relevant to the verification of the current file
+  var referencedFiles: Set[String] = Set()
+  val diagnostics: HashMap[String, ArrayBuffer[Diagnostic]] = HashMap()
+  def fileDiagnostics: Array[Diagnostic] = diagnostics.get(file_uri).map(_.toArray).getOrElse(Array())
 
-  //verification results
-  var jid: Int = -1
-  var timeMs: Long = 0
-  var diagnostics: ArrayBuffer[Diagnostic] = ArrayBuffer.empty
-  var parsingCompleted: Boolean = false
-  var typeCheckingCompleted: Boolean = false
-  var progress: ProgressCoordinator = _
-  var symbolInformation: ArrayBuffer[DocumentSymbol] = ArrayBuffer()
-  var definitions: ArrayBuffer[lsp.Definition] = ArrayBuffer()
+  class FileManagerState {
+    var lastSuccess: VerificationSuccess = NA
+    var internalErrorMessage: String = ""
 
-  private var partialData: String = ""
+    //state specific to one verification
+    var is_aborting: Boolean = false
+    var is_verifying: Boolean = false
+    var state: VerificationState = Stopped
+    var manuallyTriggered: Boolean = _
+    var canResetReferences: Boolean = false
+    var gotNewMembers: Boolean = false
+    // does not correspond to `diagnostics.size` when
+    // there are errors in other files
+    var diagnosticCount: Int = 0
+
+    //verification results
+    var jid: Int = -1
+    var timeMs: Long = 0
+    var parsingCompleted: Boolean = false
+    var typeCheckingCompleted: Boolean = false
+    var progress: ProgressCoordinator = _
+  }
+  var data: FileManagerState = new FileManagerState()
 
   def resetDiagnostics(): Unit = {
-    diagnostics = ArrayBuffer.empty
     val diagnosticParams = new PublishDiagnosticsParams()
-    diagnosticParams.setUri(file_uri)
-    diagnosticParams.setDiagnostics(diagnostics.asJava)
-    coordinator.client.publishDiagnostics(diagnosticParams)
+    diagnosticParams.setDiagnostics(Seq().asJava)
+    for (ref <- diagnostics) {
+      diagnosticParams.setUri(ref._1.toString())
+      coordinator.client.publishDiagnostics(diagnosticParams)
+    }
+    data.diagnosticCount = 0
+    diagnostics.clear()
+  }
+
+  /* Resets all symbols and definitions, only when not verifying */
+  def resetFileInfo(): Unit = {
+    if (!data.is_verifying) {
+      members.clear()
+      dsm.symbolInformation.clear()
+      definitions.clear()
+      foldingRanges.clear()
+    }
+  }
+
+  def handleChange(uri: String, range: Range, text: String): Unit = {
+    val lines = text.split("\n", -1)
+    val deltaLines = lines.length - 1 + range.getStart.getLine - range.getEnd.getLine
+    val startCharacter = if (lines.length == 1) range.getStart.getCharacter else 0
+    val deltaChars = startCharacter + lines.last.length - range.getEnd.getCharacter
+    // If the change cannot ruin the meaning of a semantic token at the start,
+    // adjust the range start to avoid overlaps with adjacent tokens
+    if (text.isEmpty || !text.head.isLetterOrDigit) {
+      range.getStart.setCharacter(range.getStart.getCharacter + 1)
+    }
+    // If the change cannot ruin the meaning of a semantic token at the end,
+    // adjust the range end to avoid overlaps with adjacent tokens
+    if (text.isEmpty || !text.last.isLetterOrDigit) {
+      range.getEnd.setCharacter(range.getEnd.getCharacter - 1)
+    }
+    // Remove overlapping semantic tokens and update positions of those after change
+    semanticTokens.get(uri).map(tokens => {
+      tokens.filterInPlace(token => {
+        val cmp = token.compare(range)
+        if (cmp == 1) {
+          // Token after change so may have moved
+          if (token.start.getLine == range.getEnd.getLine) {
+            token.start.setCharacter(token.start.getCharacter + deltaChars)
+          }
+          token.start.setLine(token.start.getLine + deltaLines)
+        }
+        // Remove overlaps
+        cmp != 0
+      })
+    })
   }
 
   def resetLastSuccess(): Unit = {
-    lastSuccess = NA
+    data.lastSuccess = NA
   }
 
-  def prepareVerification(): Unit = {
-    is_verifying = true
-    is_aborting = false
-    state = Stopped
-    if (partialData.nonEmpty) {
-      coordinator.logger.debug(s"Some unparsed output has been detected: $partialData")
-      partialData = ""
+  def receiveNode(node: ast.Node): Seq[DocumentSymbol] = {
+    val subnodes = node.subnodes.flatMap(receiveNode)
+    node match {
+      case decl: ast.Declaration if decl.pos.isInstanceOf[AbstractSourcePosition] => {
+        Seq(receiveDeclaration(decl, subnodes))
+      }
+      case _ => subnodes
     }
-    timeMs = 0
+  }
+  def receiveDeclaration(decl: ast.Declaration, children: Seq[DocumentSymbol]): DocumentSymbol = {
+    val pos = decl.pos.asInstanceOf[AbstractSourcePosition]
+    members += ((decl.name, pos) -> decl)
+    val end = pos.end.getOrElse(pos.start)
+    if (end.line - pos.start.line >= 3) {
+      val key = pos.file.toUri().toString()
+      val value = new FoldingRange(pos.start.line - 1, end.line - 1)
+      foldingRanges.getOrElseUpdate(key, ArrayBuffer()) += value
+    }
+    val range_start = new Position(pos.start.line - 1, pos.start.column - 1)
+    val range_end = new Position(end.line - 1, end.column - 1)
+    val range = new Range(range_start, range_end)
+
+    val kind = decl match {
+      case _: ast.Method => SymbolKind.Method
+      case _: ast.Function => SymbolKind.Function
+      case _: ast.Predicate => SymbolKind.Interface
+      case _: ast.Field => SymbolKind.Field
+      case _: ast.Domain => SymbolKind.Class
+      case _: ast.DomainAxiom => SymbolKind.Constant
+      case _: ast.DomainFunc => SymbolKind.Function
+      case _: ast.LocalVarDecl => SymbolKind.Variable
+      case _: ast.ExtensionMember => SymbolKind.Enum
+      case _ => SymbolKind.Null
+    }
+
+    val detail = decl match {
+      case typ: ast.Typed => typ.typ.toString()
+      case _ => null
+    }
+    // for now, we use `range` as range & selectionRange. The latter one is supposed to be only a sub-range
+    // that should be selected when the user selects the symbol.
+    new DocumentSymbol(decl.name, kind, range, range, detail, children.asJava)
+  }
+
+  def receiveDefinition(d: Definition): Unit = {
+    val start = d.scope match {
+      case Some(s) => new Position(s.start.line - 1, s.start.column - 1)
+      case _ => null
+    }
+    val end = d.scope match {
+      case Some(s) if s.end.isDefined => new Position(s.end.get.line - 1, s.end.get.column - 1)
+      case _ => null
+    }
+    val range: Range = if(start != null && end != null) {
+      new Range(start, end)
+    } else {
+      null
+    }
+    val sourcePos = d.location.asInstanceOf[AbstractSourcePosition]
+    val sourcePosEnd = sourcePos.end.getOrElse(sourcePos.start)
+    val startPos: Position = new Position(sourcePos.start.line - 1, sourcePos.start.column - 1)
+    val endPos: Position = new Position(sourcePosEnd.line - 1, sourcePosEnd.column - 1)
+    val codePos: Range = new Range(startPos, endPos)
+    val name = d.name
+    val path = sourcePos.file.toUri().toString()
+    val hover = (d.typ, members.get(name, sourcePos)) match {
+      case (ViperAxiom, _) => s"axiom $name"
+      case (ViperDomain, Some(value: ast.Domain)) => s"domain $name${value.typVars.mkString("[", ", ", "]")}"
+      case (ViperDomain, _) => s"domain $name"
+      case (ViperPredicate, Some(value: ast.Predicate)) => {
+        val sig = value.copy(body = None)(value.pos, value.info, value.errT).toString().trim()
+        if (value.body.isDefined) s"$sig\n{ ... }" else sig
+      }
+      case (ViperPredicate, _) => s"predicate $name"
+      case (ViperMethod, Some(value: ast.Method)) => {
+        val sig = value.copy(body = None)(value.pos, value.info, value.errT).toString().trim()
+        if (value.body.isDefined) s"$sig\n{ ... }" else sig
+      }
+      case (ViperMethod, _) => s"method $name"
+      case (ViperFunction, Some(value: ast.Function)) => {
+        val sig = value.copy(body = None)(value.pos, value.info, value.errT).toString().trim()
+        if (value.body.isDefined) s"$sig\n{ ... }" else sig
+      }
+      case (ViperFunction, Some(value: ast.DomainFunc)) => value.toString().trim()
+      case (ViperFunction, _) => s"function $name"
+      case (ViperField(viperType), _) => s"field $name: $viperType"
+      case (ViperArgument(viperType), _) => s"$name: $viperType"
+      case (ViperReturnParameter(viperType), _) => s"returns $name: $viperType"
+      case (ViperUntypedLocalDefinition, _) => s"var $name"
+      case (ViperTypedLocalDefinition(viperType), _) => s"var $name: $viperType"
+    }
+    def argsToIdx(start: Int, formalArgs: Seq[ast.AnyLocalVarDecl]): (String, Seq[ParameterInformation]) = {
+        val args = formalArgs.map {
+          case arg: ast.LocalVarDecl => s"${arg.name}: ${arg.typ}"
+          case arg => s"${arg.typ}"
+        }
+        var idx = start
+        val offsets = args.map(arg => {
+          val start = idx
+          idx += arg.length() + 2
+          val paramInfo = new ParameterInformation()
+          paramInfo.setLabel(new Two[Integer,Integer](start, idx-2))
+          paramInfo
+        })
+        (args.mkString(", "), offsets)
+    }
+    val signatureHelp = (d.typ, members.get(name, sourcePos)) match {
+      case (ViperMethod, Some(value: ast.Method)) => {
+        val (args, offsets) = argsToIdx(value.name.length() + 1, value.formalArgs)
+        val returns = value.formalReturns.map(arg => s"${arg.name}: ${arg.typ}").mkString(", ")
+        Some(SignatureHelp(s"${value.name}($args) returns ($returns)", offsets))
+      }
+      case (ViperFunction, Some(value: ast.Function)) => {
+        val (args, offsets) = argsToIdx(value.name.length() + 1, value.formalArgs)
+        Some(SignatureHelp(s"${value.name}($args): ${value.typ}", offsets))
+      }
+      case (ViperFunction, Some(value: ast.DomainFunc)) => {
+        val (args, offsets) = argsToIdx(value.name.length() + 1, value.formalArgs)
+        Some(SignatureHelp(s"${value.name}($args): ${value.typ}", offsets))
+      }
+      case (ViperPredicate, Some(value: ast.Predicate)) => {
+        val (args, offsets) = argsToIdx(value.name.length() + 1, value.formalArgs)
+        Some(SignatureHelp(s"${value.name}($args)", offsets))
+      }
+      case _ => None
+    }
+    val definition: lsp.Definition = lsp.Definition(d.typ, name, path, hover, codePos, range, signatureHelp)
+    definitions.append(definition)
+  }
+
+  def receiveSemanticTokens(tokens: List[ast.utility.SemanticHighlight]) = {
+    semanticTokens.clear()
+    for (t@ast.utility.SemanticHighlight(start, end, typ, modifiers) <- tokens) {
+      if (start.line != end.line) {
+        coordinator.logger.error(s"Multiline semantic tokens are not supported: ${t.toString}.")
+      } else {
+        val file = start.file.toUri().toString()
+        val tokenArray = semanticTokens.getOrElseUpdate(file, ArrayBuffer())
+
+        val mod = modifiers.foldLeft(0)((acc, m) => acc | (1 << m.id))
+        val startPos = new Position(start.line - 1, start.column - 1)
+        val semToken = lsp.SemanticToken(startPos, end.column - start.column, typ.id, mod)
+        tokenArray += semToken
+      }
+    }
+    semanticTokens.values.foreach(_.sortInPlaceBy(t => (t.start.getLine, t.start.getCharacter)))
+    semanticTokens.values.foreach(tokenArray => {
+      var (prevLine, prevColumn) = (0, 0)
+      tokenArray.filterInPlace(token => {
+        val remove = token.start.getLine <= prevLine && token.start.getCharacter <= prevColumn
+        prevLine = token.start.getLine
+        prevColumn = token.start.getCharacter + token.len
+        if (remove) {
+          coordinator.logger.error(s"Overlapping semantic tokens are not supported: ${token.toString}.")
+        }
+        !remove
+      })
+    })
+    coordinator.client.refreshSemanticTokens()
+  }
+
+  //////////////////
+  // Verification //
+  //////////////////
+
+  def prepareVerification(): Unit = {
+    data.is_verifying = true
+    data.is_aborting = false
+    data.gotNewMembers = false
+    data.state = Stopped
+    data.timeMs = 0
     resetDiagnostics()
-    parsingCompleted = true
-    typeCheckingCompleted = true
-    internalErrorMessage = ""
+    data.parsingCompleted = true
+    data.typeCheckingCompleted = true
+    data.internalErrorMessage = ""
+    // Do not reset them just yet: parsing might fail
+    // in which case we should keep the old ones
+    data.canResetReferences = true
   }
 
   def stopVerification(): Future[Unit] = {
     coordinator.logger.trace(s"stop verification of $file_uri")
-    if (!is_verifying) {
+    if (!data.is_verifying) {
       coordinator.logger.trace(s"verification of $file_uri did not have to be stopped because there is no ongoing verification")
       return Future.unit
     }
     coordinator.logger.info("Aborting running verification.")
-    is_aborting = true
-    coordinator.server.stopVerification(VerJobId(jid), Some(coordinator.localLogger)).transform(
+    data.is_aborting = true
+    coordinator.server.stopVerification(VerJobId(data.jid), Some(coordinator.localLogger)).transform(
       _ => {
-        is_verifying = false
-        lastSuccess = Aborted
+        data.is_verifying = false
+        data.lastSuccess = Aborted
       },
       e => {
         coordinator.logger.debug(s"Error aborting verification of $filename: $e")
@@ -111,7 +336,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
 
   def startVerification(backendClassName: String, customArgs: String, manuallyTriggered: Boolean): Boolean = {
     prepareVerification()
-    this.manuallyTriggered = manuallyTriggered
+    this.data.manuallyTriggered = manuallyTriggered
 
     coordinator.logger.info(s"verify $filename")
 
@@ -121,8 +346,8 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
     val command = getVerificationCommand(backendClassName, customArgs)
     coordinator.logger.debug(s"verification command: $command")
     val handle = coordinator.server.verifyWithCommand(command, Some(coordinator.localLogger))
-    jid = handle.id
-    if (jid >= 0) {
+    data.jid = handle.id
+    if (data.jid >= 0) {
       coordinator.server.startStreaming(handle, RelayActor.props(this, backendClassName), Some(coordinator.localLogger))
       true
     } else {
@@ -158,54 +383,44 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
     }
 
     override def receive: PartialFunction[Any, Unit] = {
-      case m if is_aborting =>
+      case m if data.is_aborting =>
         coordinator.logger.debug(s"ignoring message because we are aborting: $m")
 
-      case ProgramOutlineReport(members) =>
-        symbolInformation = ArrayBuffer()
-        members.foreach(m => {
-          val member_start = m.pos.asInstanceOf[SourcePosition].start
-          val member_end = m.pos.asInstanceOf[SourcePosition].end.getOrElse(member_start)
-          val range_start = new Position(member_start.line - 1, member_start.column - 1)
-          val range_end = new Position(member_end.line - 1, member_end.column - 1)
-          val range = new Range(range_start, range_end)
-
-          val kind = m match {
-            case _: Method => SymbolKind.Method
-            case _: Function => SymbolKind.Function
-            case _: Predicate => SymbolKind.Interface
-            case _: Field => SymbolKind.Field
-            case _: Domain => SymbolKind.Class
-            case _ => SymbolKind.Enum
+      case ProgramImportsReport(imports) =>
+        // New project
+        coordinator.logger.debug(s"got new imports for $filename: ${imports.toString()}")
+        val files = imports.map(i => i.file.toUri().toString()).toSet
+        if (files != referencedFiles) {
+          for (uri <- referencedFiles) {
+            coordinator.removeFromProject(uri)
           }
-          // for now, we use `range` as range & selectionRange. The latter one is supposed to be only a sub-range
-          // that should be selected when the user selects the symbol.
-          val info = new DocumentSymbol(m.name, kind, range, range)
-          symbolInformation.append(info)
-        })
+          referencedFiles = files
+          coordinator.setupProject(file_uri, referencedFiles.toArray)
+        }
+        // Update symbols
+        dsm.symbolInformation.clear()
+        for (i <- imports) {
+          val key = i.from.file.toUri().toString()
+          dsm.symbolInformation.getOrElseUpdate(key, ArrayBuffer()) += ImportMember(i)
+        }
+      case SemanticTokensReport(tokens) =>
+        coordinator.logger.debug(s"got semantic tokens for $filename: ${tokens.toString()}")
+        receiveSemanticTokens(tokens)
+      case ProgramOutlineReport(newMembers) =>
+        data.gotNewMembers = true
+        members.clear()
+        for (member <- newMembers) {
+          // Traverse all nodes
+          val newSymbols = receiveNode(member).map(DocumentSymbolMember)
+          val key = member.pos.asInstanceOf[AbstractSourcePosition].file.toUri().toString()
+          dsm.symbolInformation.getOrElseUpdate(key, ArrayBuffer()) ++= newSymbols
+        }
       case ProgramDefinitionsReport(defs) =>
-        definitions = ArrayBuffer()
-        defs.foreach(d => {
-          val start = d.scope match {
-            case Some(s) => new Position(s.start.line - 1, s.start.column - 1)
-            case _ => null
-          }
-          val end = d.scope match {
-            case Some(s) if s.end.isDefined => new Position(s.end.get.line - 1, s.end.get.column - 1)
-            case _ => null
-          }
-          val range: Range = if(start != null && end != null) {
-            new Range(start, end)
-          } else {
-            null
-          }
-          val sourcePos = d.location.asInstanceOf[viper.silver.ast.SourcePosition]
-          val location: Position = new Position(sourcePos.start.line - 1, sourcePos.start.column - 1)
-          val definition: lsp.Definition = lsp.Definition(d.typ, d.name, location, range)
-          definitions.append(definition)
-        })
+        definitions.clear()
+        assert(data.gotNewMembers, "got definitions before members")
+        defs.foreach(receiveDefinition)
       case StatisticsReport(m, f, p, _, _) =>
-        progress = new ProgressCoordinator(coordinator, p, f, m)
+        data.progress = new ProgressCoordinator(coordinator, p, f, m)
         val params = StateChangeParams(VerificationRunning.id, progress = 0, filename = filename)
         coordinator.sendStateChangeNotification(params, Some(task))
       case AstConstructionFailureMessage(_, res) =>
@@ -217,12 +432,12 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         markErrorsAsReported(errors)
         processErrors(backendClassName, errors, Some(s"Invalid arguments have been passed to the backend $backendClassName:"))
       case EntitySuccessMessage(_, concerning, _, _) =>
-        if (progress == null) {
+        if (data.progress == null) {
           coordinator.logger.debug("The backend must send a VerificationStart message before the ...Verified message.")
         } else {
           val output = BackendOutput(BackendOutputType.FunctionVerified, name = concerning.name)
-          progress.updateProgress(output)
-          val progressPercentage = progress.toPercent
+          data.progress.updateProgress(output)
+          val progressPercentage = data.progress.toPercent
           val params = StateChangeParams(VerificationRunning.id, progress = progressPercentage, filename = filename)
           coordinator.sendStateChangeNotification(params, Some(task))
         }
@@ -230,12 +445,12 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         markErrorsAsReported(res.errors)
         processErrors(backendClassName, res.errors)
       case OverallSuccessMessage(_, verificationTime) =>
-        state = VerificationReporting
-        timeMs = verificationTime
+        data.state = VerificationReporting
+        data.timeMs = verificationTime
         // the completion handler is not yet invoked (but as part of Status.Success)
       case OverallFailureMessage(_, verificationTime, failure) =>
-        state = VerificationReporting
-        timeMs = verificationTime
+        data.state = VerificationReporting
+        data.timeMs = verificationTime
         // we filter `failure.errors` such that only new errors are reported
         // this is important since Silicon provides errors as part of EntityFailureMessages and the OverallFailureMessage
         // where else Carbon does not produce EntityFailureMessages (except for cached members in which case
@@ -256,14 +471,15 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
     }
 
     private def processErrors(backendClassName: String, errors: Seq[AbstractError], errorMsgPrefix: Option[String] = None): Unit = {
-      val diags = errors.map(err => {
+      data.diagnosticCount += errors.size
+      for (err <- errors) {
         var errorType: String = ""
         if (err.fullId != null && err.fullId == "typechecker.error") {
-          typeCheckingCompleted = false
+          data.typeCheckingCompleted = false
           errorType = "Typechecker error"
         } else if (err.fullId != null && err.fullId == "parser.error") {
-          parsingCompleted = false
-          typeCheckingCompleted = false
+          data.parsingCompleted = false
+          data.typeCheckingCompleted = false
           errorType = "Parser error"
         } else {
           errorType = "Verification error"
@@ -281,35 +497,41 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
           }
           new Range(startPos, endPos)
         }
+        val file = err.pos match {
+          case sp: AbstractSourcePosition => sp.file.toUri()
+          case _ => path.toUri()
+        }
 
         val errMsgPrefixWithWhitespace = errorMsgPrefix.map(s => s"$s ").getOrElse("")
-        coordinator.logger.debug(s"$errorType: [$backendClassName] " +
-          s"${if(err.fullId != null) "[" + err.fullId + "] " else ""}" +
+        val errFullId = if(err.fullId != null) s"[${err.fullId}] " else ""
+        coordinator.logger.debug(s"$errorType: [$backendClassName] $errFullId" +
           s"${range.getStart.getLine + 1}:${range.getStart.getCharacter + 1} $errMsgPrefixWithWhitespace${err.readableMessage}s")
 
 
         val cachFlag: String = if(err.cached) "(cached)" else ""
-        new Diagnostic(range, errMsgPrefixWithWhitespace + err.readableMessage + cachFlag, DiagnosticSeverity.Error, "")
-      })
-
-      diagnostics.appendAll(diags)
-      val params = StateChangeParams(
-        VerificationRunning.id, filename = filename,
-        uri = file_uri, diagnostics = diagnostics.toArray)
-      coordinator.sendStateChangeNotification(params, Some(task))
+        val diagnostic = new Diagnostic(range, errMsgPrefixWithWhitespace + err.readableMessage + cachFlag, DiagnosticSeverity.Error, "")
+        val key = file.toString()
+        diagnostics.getOrElseUpdate(key, ArrayBuffer()) += diagnostic
+      }
+      diagnostics.foreach { case (file, diags) =>
+        val params = StateChangeParams(
+          VerificationRunning.id, filename = Paths.get(file).getFileName.toString,
+          uri = file.toString(), diagnostics = diags.toArray)
+        coordinator.sendStateChangeNotification(params, Some(task))
+      }
     }
   }
 
   private def determineSuccess(code: Int): VerificationSuccess = {
     if (code != 0) {
       Error
-    } else if (!parsingCompleted) {
+    } else if (!data.parsingCompleted) {
       ParsingFailed
-    } else if (!typeCheckingCompleted) {
+    } else if (!data.typeCheckingCompleted) {
       TypecheckingFailed
-    } else if (is_aborting) {
+    } else if (data.is_aborting) {
       Aborted
-    } else if (diagnostics.nonEmpty) {
+    } else if (data.diagnosticCount != 0) {
       VerificationFailed
     } else {
       VerificationSuccess.Success
@@ -317,23 +539,18 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
   }
 
   private def completionHandler(code: Int): Unit = {
-    is_verifying = false
+    data.is_verifying = false
     try {
       coordinator.logger.debug(s"completionHandler is called with code $code")
 
       var params: StateChangeParams = null
       var success = NA
-      val mt = if (this.manuallyTriggered) 1 else 0
+      val mt = if (this.data.manuallyTriggered) 1 else 0
 
       val isVerifyingStage = true
 
       // do we need to start a followUp Stage?
       if (isVerifyingStage) {
-        if (partialData != null && partialData.nonEmpty) {
-          coordinator.logger.debug(s"Some unparsed output was detected: $partialData")
-          partialData = ""
-        }
-
         // inform client about postProcessing
         success = determineSuccess(code)
         params = StateChangeParams(PostProcessing.id, filename = filename)
@@ -341,27 +558,27 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
 
         // notify client about outcome of verification
         params = StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt,
-          filename = filename, time = timeMs.toDouble / 1000, verificationCompleted = 1, uri = file_uri,
-          error = internalErrorMessage, diagnostics = diagnostics.toArray)
+          filename = filename, time = data.timeMs.toDouble / 1000, verificationCompleted = 1, uri = file_uri,
+          error = data.internalErrorMessage, diagnostics = fileDiagnostics)
         coordinator.sendStateChangeNotification(params, Some(this))
 
         if (code != 0 && code != 1 && code != 899) {
           coordinator.logger.debug(s"Verification Backend Terminated Abnormally: with code $code")
         }
       } else {
-        success = if (is_aborting) Aborted else Success
+        success = if (data.is_aborting) Aborted else Success
         params = StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt,
-          filename = filename, time = timeMs.toDouble / 1000, verificationCompleted = 0, uri = file_uri,
-          error = internalErrorMessage, diagnostics = diagnostics.toArray)
+          filename = filename, time = data.timeMs.toDouble / 1000, verificationCompleted = 0, uri = file_uri,
+          error = data.internalErrorMessage, diagnostics = fileDiagnostics)
         coordinator.sendStateChangeNotification(params, Some(this))
       }
 
       // reset for next verification
-      lastSuccess = success
-      timeMs = 0
+      data.lastSuccess = success
+      data.timeMs = 0
     } catch {
       case e: Throwable =>
-        is_verifying = false
+        data.is_verifying = false
         coordinator.client.notifyVerificationNotStarted(VerificationNotStartedParams(file_uri))
         coordinator.logger.debug(s"Error handling verification completion: $e")
     }

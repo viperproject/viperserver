@@ -10,13 +10,13 @@ import java.nio.file.Paths
 import akka.actor.{Actor, Props, Status}
 import akka.pattern.ask
 import akka.util.Timeout
-import org.eclipse.lsp4j.{MessageActionItem, MessageParams, Position, PublishDiagnosticsParams, ShowMessageRequestParams}
+import org.eclipse.lsp4j.{MessageActionItem, MessageParams, Position, PublishDiagnosticsParams, Range, ShowMessageRequestParams}
 import org.scalatest.exceptions.TestFailedException
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.{Assertion, Outcome, Succeeded}
 import org.scalatest.wordspec.AnyWordSpec
 import viper.server.ViperConfig
-import viper.server.frontends.lsp.{ClientCoordinator, FileManager, GetIdentifierResponse, GetViperFileEndingsResponse, HintMessage, IdeLanguageClient, LogParams, StateChangeParams, UnhandledViperServerMessageTypeParams, VerificationNotStartedParams, ViperServerService}
+import viper.server.frontends.lsp.{ClientCoordinator, FileManager, GetIdentifierResponse, GetRangeResponse, GetViperFileEndingsResponse, HintMessage, IdeLanguageClient, LogParams, SetupProjectParams, StateChangeParams, UnhandledViperServerMessageTypeParams, VerificationNotStartedParams, ViperServerService}
 import viper.server.utility.AstGenerator
 import viper.server.vsi.{DefaultVerificationServerStart, JobNotFoundException, VerJobId}
 import viper.silver.ast
@@ -421,7 +421,9 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
 
     class MockClient extends IdeLanguageClient {
       override def requestIdentifier(pos: Position): CompletableFuture[GetIdentifierResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
+      override def requestRange(range: Range): CompletableFuture[GetRangeResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
       override def requestVprFileEndings(): CompletableFuture[GetViperFileEndingsResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
+      override def requestSetupProject(param: SetupProjectParams): CompletableFuture[Unit] = CompletableFuture.failedFuture(new UnsupportedOperationException())
       override def notifyLog(param: LogParams): Unit = {}
       override def notifyHint(param: HintMessage): Unit = {}
       override def notifyUnhandledViperServerMessage(params: UnhandledViperServerMessageTypeParams): Unit = {}

@@ -6,8 +6,8 @@
 
 package viper.server.frontends.lsp
 
-import org.eclipse.lsp4j.{Diagnostic, Position, Range}
-import viper.silver.reporter.SymbolKind
+import org.eclipse.lsp4j.{Diagnostic, ParameterInformation, Position, Range}
+import viper.silver.reporter
 
 object VerificationSuccess extends Enumeration {
   type VerificationSuccess = Value
@@ -109,7 +109,23 @@ case class PlatformDependentURL (
               linux: Option[String])
 
 // scope == null means global scope
-case class Definition(definition_type: SymbolKind, name: String, code_location: Position, scope: Range)
+case class Definition(
+              definition_type: reporter.SymbolKind,
+              name: String,
+              uri: String,
+              hover: String,
+              code_location: Range,
+              scope: Range,
+              signatureHelp: Option[SignatureHelp] = None)
+
+case class SignatureHelp(label: String, args: Seq[ParameterInformation])
+
+case class SemanticToken(start: Position, len: Int, tokenType: Integer, tokenModifiers: Integer) {
+  def compare(range: Range): Int = {
+    val end = new Position(start.getLine, start.getCharacter + len)
+    Common.compareRange(new Range(start, end), range)
+  }
+}
 
 case class BackendOutput(
               typ: String,
@@ -186,7 +202,11 @@ case class GetViperFileEndingsResponse(fileEndings: Array[String])
 
 case class GetIdentifierResponse(identifier: String)
 
+case class GetRangeResponse(range: String)
+
 case class VerificationNotStartedParams(uri: String)
+
+case class SetupProjectParams(projectUri: String, otherUris: Array[String])
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //////              SETTINGS                                                                 ///////
