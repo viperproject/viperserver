@@ -11,7 +11,8 @@ import java.nio.file.{Path, Paths}
 
 import org.eclipse.lsp4j.{Position, Range}
 import scala.collection.mutable.ArrayBuffer
-
+import viper.silver.ast
+import org.eclipse.lsp4j.Location
 
 object Common {
 
@@ -27,6 +28,18 @@ object Common {
     Paths.get(uri).getFileName.toString
   }
 
+  def toPosition(pos: ast.Position): Position = pos match {
+    case lc: ast.HasLineColumn => new Position(lc.line - 1, lc.column - 1)
+    case ast.NoPosition => new Position(0, 0)
+    case _: ast.VirtualPosition => new Position(0, 0)
+  }
+  def toRange(sp: ast.AbstractSourcePosition): Range = {
+    val start = toPosition(sp.start)
+    new Range(start, sp.end.map(toPosition).getOrElse(start))
+  }
+  def toLocation(sp: ast.AbstractSourcePosition): Location =
+    new Location(sp.file.toUri().toString(), toRange(sp))
+
   def comparePosition(a: Position, b: Position): Int = {
     if (a == null && b == null) return 0
     if (a != null && b == null) return -1
@@ -41,9 +54,10 @@ object Common {
   }
 
   def isGlobalRange(range: Range): Boolean = range == null
-  def containsPos(range: Range, pos: Position): Boolean = {
-    Common.comparePosition(range.getStart, pos) <= 0 &&
-    Common.comparePosition(range.getEnd, pos) >= 0
+  def containsPos(range: Range, pos: Position): Int = {
+    if (Common.comparePosition(pos, range.getStart) <= 0) -1
+    else if (Common.comparePosition(range.getEnd, pos) <= 0) 1
+    else 0
   }
 
   /** `-1` if `r1 < r2`, `0` if they overlap (not necessarily equal), `1` if `r1 > r2` */
@@ -66,6 +80,13 @@ object Common {
     }.getOrElse(0)
   }
 
+  def isIdentChar(c: Char): Boolean = {
+    c.isDigit || isIdentStartChar(c)
+  }
+  def isIdentStartChar(c: Char): Boolean = {
+    c.isLetter || c == '_' || c == '$'
+  }
+
   /** traverse a string and find all patterns of the form `call(`.
    * Additionally, count the number of `,` after each such pattern.
    */
@@ -79,7 +100,7 @@ object Common {
     var commaCount = 0
     val calls = ArrayBuffer[(Position, Int, String)]()
     var recordingCallName = false
-    var potentialCallName = ""
+    val potentialCallName = new StringBuilder
     var callsOnCurrLine = 0
     // Traverse backwards
     for (i <- len-1 to 0 by -1) {
@@ -96,27 +117,27 @@ object Common {
         var end = true
         if (i > 0) {
           val nextChar = range(i-1)
-          if (potentialCallName.isEmpty() && nextChar == ' ') {
+          if (potentialCallName.isEmpty && nextChar == ' ') {
             // Do nothing, but keep recording until we hit the start of a string
             end = false
-          } else if (nextChar.isLetterOrDigit || nextChar == '_' || nextChar == '$') {
-            potentialCallName = s"$c$potentialCallName"
+          } else if (isIdentChar(nextChar)) {
+            potentialCallName.addOne(c)
             end = false
           }
         }
         // The next character is an invalid character for a call name, so end here
         if (end) {
           recordingCallName = false
-          if (!c.isDigit) {
+          if (isIdentStartChar(c)) {
             // Add the last non-digit character
-            potentialCallName = s"$c$potentialCallName"
+            potentialCallName.addOne(c)
           }
-          if (!potentialCallName.isEmpty()) {
+          if (!potentialCallName.isEmpty) {
             callsOnCurrLine = callsOnCurrLine + 1
-            calls.addOne((new Position(0, 0), commaCount, potentialCallName))
+            calls.addOne((new Position(0, 0), commaCount, potentialCallName.reverse.toString))
           }
           commaCount = 0
-          potentialCallName = ""
+          potentialCallName.clear()
         }
       }
       // Handle current character

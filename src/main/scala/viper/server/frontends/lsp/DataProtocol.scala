@@ -24,7 +24,7 @@ object VerificationState extends Enumeration {
   type VerificationState = Value
 
   val Stopped, Starting = Value
-  val VerificationRunning, VerificationPrintingHelp, VerificationReporting = Value
+  val ConstructingAst, VerificationRunning, VerificationPrintingHelp, VerificationReporting = Value
   val PostProcessing, Ready, Stopping, Stage = Value
 }
 
@@ -81,6 +81,7 @@ case class BackendProperties(
 
 case class VerifyParams (
               uri: String,                  // file to verify
+              content: String,             // contents of file to verify
               manuallyTriggered: Boolean,   // was the verification triggered manually
               workspace: String,            // the path to the open workspace folder
               backend: String,
@@ -120,11 +121,8 @@ case class Definition(
 
 case class SignatureHelp(label: String, args: Seq[ParameterInformation])
 
-case class SemanticToken(start: Position, len: Int, tokenType: Integer, tokenModifiers: Integer) {
-  def compare(range: Range): Int = {
-    val end = new Position(start.getLine, start.getCharacter + len)
-    Common.compareRange(new Range(start, end), range)
-  }
+case class Lsp4jSemanticHighlight(lineDelta: Integer, columnDelta: Integer, length: Integer, typ: Integer, modifiers: Integer) {
+  def toSeq(): Seq[Integer] = Seq(lineDelta, columnDelta, length, typ, modifiers)
 }
 
 case class BackendOutput(

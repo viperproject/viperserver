@@ -16,7 +16,8 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.{Assertion, Outcome, Succeeded}
 import org.scalatest.wordspec.AnyWordSpec
 import viper.server.ViperConfig
-import viper.server.frontends.lsp.{ClientCoordinator, FileManager, GetIdentifierResponse, GetRangeResponse, GetViperFileEndingsResponse, HintMessage, IdeLanguageClient, LogParams, SetupProjectParams, StateChangeParams, UnhandledViperServerMessageTypeParams, VerificationNotStartedParams, ViperServerService}
+import viper.server.frontends.lsp.{ClientCoordinator, GetIdentifierResponse, GetRangeResponse, GetViperFileEndingsResponse, HintMessage, IdeLanguageClient, LogParams, SetupProjectParams, StateChangeParams, UnhandledViperServerMessageTypeParams, VerificationNotStartedParams, ViperServerService}
+import viper.server.frontends.lsp.file.FileManager
 import viper.server.utility.AstGenerator
 import viper.server.vsi.{DefaultVerificationServerStart, JobNotFoundException, VerJobId}
 import viper.silver.ast

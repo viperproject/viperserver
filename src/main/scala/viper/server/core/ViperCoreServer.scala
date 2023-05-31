@@ -13,6 +13,7 @@ import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
 import viper.silver.ast.Program
+import viper.silver.ast.utility.FileLoader
 import viper.silver.logger.ViperLogger
 
 import scala.concurrent.duration._
@@ -58,10 +59,10 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     }
   }
 
-  def requestAst(arg_list: List[String], localLogger: Option[Logger] = None): AstJobId = {
+  def requestAst(file: String, localLogger: Option[Logger] = None, loader: Option[FileLoader] = None): AstJobId = {
     require(config != null)
     val logger = combineLoggers(localLogger)
-    val task_backend = new AstWorker(arg_list, logger, config)(executor)
+    val task_backend = new AstWorker(file, logger, config, loader)(executor)
     val ast_id = initializeAstConstruction(task_backend)
 
     if (ast_id.id >= 0) {
@@ -72,6 +73,7 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     }
     ast_id
   }
+  def discardAstJobOnCompletion(jid: AstJobId, jobActor: ActorRef): Unit = discardAstOnCompletion(jid, jobActor)
 
   def verifyWithAstJob(programId: String, ast_id: AstJobId, backend_config: ViperBackendConfig, localLogger: Option[Logger] = None): VerJobId = {
     val logger = combineLoggers(localLogger)
@@ -123,7 +125,11 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     ver_id
   }
 
-  override def streamMessages(jid: VerJobId, clientActor: ActorRef): Option[Future[Done]] = {
+  override def streamMessages(jid: VerJobId, clientActor: ActorRef, full: Boolean): Option[Future[Done]] = {
+    globalLogger.info(s"Streaming results for job #${jid.id}.")
+    super.streamMessages(jid, clientActor, full)
+  }
+  override def streamMessages(jid: AstJobId, clientActor: ActorRef): Option[Future[Done]] = {
     globalLogger.info(s"Streaming results for job #${jid.id}.")
     super.streamMessages(jid, clientActor)
   }

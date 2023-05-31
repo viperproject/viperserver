@@ -11,6 +11,7 @@ import viper.server.ViperConfig
 import viper.server.utility.AstGenerator
 import viper.server.vsi.AstConstructionException
 import viper.silver.ast.Program
+import viper.silver.ast.utility.FileLoader
 import viper.silver.reporter.{Entity, ExceptionReport}
 import viper.silver.verifier.VerificationResult
 
@@ -24,20 +25,19 @@ object OutOfResourcesException extends AstConstructionException
 case class ServerCrashException(e: Throwable) extends Exception(e)
 
 
-class AstWorker(val arg_list: List[String],
+class AstWorker(val file: String,
                 override val logger: Logger,
-                private val config: ViperConfig
+                private val config: ViperConfig,
+                private val loader: Option[FileLoader]
                )(override val executor: VerificationExecutionContext)
   extends MessageReportingTask[Option[Program]] {
 
   private def constructAst(): Option[Program] = {
-    val file: String = arg_list.last
-
     val reporter = new ActorReporter("AstGenerationReporter")
     val astGen = new AstGenerator(logger, reporter, disablePlugins = config.disablePlugins())
 
     val ast_option: Option[Program] = try {
-      astGen.generateViperAst(file)
+      astGen.generateViperAst(file, loader)
     } catch {
       case _: java.nio.file.NoSuchFileException =>
         logger.error(s"The file ($file) for which verification has been requested was not found.")

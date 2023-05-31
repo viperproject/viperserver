@@ -16,28 +16,37 @@ import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, Vipe
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
 import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
+import viper.silver.ast.utility.FileLoader
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import akka.actor.ActorRef
 
 class ViperServerService(config: ViperConfig)(override implicit val executor: VerificationExecutionContext)
   extends ViperCoreServer(config)(executor) with DefaultVerificationServerStart {
 
-  def verifyWithCommand(command: String, localLogger: Option[Logger] = None): VerJobId = {
+  def constructAst(file: String, localLogger: Option[Logger] = None, loader: Option[FileLoader]): AstJobId = {
     val logger = combineLoggers(localLogger)
     logger.debug("Requesting ViperServer to start new job...")
 
+    if (!validateViperFile(file)) {
+      logger.debug(s"file not found: $file")
+      return AstJobId(-1)
+    }
+
+    requestAst(file, localLogger, loader)
+  }
+
+  // def discardAstOnCompletion(jid: AstJobId, jobActor: ActorRef): Unit = discardAstJobOnCompletion(jid, jobActor)
+
+  def verifyAst(astJob: AstJobId, command: String, localLogger: Option[Logger] = None): VerJobId = {
+    if (astJob.id < 0) {
+      return VerJobId(-1)
+    }
     val arg_list = getArgListFromArgString(command)
     val file: String = arg_list.last
     val arg_list_partial = arg_list.dropRight(1)
-
-    if (!validateViperFile(file)) {
-      logger.debug(s"file not found: $file")
-      return VerJobId(-1)
-    }
-
-    val ast_id = requestAst(arg_list, localLogger)
-
+    val logger = combineLoggers(localLogger)
     val backend = try {
       ViperBackendConfig(arg_list_partial)
     } catch {
@@ -47,7 +56,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
         return VerJobId(-1)
     }
 
-    val ver_id = verifyWithAstJob(file, ast_id, backend, localLogger)
+    val ver_id = verifyWithAstJob(file, astJob, backend, localLogger)
     if (ver_id.id >= 0) {
       logger.info(s"Verification process #${ver_id.id} has successfully started.")
     } else {
@@ -57,12 +66,37 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     ver_id
   }
 
-  def startStreaming(jid: VerJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Unit = {
+  def verifyFull(file: String, command: String, localLogger: Option[Logger] = None): VerJobId = {
+    val ast_id = constructAst(file, localLogger, None)
+    verifyAst(ast_id, command, localLogger)
+  }
+
+  def startStreaming(jid: VerJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
     val logger = combineLoggers(localLogger)
     logger.debug("Sending verification request to ViperServer...")
     val relay_actor = system.actorOf(relayActor_props)
-    streamMessages(jid, relay_actor)
+    streamMessages(jid, relay_actor, true).map(_.map(_ => ()))
   }
+  def startStreamingAst(jid: AstJobId, relayActor_props: Props, localLogger: Option[Logger] = None): (Option[Future[Unit]], ActorRef) = {
+    val logger = combineLoggers(localLogger)
+    val relay_actor = system.actorOf(relayActor_props)
+    logger.debug(s"Sending ast construct request to ViperServer... (${relay_actor.toString()})")
+    (streamMessages(jid, relay_actor).map(_.map(_ => ())), relay_actor)
+  }
+  def startStreamingVer(jid: VerJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
+    val logger = combineLoggers(localLogger)
+    val relay_actor = system.actorOf(relayActor_props)
+    logger.debug(s"Sending verification request to ViperServer... (${relay_actor.toString()})")
+    streamMessages(jid, relay_actor, false).map(_.map(_ => {
+      logger.debug("Done verification request to ViperServer...")
+      ()
+    }))
+  }
+  // def startStreamingVer(jid: VerJobId, relay_actor: ActorRef, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
+  //   val logger = combineLoggers(localLogger)
+  //   logger.debug("Sending verification only request to ViperServer...")
+  //   streamMessages(jid, relay_actor, false).map(_.map(_ => ()))
+  // }
 
   def stopVerification(jid: VerJobId, localLogger: Option[Logger] = None): Future[Boolean] = {
     val logger = combineLoggers(localLogger)
@@ -70,7 +104,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
       case Some(handle_future) =>
         handle_future.flatMap(handle => {
           // first stop ast construction:
-          val astFuture = handle.prev_job_id.map(astJobId => stopAstConstruction(astJobId, logger)).getOrElse(Future.successful(true))
+          val astFuture = handle.prev_job_id.map(astJobId => stopAstConstruction(astJobId, localLogger)).getOrElse(Future.successful(true))
           astFuture.flatMap(astResult => {
             stopOnlyVerification(handle, logger)
               .map(verResult => {
@@ -96,7 +130,8 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     })
   }
 
-  private def stopAstConstruction(jid: AstJobId, combinedLogger: Logger): Future[Boolean] = {
+  def stopAstConstruction(jid: AstJobId, localLogger: Option[Logger] = None): Future[Boolean] = {
+    val combinedLogger = combineLoggers(localLogger)
     ast_jobs.lookupJob(jid) match {
       case Some(handle_future) =>
         handle_future.flatMap(handle => {

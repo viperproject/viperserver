@@ -65,7 +65,7 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
       return VerificationRequestReject("File not found")
     }
 
-    val ast_id = requestAst(arg_list)
+    val ast_id = requestAst(file)
 
     val backend = try {
       ViperBackendConfig(arg_list_partial)
