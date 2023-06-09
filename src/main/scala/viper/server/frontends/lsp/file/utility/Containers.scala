@@ -20,11 +20,21 @@ import viper.silver.ast.utility.lsp.SelectionBoundBoth
 import viper.silver.ast.utility.lsp.SelectionBoundKeyword
 import viper.silver.ast.utility.lsp.SelectionBound
 import viper.silver.ast.utility.lsp.SelectionBoundKeywordTrait
+import viper.server.frontends.lsp.file.VerificationPhase._
 
-trait StageContainer[K, V] {
-  def reset(): Unit
-  def add(v: V): Unit
+trait StageContainer[K, V, I] {
+  var resetCount: Int = 0
+  def reset(): Unit = {
+    resetCount += 1
+    innerReset()
+  }
+  protected def innerReset(): Unit
+  def add(v: V): (Int, I) = (resetCount, innerAdd(v))
+  protected def innerAdd(v: V): I
   def get(k: K): Seq[V]
+  def update(i: (Int, I), f: V => V): Boolean =
+    if (i._1 == resetCount) innerUpdate(i._2, f) else false
+  protected def innerUpdate(i: I, f: V => V): Boolean
   def all(): Iterator[V]
   def filterInPlace(p: V => Boolean): Unit
 }
@@ -32,17 +42,24 @@ trait StageContainer[K, V] {
 //   def get(uri: String, k: K): Seq[V]
 // }
 
-case class StageArrayContainer[V]() extends StageContainer[Unit, V] {
+case class StageArrayContainer[V]() extends StageContainer[Unit, V, Int] {
   private val array: ArrayBuffer[V] = ArrayBuffer()
-  override def reset(): Unit = array.clear()
-  override def add(v: V): Unit = array.addOne(v)
+  override protected def innerReset(): Unit = array.clear()
+  override protected def innerAdd(v: V): Int = {
+    array.addOne(v)
+    array.length - 1
+  }
   override def get(k: Unit): Seq[V] = array.toSeq
+  override protected def innerUpdate(i: Int, f: V => V): Boolean = {
+    array(i) = f(array(i))
+    true
+  }
   override def all(): Iterator[V] = array.iterator
   def filterInPlace(p: V => Boolean): Unit = array.filterInPlace(p)
 }
 // case class StageArrayContainer[V]() extends StageArrayContainerTrait[V]
 object StageArrayContainer {
-  type ArrayContainer[V <: HasRangePositions with BelongsToFile, U] = LspContainer[StageArrayContainer[V], Unit, V, U]
+  type ArrayContainer[V <: HasRangePositions with BelongsToFile, U] = LspContainer[StageArrayContainer[V], Unit, V, Int, U]
   implicit def default[V]: () => StageArrayContainer[V] = () => StageArrayContainer()
 }
 
@@ -59,31 +76,45 @@ object StageArrayContainer {
 //   def default[V <: BelongsToFile](uriToStage: String => StageArrayContainer[V])(implicit root: String): StageArrayProjectContainer[V] = StageArrayProjectContainer[V](uriToStage)
 // }
 
-case class StageRangeContainer[V <: SelectableInBound]() extends StageContainer[(String, lsp4j.Position, lsp4j.Range), V] {
+case class StageRangeContainer[V <: SelectableInBound]() extends StageContainer[(String, Option[lsp4j.Position], lsp4j.Range), V, (Option[String], Int)] {
   // Has a `scope` bound
   val localKeyword: HashMap[String, ArrayBuffer[(Option[lsp4j.Range], V)]] = HashMap()
   val local: ArrayBuffer[(Option[lsp4j.Range], V)] = ArrayBuffer()
 
-  override def reset(): Unit = {
+  override protected def innerReset(): Unit = {
     localKeyword.clear()
     local.clear()
   }
-  override def add(v: V): Unit = {
+  override protected def innerAdd(v: V): (Option[String], Int) = {
     val range = v.bound match {
       case s: SelectionBoundScopeTrait => Some(Common.toRange(s.scope))
       case _ => None
     }
     v.bound match {
-      case k: SelectionBoundKeywordTrait =>
-        localKeyword.getOrElseUpdate(k.keyword, ArrayBuffer()).addOne((range, v))
-      case _ => local.addOne((range, v))
+      case k: SelectionBoundKeywordTrait => {
+        val array = localKeyword.getOrElseUpdate(k.keyword, ArrayBuffer())
+        array.addOne((range, v))
+        (Some(k.keyword), array.length - 1)
+      }
+      case _ => {
+        local.addOne((range, v))
+        (None, local.length - 1)
+      }
     }
   }
-  override def get(k: (String, lsp4j.Position, lsp4j.Range)): Seq[V] = {
+  override def get(k: (String, Option[lsp4j.Position], lsp4j.Range)): Seq[V] = {
     val (keyword, position, _) = k
-    (local.iterator ++ localKeyword.get(keyword).iterator.flatten)
-      .filter(h => h._1.isEmpty || Common.containsPos(h._1.get, position) == 0)
+    val all = local.iterator ++ localKeyword.get(keyword).iterator.flatten
+    all.filter(h => h._1.isEmpty || (position.isDefined && Common.containsPosition(h._1.get, position.get) == 0))
       .map(_._2).toSeq
+  }
+  override protected def innerUpdate(i: (Option[String], Int), f: V => V): Boolean = {
+    val a = i._1.map(localKeyword).getOrElse(local)
+    val oldV = a(i._2)
+    val newV = f(oldV._2)
+    assert(newV.bound == oldV._2.bound, "Cannot update to new element with a different bound")
+    a(i._2) = (oldV._1, newV)
+    true
   }
   override def all(): Iterator[V] =
     local.iterator.map(_._2) ++ localKeyword.values.flatten.map(_._2)
@@ -95,7 +126,7 @@ case class StageRangeContainer[V <: SelectableInBound]() extends StageContainer[
 }
 // case class StageRangeContainer[V <: SelectableInBound[_, SelectionBoundScopeTrait]]() extends StageRangeContainerTrait[V]
 object StageRangeContainer {
-  type RangeContainer[V <: HasRangePositions with SelectableInBound, U] = LspContainer[StageRangeContainer[V], (String, lsp4j.Position, lsp4j.Range), V, U]
+  type RangeContainer[V <: HasRangePositions with SelectableInBound, U] = LspContainer[StageRangeContainer[V], (String, Option[lsp4j.Position], lsp4j.Range), V, (Option[String], Int), U]
   implicit def default[V <: SelectableInBound]: () => StageRangeContainer[V] = () => StageRangeContainer()
 }
 
@@ -120,7 +151,7 @@ object StageRangeContainer {
 //     case _ => global.addOne(v)
 //     }
 //   }
-//   override def get(k: (String, lsp4j.Position, lsp4j.Range)): Seq[V] = {
+//   override def get(k: (String, Option[lsp4j.Position], lsp4j.Range)): Seq[V] = {
 //     val local = if (uri == root) super.get(uri, k) else uriToStage(uri).get(uri, k)
 //     global.toSeq ++ globalKeyword.get(k._1).toSeq.flatten ++ local.map(_.get)
 //   }
@@ -134,7 +165,7 @@ object StageRangeContainer {
 //   }
 // }
 // object StageRangeProjectContainer {
-//   type RangeProjectContainer[V <: HasRangePositions with SelectableInBound[V, SelectionBoundTrait], U] = LspContainer[StageRangeProjectContainer[V], (String, lsp4j.Position, lsp4j.Range), V, U]
+//   type RangeProjectContainer[V <: HasRangePositions with SelectableInBound[V, SelectionBoundTrait], U] = LspContainer[StageRangeProjectContainer[V], (String, Option[lsp4j.Position], lsp4j.Range), V, U]
 
 //   def default[V <: SelectableInBound[V, SelectionBoundTrait]](uriToStage: String => StageRangeContainer[SelectableInBound[V, SelectionBoundScopeTrait]])(implicit root: String): StageRangeProjectContainer[V] = StageRangeProjectContainer[V](uriToStage)
 // }
@@ -160,63 +191,37 @@ object StageRangeContainer {
 //   // def setLocal
 // }
 
-case class LspContainer[+C <: StageContainer[K, V], K, V <: HasRangePositions, U]
+case class LspContainer[+C <: StageContainer[K, V, I], K, V <: HasRangePositions, I, U]
   (translator: Translates[V, U, K], onUpdate: () => Unit = () => {})(implicit initial: () => C) {
   private val parse: C = initial()
   private val typeck: C = initial()
   private val verify: C = initial()
+  private def toPhase(phase: VerificationPhase): C = phase match {
+    case ParseEnd => parse
+    case TypeckEnd => typeck
+    case VerifyEnd => verify
+  }
 
   def resetAll() = {
-    resetParse(false)
-    resetTypeck(false)
-    resetVerify(false)
+    parse.reset()
+    typeck.reset()
+    verify.reset()
     onUpdate()
   }
-  def resetParse(doUpdate: Boolean = true) = {
-    parse.reset()
-    if (doUpdate) onUpdate()
-  }
-  def resetTypeck(doUpdate: Boolean = true) = {
-    typeck.reset()
-    if (doUpdate) onUpdate()
-  }
-  def resetVerify(doUpdate: Boolean = true) = {
-    verify.reset()
-    if (doUpdate) onUpdate()
+  def reset(phase: VerificationPhase) = {
+    toPhase(phase).reset()
+    onUpdate()
   }
 
-  // private def addToFile[N <: V with BelongsToFile](v: N, uriToStage: String => StageContainer[K, V]) = {
-  //   val uri = v.file.toUri().toString()
-  //   uriToStage(uri).add(v)
-  // }
-
-  def receiveParse(ps: Seq[V], doUpdate: Boolean = true): Unit = {
-    ps.foreach(receiveParse(_, false))
-    if (doUpdate) onUpdate()
+  def receive(phase: VerificationPhase, v: V): (Int, I) = {
+    toPhase(phase).add(v)
   }
-  def receiveTypeck(ps: Seq[V], doUpdate: Boolean = true): Unit = {
-    ps.foreach(receiveTypeck(_, false))
-    if (doUpdate) onUpdate()
-  }
-  def receiveVerify(ps: Seq[V], doUpdate: Boolean = true): Unit = {
-    ps.foreach(receiveVerify(_, false))
-    if (doUpdate) onUpdate()
-  }
-
-  def receiveParse(p: V, doUpdate: Boolean): Unit = {
-    this.parse.add(p)
-    if (doUpdate) onUpdate()
-  }
-  def receiveTypeck(t: V, doUpdate: Boolean): Unit = {
-    this.typeck.add(t)
-    if (doUpdate) onUpdate()
-  }
-  def receiveVerify(v: V, doUpdate: Boolean): Unit = {
-    this.verify.add(v)
-    if (doUpdate) onUpdate()
+  def update(phase: VerificationPhase, i: (Int, I), f: V => V): Boolean = {
+    toPhase(phase).update(i, f)
   }
 
   def get(k: K)(implicit log: Logger): Seq[U] = translator.translate(Seq(parse.get(k), typeck.get(k), verify.get(k)).flatten)(k)
+  def all(f: V => Boolean): Seq[V] = Seq(parse.all(), typeck.all(), verify.all()).flatten.filter(f)
 
   /** If a range position is aliased, we do not want to update it twice */
   def resetModifiedFlag(): Unit = {
@@ -232,22 +237,13 @@ case class LspContainer[+C <: StageContainer[K, V], K, V <: HasRangePositions, U
     */
   def updatePositions(range: lsp4j.Range, text: String): Unit = {
     val lines = text.split("\n", -1)
-    val deltaLines = lines.length - 1 + range.getStart.getLine - range.getEnd.getLine
+    val newEndLine = range.getStart.getLine + lines.length - 1
+    val deltaLines = newEndLine - range.getEnd.getLine
     val startCharacter = if (lines.length == 1) range.getStart.getCharacter else 0
-    val deltaChars = startCharacter + lines.last.length - range.getEnd.getCharacter
+    val newEndCharacter = startCharacter + lines.last.length
+    val deltaChars = newEndCharacter - range.getEnd.getCharacter
     val endLine = range.getEnd.getLine
 
-    // TODO:
-    // If the change cannot ruin the meaning of a semantic token at the start,
-    // adjust the range start to avoid overlaps with adjacent tokens
-    // if (text.isEmpty || !text.head.isLetterOrDigit) {
-      // range.getStart.setCharacter(range.getStart.getCharacter + 1)
-    // }
-    // If the change cannot ruin the meaning of a semantic token at the end,
-    // adjust the range end to avoid overlaps with adjacent tokens
-    // if (text.isEmpty || !text.last.isLetterOrDigit) {
-      // range.getEnd.setCharacter(range.getEnd.getCharacter - 1)
-    // }
     // Remove overlapping semantic tokens and update positions of those after change
     def shiftEnd(pos: RangePosition, end: lsp4j.Position): Unit = {
       if (end.getLine == endLine) pos.shiftEnd(deltaLines, deltaChars)
@@ -259,32 +255,32 @@ case class LspContainer[+C <: StageContainer[K, V], K, V <: HasRangePositions, U
     }
 
     for (buffer <- Seq(parse, typeck, verify)) buffer.filterInPlace(v => {
+      // println("Updating pos for " + v.toString)
       val positions = v.rangePositions
       var overlapped = false
       for (pos <- positions if !pos.modified && !overlapped) {
         pos.modified = true
-        val start = Common.toPosition(pos.start)
-        val end = Common.toPosition(pos._end)
-        Common.containsPos(range, start) match {
-          // `start` < `range.start`
-          case neg if neg < 0 => Common.containsPos(range, end) match {
-            // `end` < `range.start`
-            case neg if neg < 0 => {}
-            // `end` within `range`
-            case 0 => overlapped = true
-            // `end` > `range.end`
-            case _ => shiftEnd(pos, end)
-          }
-          // `start` within `range`
+        val pRange = Common.toRange(pos)
+        val cmp = Common.compareRange(pRange, range)
+        // println("PRange: " + pRange.toString() + " Range: " + range.toString())
+        // println("Cmp: " + cmp)
+        cmp match {
+          case -3 =>
+          case -2 =>
+            pos.shiftEnd(range.getStart.getLine - pRange.getEnd.getLine, range.getStart.getCharacter - pRange.getEnd.getCharacter)
+          case -1 => overlapped = true
           case 0 => overlapped = true
-          // `start` > `range.end`
-          case _ => {
-            shiftStart(pos, start)
-            shiftEnd(pos, end)
-          }
+          case 1 => shiftEnd(pos, pRange.getEnd())
+          case 2 =>
+            pos.shiftStart(newEndLine - pRange.getStart.getLine, newEndCharacter - pRange.getStart.getCharacter)
+            shiftEnd(pos, pRange.getEnd())
+          case 3 =>
+            shiftStart(pos, pRange.getStart())
+            shiftEnd(pos, pRange.getEnd())
+          case _ =>
         }
       }
-      if (overlapped) println("overlapped: " + v.toString())
+      // if (overlapped) println("overlapped: " + v.toString())
       !overlapped
     })
   }

@@ -15,10 +15,12 @@ import viper.silver.reporter._
 import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
 
 import viper.server.frontends.lsp.file.ProgressCoordinator
+import viper.silver.parser.PIdnUse
+import viper.silver.parser.PIdnDef
 // import viper.server.frontends.lsp.file.HoverHintManager
 // import viper.server.frontends.lsp.file.SemanticHighlightManager
 
-trait MessageHandler[A <: MessageHandler[A]] extends VerificationManager[A] with ProjectManager[A] { this: A =>
+trait MessageHandler extends VerificationManager with ProjectManager with QuantifierCodeLens with QuantifierInlayHints with SignatureHelp {
   override def props(backendClassName: Option[String]): Props = RelayActor.props(this, backendClassName)
 
   // var filesInProject: Set[String] = Set.empty
@@ -43,7 +45,7 @@ trait MessageHandler[A <: MessageHandler[A]] extends VerificationManager[A] with
   def completionHandler(code: Int): Unit = {
     try {
       coordinator.logger.debug(s"completionHandler is called with code $code")
-      handleFinish()
+      // handleFinish()
 
       var params: lsp.StateChangeParams = null
       var success = NA
@@ -77,7 +79,7 @@ trait MessageHandler[A <: MessageHandler[A]] extends VerificationManager[A] with
 
       // reset for next verification
       lastSuccess = success
-      onVerifyEnd.foreach(_(lastSuccess))
+      // onVerifyEnd.foreach(_(lastSuccess))
       timeMs = 0
     } catch {
       case e: Throwable =>
@@ -89,12 +91,12 @@ trait MessageHandler[A <: MessageHandler[A]] extends VerificationManager[A] with
 }
 
 object RelayActor {
-  def props(task: MessageHandler[_], backendClassName: Option[String]): Props = Props(new RelayActor(task, backendClassName))
+  def props(task: MessageHandler, backendClassName: Option[String]): Props = Props(new RelayActor(task, backendClassName))
 
   case class GetReportedErrors()
 }
 
-class RelayActor(task: MessageHandler[_], backendClassName: Option[String]) extends Actor {
+class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends Actor {
   val coordinator = task.coordinator
 
   /**
@@ -127,17 +129,19 @@ class RelayActor(task: MessageHandler[_], backendClassName: Option[String]) exte
       // coordinator.logger.debug(s"pProgram.imports ${pProgram.imports.toString()}")
       task.setupProject(files)
       if (success) {
-        task.onConstructedAst()
+        task.reset(VerificationPhase.TypeckEnd)
       }
-      task.codeLens.receiveParse(pProgram.getCodeLens)
-      task.documentSymbol.receiveParse(pProgram.getSymbolChildren)
-      // task.hoverHints.receiveParse(pProgram.getHoverHints)
-      // task.gotoDefinitions.receiveParse(pProgram.getGotoDefinitions)
-      task.foldingRange.receiveParse(pProgram.getFoldingRanges)
-      task.inlayHint.receiveParse(pProgram.getInlayHints)
-      coordinator.client.refreshInlayHints()
-      task.semanticToken.receiveParse(pProgram.getSemanticHighlights)
-      
+      val phase = if (success) VerificationPhase.TypeckEnd else VerificationPhase.ParseEnd
+      task.addCodeLens(phase)(pProgram.getCodeLens)
+      task.addDocumentSymbol(phase)(pProgram.getSymbolChildren)
+      task.addHoverHint(phase)(pProgram.getHoverHints)
+      task.addGotoDefinition(phase)(pProgram.getGotoDefinitions)
+      task.addFindReferences(phase)(pProgram.getReferenceTos)
+      task.addFoldingRange(phase)(pProgram.getFoldingRanges)
+      task.addInlayHint(phase)(pProgram.getInlayHints)
+      task.addSemanticHighlight(phase)(pProgram.getSemanticHighlights)
+      task.addSignatureHelp(phase)(pProgram.getSignatureHelps)
+
       // Update getSymbols
     //   dsm.symbolInformation.clear()
     //   for (i <- imports) {
@@ -206,10 +210,10 @@ class RelayActor(task: MessageHandler[_], backendClassName: Option[String]) exte
       task.processErrors(backendClassName, newErrors)
     // the completion handler is not yet invoked (but as part of Status.Success)
     case QuantifierChosenTriggersMessage(qexp, triggers, oldTriggers) =>
-      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] QuantifierChosenTriggersMessage")
+      coordinator.logger.trace(s"[receive@${task.filename}/${backendClassName.isDefined}] QuantifierChosenTriggersMessage")
       task.handleQuantifierChosenTriggers(qexp, triggers, oldTriggers)
     case QuantifierInstantiationsMessage(quantifier, instantiations, magGen, maxCost) =>
-      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] QuantifierInstantiationsMessage")
+      coordinator.logger.trace(s"[receive@${task.filename}/${backendClassName.isDefined}] QuantifierInstantiationsMessage")
       task.handleQuantifierInstantiations(quantifier, instantiations, magGen, maxCost)
     case m: Message =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] Message")

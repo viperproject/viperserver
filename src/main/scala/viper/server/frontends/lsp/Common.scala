@@ -54,17 +54,29 @@ object Common {
   }
 
   def isGlobalRange(range: Range): Boolean = range == null
-  def containsPos(range: Range, pos: Position): Int = {
-    if (Common.comparePosition(pos, range.getStart) <= 0) -1
-    else if (Common.comparePosition(range.getEnd, pos) <= 0) 1
+  def containsPosition(range: Range, pos: Position): Int = {
+    if (Common.comparePosition(pos, range.getStart) < 0) -1
+    else if (Common.comparePosition(range.getEnd, pos) < 0) 1
     else 0
   }
 
-  /** `-1` if `r1 < r2`, `0` if they overlap (not necessarily equal), `1` if `r1 > r2` */
+  /** `-3` if `r1 < r2`, `3` if `r1 > r2`, `0` if they are equal
+   * `-2` if `r1` contains `r2` start, `2` if `r1` contains `r2` end
+   * `-1` if `r1` is contained in `r2`, `1` if `r2` is contained in `r1`
+  */
   def compareRange(r1: Range, r2: Range): Int = {
-    if (Common.comparePosition(r1.getEnd, r2.getStart) < 0) -1
-    else if (Common.comparePosition(r2.getEnd, r1.getStart) < 0) 1
-    else 0
+    val endStart = Common.comparePosition(r1.getEnd, r2.getStart)
+    if (endStart <= 0) return -3
+    val startEnd = Common.comparePosition(r1.getStart, r2.getEnd)
+    if (startEnd >= 0) return 3
+    val startStart = Common.comparePosition(r1.getStart, r2.getStart)
+    val endEnd = Common.comparePosition(r1.getEnd, r2.getEnd)
+    if (endEnd == 0 && startStart == 0) 0
+    else if (endEnd <= 0 && startStart <= 0) -2
+    else if (endEnd >= 0 && startStart >= 0) 2
+    else if (endEnd <= 0 && startStart >= 0) -1
+    else if (endEnd >= 0 && startStart <= 0) 1
+    else ??? // unreachable
   }
 
   /** returns 0 if equal, 1 if v1 is bigger than v2, -1 otherwise */

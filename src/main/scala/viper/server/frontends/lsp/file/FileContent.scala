@@ -52,40 +52,61 @@ case class FileContent(path: Path, fileContent: ArrayBuffer[String]) extends Dis
     })
   }
 
-  private def isValidPos(pos: Position): Boolean = {
-    val lineIdx = pos.getLine
-    fileContent.lift(lineIdx).exists(line => pos.getCharacter <= line.length)
-  }
-  def decPos(pos: Position): Option[Position] = {
-    if (pos.getCharacter > 0) {
-      Some(new Position(pos.getLine, pos.getCharacter - 1))
+  def normalize(pos: Position): Option[Position] = {
+    if (pos.getLine < 0 || pos.getLine >= fileContent.length) return None
+    if (pos.getCharacter < 0) {
+      val newPos = new Position(pos.getLine - 1, pos.getCharacter)
+      while (newPos.getLine >= 0) {
+        newPos.setCharacter(newPos.getCharacter + fileContent(newPos.getLine).length + 1)
+        if (newPos.getCharacter >= 0) return Some(newPos)
+        newPos.setLine(newPos.getLine - 1)
+      }
+      None
+    } else if (pos.getCharacter > fileContent(pos.getLine).length) {
+      val newPos = new Position(pos.getLine + 1, pos.getCharacter - fileContent(pos.getLine).length - 1)
+      while (newPos.getLine < fileContent.length && newPos.getCharacter <= fileContent(newPos.getLine).length) {
+        newPos.setCharacter(newPos.getCharacter - fileContent(newPos.getLine).length - 1)
+        newPos.setLine(newPos.getLine + 1)
+      }
+      if (newPos.getLine < fileContent.length) Some(newPos) else None
     } else {
-      var line = pos.getLine - 1
-      while (line >= 0 && fileContent(line).isEmpty) {
-        line -= 1
-      }
-      if (line < 0) None
-      else Some(new Position(line, fileContent(line).length - 1))
+      return Some(new Position(pos.getLine, pos.getCharacter))
     }
   }
-  def scanLeft(start: Position, pred: Char => Option[Boolean]): Either[Position, Position] = {
-    if (!isValidPos(start)) return Right(start)
-    var curr = Option(start)
-    while (curr.isDefined && fileContent(curr.get.getLine).isEmpty()) {
-      curr = decPos(curr.get)
-    }
-    while (curr.isDefined) {
-      val pos = curr.get
-      val line = fileContent(pos.getLine)
-      val char = line(pos.getCharacter)
-      pred(char) match {
-        case Some(true) => return Left(pos)
-        case Some(false) => curr = decPos(pos)
-        case None => return Right(pos)
-      }
-    }
-    Right(new Position(0, 0))
+  def getCharAt(pos: Position): Char = {
+    val line = fileContent(pos.getLine)
+    if (pos.getCharacter == line.length) '\n' else line(pos.getCharacter)
   }
+  def find(start: Position, pred: Char => Boolean, delta: Int, skipN: Int = 0, bound: Option[Position] = None): Option[Position] = {
+    assert(delta != 0)
+    var potential = normalize(start)
+    var count = 0
+    while (potential.isDefined && potential != bound && (skipN > count || !pred(getCharAt(potential.get)))) {
+      count += 1
+      val curr = potential.get
+      curr.setCharacter(curr.getCharacter + delta)
+      potential = normalize(curr)
+    }
+    if (potential == bound) None else potential
+  }
+  // def scanLeft(start: Position, pred: Char => Option[Boolean]): Either[Position, Position] = {
+  //   if (!isValidPos(start)) return Right(start)
+  //   var curr = Option(start)
+  //   while (curr.isDefined && fileContent(curr.get.getLine).isEmpty()) {
+  //     curr = decPos(curr.get)
+  //   }
+  //   while (curr.isDefined) {
+  //     val pos = curr.get
+  //     val line = fileContent(pos.getLine)
+  //     val char = line(pos.getCharacter)
+  //     pred(char) match {
+  //       case Some(true) => return Left(pos)
+  //       case Some(false) => curr = decPos(pos)
+  //       case None => return Right(pos)
+  //     }
+  //   }
+  //   Right(new Position(0, 0))
+  // }
 }
 object FileContent {
   def apply(path: Path, content: String): FileContent = {

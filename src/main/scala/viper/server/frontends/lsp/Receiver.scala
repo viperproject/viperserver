@@ -7,7 +7,7 @@
 package viper.server.frontends.lsp
 
 import java.util.concurrent.CompletableFuture
-import org.eclipse.lsp4j.jsonrpc.messages.Either
+import org.eclipse.lsp4j.jsonrpc.messages.{Either, Either3}
 import org.eclipse.lsp4j.jsonrpc.services.{JsonNotification, JsonRequest}
 import org.eclipse.lsp4j.services.{LanguageClient, LanguageClientAware, LanguageServer, TextDocumentService, WorkspaceService}
 import org.eclipse.lsp4j._
@@ -33,17 +33,37 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
   override def initialize(params: InitializeParams): CompletableFuture[InitializeResult] = {
     coordinator.logger.debug(s"[Req: initialize] ${params.toString()}")
     val capabilities = new ServerCapabilities()
-
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Incremental)
-    capabilities.setDiagnosticProvider(new DiagnosticRegistrationOptions(true, false))
-    capabilities.setDocumentSymbolProvider(true)
+    // Features https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#languageFeatures
+    // Go to Declaration:       [N/A]
+    // Go to Definition:
     capabilities.setDefinitionProvider(true)
+    // Go to Type Definition:   [N/A]
+    // Go to Implementation:    [N/A]
+    // Find References:
+    capabilities.setReferencesProvider(true)
+    // Prepare Call Hierarchy:  [N/A]
+      // Incoming Calls:        [N/A]
+      // Outgoing Calls:        [N/A]
+    // Prepare Type Hierarchy:  [N/A]
+      // Super Types:           [N/A]
+      // Sub Types:             [N/A]
+    // Document Highlight:
+    capabilities.setDocumentHighlightProvider(true)
+    // Document Link (disabled Resolve):
+    capabilities.setDocumentLinkProvider(new DocumentLinkOptions(false))
+    // Hover:
     capabilities.setHoverProvider(true)
-    capabilities.setFoldingRangeProvider(true)
-    capabilities.setInlayHintProvider(true)
+    // Code Lens (disabled Resolve):
     capabilities.setCodeLensProvider(new CodeLensOptions(false))
-    // Allow a `,` to try and restart the signature help even after it has ended
-    capabilities.setSignatureHelpProvider(new SignatureHelpOptions(Seq("(", ",").asJava, Seq().asJava))
+    // Folding Range:
+    capabilities.setFoldingRangeProvider(true)
+    // Selection Range:         [N/A]
+        // could try extracting from document symbols,
+        // but this req doesn't seem to ever be sent
+    // Document Symbols:
+    capabilities.setDocumentSymbolProvider(true)
+    // Semantic Tokens:
     val legend = new SemanticTokensLegend(
       Seq(SemanticTokenTypes.Namespace, SemanticTokenTypes.Type, SemanticTokenTypes.Class, SemanticTokenTypes.Enum,
           SemanticTokenTypes.Interface, SemanticTokenTypes.Struct, SemanticTokenTypes.TypeParameter, SemanticTokenTypes.Parameter,
@@ -56,6 +76,34 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
           SemanticTokenModifiers.Documentation, SemanticTokenModifiers.DefaultLibrary, "controlFlow").asJava
     )
     capabilities.setSemanticTokensProvider(new SemanticTokensWithRegistrationOptions(legend, true))
+    // Inline Value:            [N/A]
+    // Inlay Hint (disabled Resolve):
+    capabilities.setInlayHintProvider(true)
+    // Moniker:                 [N/A]
+    // Completion Proposals:    TODO
+    // capabilities.setCompletionProvider(new CompletionOptions(false, Seq(".", ":", "(", "[", "{").asJava))
+    // Pull Diagnostics:
+    capabilities.setDiagnosticProvider(new DiagnosticRegistrationOptions(true, false))
+    // Signature Help:
+        // Allow a `,` to try and restart the signature help even after it has ended
+    capabilities.setSignatureHelpProvider(new SignatureHelpOptions(Seq("(", ",").asJava, Seq().asJava))
+    // Code Action:             TODO
+    // capabilities.setCodeActionProvider(true)
+    // Document Color:          [N/A]
+    // Color Presentation:      [N/A]
+    // Formatting:              TODO
+    // capabilities.setDocumentFormattingProvider(true)
+    // Range Formatting:        TODO
+    // On type Formatting:      [N/A]
+    // Rename & Prepare Rename:
+    capabilities.setRenameProvider(new RenameOptions(true))
+    // Linked Editing Range:    [N/A]
+    // Disabled for now, in VSCode requires that `editor.linkedEditing` is enabled.
+    // This acts like "Change All Occurrences" but without any explicit action. With the
+    // current implementation this would mean that renaming a definition would
+    // automatically cause all references to be renamed. This would probably be too annoying.
+    capabilities.setLinkedEditingRangeProvider(false)
+
     CompletableFuture.completedFuture(new InitializeResult(capabilities))
   }
 
@@ -110,7 +158,8 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
       val (range, text) = (cc.getRange(), cc.getText())
       coordinator.handleChange(uri, range, text)
     }
-    coordinator.startParseTypecheck(uri)
+    // TODO: uncomment
+    // coordinator.startParseTypecheck(uri)
   }
 
   override def didClose(params: DidCloseTextDocumentParams): Unit = {
@@ -132,17 +181,16 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
   // Optional
   //////////////////
 
-  override def diagnostic(params: DocumentDiagnosticParams): CompletableFuture[DocumentDiagnosticReport] = {
+  override def diagnostic(params: DocumentDiagnosticParams) = {
     coordinator.logger.trace(s"[Req: textDocument/diagnostic] ${params.toString()}")
-    if (false) {
-      val d = new DocumentDiagnosticReport(new RelatedUnchangedDocumentDiagnosticReport())
-      CompletableFuture.completedFuture(d)
-    } else {
-      // TODO:
-      val diagnostics = new RelatedFullDocumentDiagnosticReport()
-      val d = new DocumentDiagnosticReport(diagnostics)
-      CompletableFuture.completedFuture(d)
-    }
+    val uri = params.getTextDocument.getUri
+    val ds = coordinator.getRoot(uri).getDiagnostics(uri)
+    ds.map(ds => {
+      val diagnostics = new RelatedFullDocumentDiagnosticReport(ds.asJava)
+      // Maybe use this in future LSP versions?
+      // diagnostics.setRelatedDocuments
+      new DocumentDiagnosticReport(diagnostics)
+    }).asJava.toCompletableFuture
   }
 
   override def documentSymbol(params: DocumentSymbolParams) = {
@@ -158,14 +206,9 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
     coordinator.logger.debug(s"[Req: textDocument/definition] ${params.toString()}")
     val uri = params.getTextDocument.getUri
     val pos = params.getPosition
-    coordinator.getIdentAtPos(uri, pos) match {
-      case None => CompletableFuture.completedFuture(null)
-      case Some((ident, range)) => {
-        coordinator.getRoot(uri).getGotoDefinitions(uri, ident, pos, range).map(defns => {
-          Either.forRight[java.util.List[_ <: Location], java.util.List[_ <: LocationLink]](defns.asJava)
-        }).asJava.toCompletableFuture
-      }
-    }
+    coordinator.getRoot(uri).getGotoDefinitions(uri, pos).map(_.map(defns => {
+        Either.forRight[java.util.List[_ <: Location], java.util.List[_ <: LocationLink]](defns.asJava)
+    }).orNull).asJava.toCompletableFuture
   }
 
   override def hover(params: HoverParams) = {
@@ -173,14 +216,10 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
     // coordinator.logger.trace(s"[Req: textDocument/hover] ${params.toString()}")
     val uri = params.getTextDocument.getUri
     val pos = params.getPosition
-    coordinator.getIdentAtPos(uri, pos) match {
-      case None => CompletableFuture.completedFuture(null)
-      case Some((ident, range)) => {
-        coordinator.getRoot(uri).getHoverHints(uri, ident, pos, range).map(defns => {
-          defns.head
-        }).asJava.toCompletableFuture
-      }
-    }
+    coordinator.getRoot(uri)
+      .getHoverHints(uri, pos)
+      .map(_.map(_.head).orNull)
+      .asJava.toCompletableFuture
   }
 
   override def foldingRange(params: FoldingRangeRequestParams) = {
@@ -205,7 +244,7 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
     val uri = params.getTextDocument.getUri
     val ih = coordinator.getRoot(uri).getInlayHints(uri)
     val range = params.getRange
-    val inlayHints = ih.map(_.filter(ih => Common.containsPos(range, ih.getPosition) == 0).asJava)
+    val inlayHints = ih.map(_.filter(ih => Common.containsPosition(range, ih.getPosition) == 0).asJava)
     inlayHints.asJava.toCompletableFuture
   }
 
@@ -222,7 +261,17 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
 
   override def signatureHelp(params: SignatureHelpParams) = {
     coordinator.logger.trace(s"[Req: textDocument/signatureHelp] ${params.toString()}")
-    CompletableFuture.completedFuture(null)
+    val uri = params.getTextDocument.getUri
+    val ctx = Option(params.getContext)
+    val isRetrigger = ctx.map(_.isRetrigger).getOrElse(false)
+    val help = coordinator.getRoot(uri).getSignatureHelp(uri, params.getPosition, isRetrigger)
+    ctx.flatMap(ctx => Option(ctx.getActiveSignatureHelp)).flatMap(active => help.map((active, _))).foreach {
+      case (active, help) =>
+        if (active.getActiveSignature < help.getSignatures.size() && active.getActiveSignature != active.getSignatures.size() - 1) {
+          help.setActiveSignature(active.getActiveSignature)
+        }
+    }
+    CompletableFuture.completedFuture(help.orNull)
     // val uri = params.getTextDocument.getUri
     // val pos = params.getPosition
     // val ctx = params.getContext
@@ -281,6 +330,61 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
     //     }
     //   }
     // }
+  }
+
+  override def references(params: ReferenceParams) = {
+    coordinator.logger.trace(s"[Req: textDocument/references] ${params.toString()}")
+    val uri = params.getTextDocument.getUri
+    val id = params.getContext.isIncludeDeclaration
+    val refs = coordinator.getRoot(uri).getFindReferences(uri, params.getPosition, id)
+    refs.map(_.asJava.asInstanceOf[java.util.List[_ <: Location]]).asJava.toCompletableFuture
+  }
+
+  override def prepareRename(params: PrepareRenameParams) = {
+    coordinator.logger.trace(s"[Req: textDocument/prepareRename] ${params.toString()}")
+    val uri = params.getTextDocument.getUri
+    val pos = params.getPosition
+    coordinator.getRoot(uri).getFindReferences(uri, pos, true).map(refs => {
+      refs.filter(_.getUri == uri).find(r => Common.containsPosition(r.getRange, pos) == 0).map(r =>
+        Either3.forFirst[Range, PrepareRenameResult, PrepareRenameDefaultBehavior](r.getRange)
+      ).orNull
+    }).asJava.toCompletableFuture
+  }
+
+  override def rename(params: RenameParams) = {
+    coordinator.logger.trace(s"[Req: textDocument/rename] ${params.toString()}")
+    val uri = params.getTextDocument.getUri
+    val pos = params.getPosition
+    val newName = params.getNewName
+    val rename = coordinator.getRoot(uri).getRename(uri, pos, newName)
+    rename.asJava.toCompletableFuture
+  }
+
+  override def documentHighlight(params: DocumentHighlightParams) = {
+    coordinator.logger.trace(s"[Req: textDocument/documentHighlight] ${params.toString()}")
+    val uri = params.getTextDocument.getUri
+    val pos = params.getPosition
+    coordinator.getRoot(uri).getFindReferences(uri, pos, true).map(refs =>
+      refs.filter(_.getUri == uri).map(r => new DocumentHighlight(r.getRange, DocumentHighlightKind.Read))
+        .asJava.asInstanceOf[java.util.List[_ <: DocumentHighlight]]
+    ).asJava.toCompletableFuture
+  }
+
+  override def documentLink(params: DocumentLinkParams) = {
+    coordinator.logger.trace(s"[Req: textDocument/documentLink] ${params.toString()}")
+    val uri = params.getTextDocument.getUri
+    val links = coordinator.getRoot(uri).getDocumentLinks(uri)
+    links.map(_.asJava).asJava.toCompletableFuture
+  }
+
+  // Disabled, see comment in `initialize`
+  override def linkedEditingRange(params: LinkedEditingRangeParams) = {
+    coordinator.logger.trace(s"[Req: textDocument/linkedEditingRange] ${params.toString()}")
+    val uri = params.getTextDocument.getUri
+    val pos = params.getPosition
+    coordinator.getRoot(uri).getFindReferences(uri, pos, true, false).map(refs =>
+      new LinkedEditingRanges(refs.filter(_.getUri == uri).map(_.getRange).asJava)
+    ).asJava.toCompletableFuture
   }
 }
 

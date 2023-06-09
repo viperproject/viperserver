@@ -21,9 +21,12 @@ import viper.silver.verifier.AbstractError
 import scala.collection.mutable.HashSet
 import viper.silver.ast.AbstractSourcePosition
 import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j
 import viper.silver.ast.utility.lsp.RangePosition
 import viper.silver.ast.HasLineColumn
 import viper.silver.ast.LineColumnPosition
+import java.nio.file.Path
+import scala.collection.mutable.ArrayBuffer
 
 case class VerificationHandler(server: lsp.ViperServerService) {
   private var waitingOn: Option[Either[(AstJobId, ActorRef), VerJobId]] = None
@@ -50,7 +53,23 @@ case class VerificationHandler(server: lsp.ViperServerService) {
   def verHandle: Option[VerJobId] = waitingOn.flatMap(_.toOption)
 }
 
-trait VerificationManager[+A <: VerificationManager[A]] extends DiagnosticManager[A] { this: A =>
+object VerificationPhase {
+  sealed trait VerificationPhase
+  case object ParseEnd extends VerificationPhase
+  case object TypeckEnd extends VerificationPhase
+  case object VerifyEnd extends VerificationPhase
+}
+
+trait VerificationManager extends FullManager {
+  // def coordinator: lsp.ClientCoordinator
+  // def content: FileContent
+  implicit def ec: ExecutionContext
+  // def file: PathInfo
+  def file_uri: String = file.file_uri
+  def filename: String = file.filename
+  def path: Path = file.path
+  // protected def containers: ArrayBuffer[lsp.file.utility.LspContainer[_, _, _, _]]
+  // protected def diagnostic: utility.StageArrayContainer.ArrayContainer[Diagnostic, lsp4j.Diagnostic]
 
   private var futureAst: Option[Future[Unit]] = None
   private var futureCancel: Option[Future[Unit]] = None
@@ -129,9 +148,9 @@ trait VerificationManager[+A <: VerificationManager[A]] extends DiagnosticManage
     }
   }
 
-  def onConstructedAst(): Unit = {
-    containers.foreach(_.resetTypeck())
-  }
+  // def onConstructedAst(): Unit = {
+  //   containers.foreach(_.resetTypeck())
+  // }
 
   /** Run parsing and typechecking but no verification */
   def runParseTypecheck(loader: FileContent): Boolean = {
@@ -166,8 +185,7 @@ trait VerificationManager[+A <: VerificationManager[A]] extends DiagnosticManage
       val verJob = coordinator.server.verifyAst(astJob, command, Some(coordinator.localLogger))
       if (verJob.id >= 0) {
         // Execute all handles
-        containers.foreach(_.resetVerify())
-        onVerifyStart.foreach(_())
+        containers.foreach(_.reset(VerificationPhase.VerifyEnd))
         handler.waitOn(verJob)
         val receiver = props(Some(backendClassName))//actorRef
         futureVer = coordinator.server.startStreamingVer(verJob, receiver, Some(coordinator.localLogger))
@@ -198,7 +216,7 @@ trait VerificationManager[+A <: VerificationManager[A]] extends DiagnosticManage
     val astJob = coordinator.server.constructAst(path.toString(), Some(coordinator.localLogger), Some(loader))
     if (astJob.id >= 0) {
       // Execute all handles
-      containers.foreach(_.resetParse())
+      containers.foreach(_.reset(VerificationPhase.ParseEnd))
       val (newFut, newActorRef) = coordinator.server.startStreamingAst(astJob, props(None), Some(coordinator.localLogger))
       futureAst = newFut
       val ast = (astJob, newActorRef)
@@ -219,7 +237,7 @@ trait VerificationManager[+A <: VerificationManager[A]] extends DiagnosticManage
     val diags = errors.map(err => {
       coordinator.logger.info(s"Handling error ${err.toString()}")
       var errorType: String = ""
-      var verifError: Boolean = false
+      var phase: VerificationPhase.VerificationPhase = VerificationPhase.ParseEnd
       if (err.fullId != null && err.fullId == "typechecker.error") {
         typeCheckingCompleted = false
         errorType = "Typechecker error"
@@ -228,7 +246,7 @@ trait VerificationManager[+A <: VerificationManager[A]] extends DiagnosticManage
         typeCheckingCompleted = false
         errorType = "Parser error"
       } else {
-        verifError = true
+        phase = VerificationPhase.VerifyEnd
         errorType = "Verification error"
       }
 
@@ -253,14 +271,10 @@ trait VerificationManager[+A <: VerificationManager[A]] extends DiagnosticManage
 
       val cachFlag: String = if(err.cached) " (cached)" else ""
       val message = s"$errMsgPrefixWithWhitespace${err.readableMessage}$cachFlag"
-      (verifError, Diagnostic(backendClassName, rp, message, err.cached, errorMsgPrefix))
+      (phase, Diagnostic(backendClassName, rp, message, err.cached, errorMsgPrefix))
     })
-    diags.groupBy(d => d._1).foreach { case (verif, diags) =>
-      if (verif) {
-        diagnostic.receiveVerify(diags.map(_._2))
-      } else {
-        diagnostic.receiveParse(diags.map(_._2))
-      }
+    diags.groupBy(d => d._1).foreach { case (phase, diags) =>
+      addDiagnostic(phase)(diags.map(_._2))
     }
     // for (uri <- files) {
     //   if (uri == file_uri) {

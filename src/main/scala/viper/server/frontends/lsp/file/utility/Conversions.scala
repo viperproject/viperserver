@@ -10,12 +10,11 @@ import org.eclipse.lsp4j
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import viper.silver.ast.utility.lsp
 import viper.server.frontends.lsp.{Common, Lsp4jSemanticHighlight}
-import viper.server.frontends.lsp.file.Diagnostic
+import viper.server.frontends.lsp.file.{Diagnostic, FindReferences}
 import ch.qos.logback.classic.Logger
 
 import scala.jdk.CollectionConverters._
-import viper.silver.ast.AbstractSourcePosition
-import viper.silver.ast.utility.lsp.SemanticHighlight
+import scala.collection.mutable.ArrayBuffer
 
 trait Translates[-T, +U, I] {
   def translate(t: T)(i: I): U
@@ -65,17 +64,17 @@ case object FoldingRangeTranslator extends Translates[lsp.FoldingRange, lsp4j.Fo
   }
 }
 
-case object GotoDefinitionTranslator extends Translates[lsp.GotoDefinition, lsp4j.LocationLink, (String, lsp4j.Position, lsp4j.Range)] {
-  override def translate(goto: lsp.GotoDefinition)(i: (String, lsp4j.Position, lsp4j.Range)): lsp4j.LocationLink = {
-    val definition = Common.toRange(goto.definition)
-    // TODO: make this an actual location link
-    new lsp4j.LocationLink(goto.definition.file.toUri().toString(), definition, definition, i._3)
+case object GotoDefinitionTranslator extends Translates[lsp.GotoDefinition, lsp4j.LocationLink, (String, Option[lsp4j.Position], lsp4j.Range)] {
+  override def translate(goto: lsp.GotoDefinition)(i: (String, Option[lsp4j.Position], lsp4j.Range)): lsp4j.LocationLink = {
+    val range = Common.toRange(goto.target)
+    val targetRange = Common.toRange(goto.targetSelection)
+    new lsp4j.LocationLink(goto.target.file.toUri().toString(), range, targetRange, i._3)
   }
 }
 
-case object HoverHintTranslator extends Translates[lsp.HoverHint, lsp4j.Hover, (String, lsp4j.Position, lsp4j.Range)] {
-  override def translate(hh: lsp.HoverHint)(i: (String, lsp4j.Position, lsp4j.Range)): lsp4j.Hover = ???
-  override def translate(hhs: Seq[lsp.HoverHint])(i: (String, lsp4j.Position, lsp4j.Range))(implicit log: Logger): Seq[lsp4j.Hover] = {
+case object HoverHintTranslator extends Translates[lsp.HoverHint, lsp4j.Hover, (String, Option[lsp4j.Position], lsp4j.Range)] {
+  override def translate(hh: lsp.HoverHint)(i: (String, Option[lsp4j.Position], lsp4j.Range)): lsp4j.Hover = ???
+  override def translate(hhs: Seq[lsp.HoverHint])(i: (String, Option[lsp4j.Position], lsp4j.Range))(implicit log: Logger): Seq[lsp4j.Hover] = {
     val hoverStr = hhs.map(_.hint).mkString("\n---\n")
     val hover = new lsp4j.Hover(new lsp4j.MarkupContent("markdown", hoverStr), i._3)
     // TODO: return non-seq
@@ -132,8 +131,31 @@ case object SemanticHighlightTranslator extends Translates[lsp.SemanticHighlight
   }
 }
 
-case object SignatureHelpTranslator extends Translates[lsp.SignatureHelp, lsp4j.SignatureHelp, Unit] {
-  override def translate(sh: lsp.SignatureHelp)(i: Unit): lsp4j.SignatureHelp = {
-    ???
+case object SignatureHelpTranslator extends Translates[lsp.SignatureHelp, lsp4j.SignatureInformation, (String, Option[lsp4j.Position], lsp4j.Range)] {
+  override def translate(sh: lsp.SignatureHelp)(i: (String, Option[lsp4j.Position], lsp4j.Range)): lsp4j.SignatureInformation = {
+    val label = sh.help.map(_.text).mkString
+    val si = new lsp4j.SignatureInformation(label)
+    sh.documentation.foreach(d => si.setDocumentation(new lsp4j.MarkupContent("markdown", d)))
+    val parameters = ArrayBuffer[lsp4j.ParameterInformation]()
+    var offset = 0
+    sh.help.foreach(h => {
+      if (h.isArgument) {
+        val pi = new lsp4j.ParameterInformation()
+        val pos = new lsp4j.jsonrpc.messages.Tuple.Two[Integer, Integer](offset, offset + h.text.length)
+        pi.setLabel(pos)
+        h.documentation.foreach(d => pi.setDocumentation(new lsp4j.MarkupContent("markdown", d)))
+        parameters.addOne(pi)
+      }
+      offset += h.text.length
+    })
+    si.setParameters(parameters.toList.asJava)
+    si
+  }
+}
+
+case object FindReferencesTranslator extends Translates[FindReferences, lsp4j.Location, (String, Option[lsp4j.Position], lsp4j.Range)] {
+  override def translate(fr: FindReferences)(i: (String, Option[lsp4j.Position], lsp4j.Range)): lsp4j.Location = ???
+  override def translate(fr: Seq[FindReferences])(i: (String, Option[lsp4j.Position], lsp4j.Range))(implicit log: Logger): Seq[lsp4j.Location] = {
+    fr.flatMap(_.references.map(Common.toLocation))
   }
 }

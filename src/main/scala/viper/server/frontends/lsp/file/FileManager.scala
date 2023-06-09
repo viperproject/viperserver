@@ -9,7 +9,6 @@ package viper.server.frontends.lsp.file
 import java.net.URI
 import java.nio.file.{Path, Paths}
 import akka.actor.{Actor, Props, Status}
-import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, DocumentSymbol, FoldingRange, Position, PublishDiagnosticsParams, Range, SymbolKind}
 import org.eclipse.lsp4j
 import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp
@@ -21,56 +20,8 @@ import viper.silver.ast.{AbstractSourcePosition, HasLineColumn}
 import viper.silver.reporter._
 import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
 
-import scala.jdk.CollectionConverters._
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.concurrent.Future
-import org.eclipse.lsp4j.ParameterInformation
-import org.eclipse.lsp4j.jsonrpc.messages.Tuple.Two
-import viper.server.vsi.AstJobId
-import viper.server.frontends.lsp.file.{DocumentSymbolManager}
-import viper.server.frontends.lsp.file.FileContent
-import viper.server.frontends.lsp.file.ProgressCoordinator
-import viper.silver.ast.utility.lsp.SemanticHighlight
-
-trait CommonFileInfo[+A <: CommonFileInfo[A]] { this: A =>
-  val coordinator: lsp.ClientCoordinator
-
-  // File information
-  val file: PathInfo
-  val file_uri = file.file_uri
-  val uri = file.uri
-  val path = file.path
-  val filename = file.filename
-
-  val content: lsp.file.FileContent
-
-  val onVerifyStart: ArrayBuffer[() => Unit] = ArrayBuffer()
-  val onVerifyEnd: ArrayBuffer[(VerificationSuccess) => Unit] = ArrayBuffer()
-
-  // def getInFuture[T](f: => T): Future[T]
-  implicit def ec: VerificationExecutionContext
-
-  val containers: ArrayBuffer[lsp.file.utility.LspContainer[_, _, _, _]] = ArrayBuffer()
-
-  // def thisInFile(@annotation.unused uri: String): A
-
-  def handleChange(range: Range, text: String): Unit = {
-    content.handleChange(range, text)
-    containers.foreach(_.resetModifiedFlag())
-    containers.foreach(_.updatePositions(range, text))
-  }
-}
-
-// case class OpenFile(manager: FileNoContent, _content: lsp.file.FileContent) extends CommonFileInfo {
-//   val content: Option[lsp.file.FileContent] = Some(_content)
-// }
-
-// object OpenFile {
-//   def apply(manager: FileNoContent, content: String): OpenFile = {
-//     val fileContent = content.split("\n", -1).to(ArrayBuffer)
-//     OpenFile(manager, lsp.file.FileContent(manager.path, fileContent))
-//   }
-// }
 
 case class PathInfo(file_uri: String) {
   val uri: URI = URI.create(file_uri)
@@ -78,7 +29,8 @@ case class PathInfo(file_uri: String) {
   val filename: String = path.getFileName.toString
 }
 
-case class FileManager(file: PathInfo, coordinator: lsp.ClientCoordinator, content: lsp.file.FileContent)(implicit executor: VerificationExecutionContext) extends MessageHandler[FileManager] {
+// TODO: change this to contain a `MessageHandler` rather than be a
+case class FileManager(file: PathInfo, coordinator: lsp.ClientCoordinator, content: lsp.file.FileContent)(implicit executor: VerificationExecutionContext) extends MessageHandler {
   override val ec: VerificationExecutionContext = executor
   // override val manager: FileManager = this
 
@@ -88,17 +40,34 @@ case class FileManager(file: PathInfo, coordinator: lsp.ClientCoordinator, conte
   // }
 
   // Can force a refresh in the future if we get new ones, so return immediately
-  def getCodeLens(uri: String): Future[Seq[lsp4j.CodeLens]] = Future.successful(getInProject(uri).codeLens.get(())(coordinator.logger))
-  def getDiagnostics(uri: String): Future[Seq[lsp4j.Diagnostic]] = Future.successful(getInProject(uri).diagnostic.get(())(coordinator.logger))
-  def getInlayHints(uri: String): Future[Seq[lsp4j.InlayHint]] = Future.successful(getInProject(uri).inlayHint.get(())(coordinator.logger))
-  def getSemanticHighlights(uri: String): Future[Seq[lsp.Lsp4jSemanticHighlight]] = Future.successful(getInProject(uri).semanticToken.get(())(coordinator.logger))
+  def getCodeLens(uri: String): Future[Seq[lsp4j.CodeLens]] =
+    Future.successful(getInProject(uri).getCodeLens())
+  def getDiagnostics(uri: String): Future[Seq[lsp4j.Diagnostic]] =
+    Future.successful(getInProject(uri).getDiagnostic())
+  def getInlayHints(uri: String): Future[Seq[lsp4j.InlayHint]] =
+    Future.successful(getInProject(uri).getInlayHint())
+  def getSemanticHighlights(uri: String): Future[Seq[lsp.Lsp4jSemanticHighlight]] =
+    Future.successful(getInProject(uri).getSemanticHighlight())
 
   // Even though we may be returning a stale request
-  def getGotoDefinitions(uri: String, ident: String, pos: lsp4j.Position, range: lsp4j.Range): Future[Seq[lsp4j.LocationLink]] = Future.successful(getInProject(uri).gotoDefinitions.get((ident, pos, range))(coordinator.logger))
-  def getHoverHints(uri: String, ident: String, pos: lsp4j.Position, range: lsp4j.Range): Future[Seq[lsp4j.Hover]] = Future.successful(getInProject(uri).hoverHints.get((ident, pos, range))(coordinator.logger))
+  def getGotoDefinitions(uri: String, pos: lsp4j.Position): Future[Option[Seq[lsp4j.LocationLink]]] =
+    getInFuture(getGotoDefinitionProject(uri, pos))
+  def getHoverHints(uri: String, pos: lsp4j.Position): Future[Option[Seq[lsp4j.Hover]]] =
+    Future.successful(getHoverHintProject(uri, pos))
+  def getFindReferences(uri: String, pos: lsp4j.Position, includeDeclaration: Boolean, fromReferences: Boolean = true): Future[Seq[lsp4j.Location]] =
+    getInFuture(getFindReferencesProject(uri, pos, includeDeclaration, fromReferences))
+  def getRename(uri: String, pos: lsp4j.Position, newName: String): Future[lsp4j.WorkspaceEdit] =
+    getInFuture({
+      val references = getFindReferencesProject(uri, pos, true, true)
+      getInProject(uri).getRename(references, newName).orNull
+    })
 
-  def getDocumentSymbols(uri: String): Future[Seq[lsp4j.DocumentSymbol]] = getInFuture(getInProject(uri).documentSymbol.get(())(coordinator.logger))
-  def getFoldingRanges(uri: String): Future[Seq[lsp4j.FoldingRange]] = getInFuture(getInProject(uri).foldingRange.get(())(coordinator.logger))
+  def getDocumentSymbols(uri: String): Future[Seq[lsp4j.DocumentSymbol]] =
+    getInFuture(getInProject(uri).getDocumentSymbol())
+  def getDocumentLinks(uri: String): Future[Seq[lsp4j.DocumentLink]] =
+    getInFuture(getInProject(uri).getDocumentLink())
+  def getFoldingRanges(uri: String): Future[Seq[lsp4j.FoldingRange]] =
+    getInFuture(getInProject(uri).getFoldingRange())
   // def getSignatureHelps(): Future[Seq[lsp4j.SignatureHelp]] = getInFuture(signatureHelp.get(())(coordinator.logger))
 
   var isOpen: Boolean = true

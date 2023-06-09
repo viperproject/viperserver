@@ -64,6 +64,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   def closeFile(uri: String): Unit = {
     val toRemove = Option(_files.get(uri)).map(fm => {
       fm.isOpen = false
+      fm.removeDiagnostics()
       fm.isRoot
     }).getOrElse(false)
     if (toRemove) {
@@ -80,11 +81,11 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   // }
 
   def resetDiagnostics(uri: String): Unit = {
-    getFileManager(uri).diagnostic.resetAll()
+    getFileManager(uri).removeDiagnostics()
   }
 
   def handleChange(uri: String, range: Range, text: String): Unit = {
-    getFileManager(uri).handleChange(range, text)
+    getFileManager(uri).handleContentChange(range, text)
     // TODO: remove
     // val project = toProjectRoot(uri)
     // Option(_files.get(project))
@@ -101,10 +102,10 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   //     .getOrElse(Seq.empty)
   // }
 
-  def getIdentAtPos(uri: String, pos: Position): Option[(String, Range)] = {
-    // val project = toProjectRoot(uri)
-    getFileManager(uri).content.getIdentAtPos(pos)
-  }
+  // def getIdentAtPos(uri: String, pos: Position): Option[(String, Range)] = {
+  //   // val project = toProjectRoot(uri)
+  //   getFileManager(uri).content.getIdentAtPos(pos)
+  // }
 
   // def getHoverHintsForIdent(uri: String, ident: String, pos: Position): Seq[Hover] = {
   //   getFileManager(uri).hoverHints.get((uri, ident, pos))(logger)
@@ -139,13 +140,14 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   // }
 
   def registerSignatureHelpStart(uri: String, pos: Position): Unit = {
-    // val project = toProjectRoot(uri)
-    getFileManager(uri).signatureHelpStart = Some(pos)
+    // TODO:
+    // getFileManager(uri).signatureHelpStart = Some(pos)
   }
 
   def getSignatureHelpStart(uri: String): Option[Position] = {
-    // val project = toProjectRoot(uri)
-    getFileManager(uri).signatureHelpStart
+    // TODO:
+    // getFileManager(uri).signatureHelpStart
+    None
   }
 
   // def sendDiags(uri: String, ver: Boolean, diags: Seq[Diagnostic]) = {
@@ -180,7 +182,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     val fm = getFileManager(uri)
     fm.stop()
       .map(_ => {
-        logger.trace(s"stopVerification has completed for ${fm.uri}")
+        logger.trace(s"stopVerification has completed for ${fm.file.uri}")
         val params = StateChangeParams(Ready.id, verificationCompleted = 0, verificationNeeded = 0, uri = uri)
         sendStateChangeNotification(params, Some(fm))
         true
@@ -196,7 +198,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   def stopAllRunningVerifications(): Future[Unit] = {
     val tasks = _files.values().asScala.map(fm =>
       fm.stop().map(_ => {
-        logger.trace(s"stopVerification has completed for ${fm.uri}")
+        logger.trace(s"stopVerification has completed for ${fm.file.uri}")
       }))
     Future.sequence(tasks).map(_ => {
       logger.debug("all running verifications have been stopped")
@@ -246,7 +248,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     *
     * If state change is related to a particular file, its manager's state is also updated.
     * */
-  def sendStateChangeNotification(params: StateChangeParams, task: Option[VerificationManager[_]]): Unit = {
+  def sendStateChangeNotification(params: StateChangeParams, task: Option[VerificationManager]): Unit = {
     // update file manager's state:
     task.foreach(vm => vm.state = VerificationState(params.newState))
     try {
@@ -322,12 +324,13 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   //   getFileManager(uri).setInlayHints(inlayHints)
   // }
 
+  // TODO:
   def inlayChosenTriggersAt(uri: String, start: RangePosition, triggers: Seq[Trigger], oldTriggers: Seq[Trigger]) = {
-    getFileManager(uri).inlayChosenTriggersAt(start, triggers, oldTriggers)
+    // getFileManager(uri).inlayChosenTriggersAt(start, triggers, oldTriggers)
   }
 
   def setQIsInFile(uri: String, pos: RangePosition, instantiations: Int, maxGen: Int, maxCost: Int) = {
-    getFileManager(uri).setQIsInFile(pos, instantiations, maxGen, maxCost)
+    // getFileManager(uri).setQIsInFile(pos, instantiations, maxGen, maxCost)
   }
 
   ///////////////////////
