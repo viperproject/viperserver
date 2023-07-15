@@ -438,6 +438,10 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
     override def write(obj: WarningsDuringTypechecking): JsArray = JsArray(obj.warnings.map(_.asInstanceOf[AbstractError].toJson).toVector)
   })
 
+  implicit val warningsDuringVerification_writer: RootJsonFormat[WarningsDuringVerification] = lift(new RootJsonWriter[WarningsDuringVerification] {
+    override def write(obj: WarningsDuringVerification): JsArray = JsArray(obj.warnings.map(_.asInstanceOf[AbstractError].toJson).toVector)
+  })
+
   implicit val simpleMessage_writer: RootJsonFormat[SimpleMessage] = lift(new RootJsonWriter[SimpleMessage] {
     override def write(obj: SimpleMessage): JsObject = JsObject("text" -> JsString(obj.text))
   })
