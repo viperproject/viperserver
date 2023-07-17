@@ -216,6 +216,15 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
       case InvalidArgumentsReport(_, errors) =>
         markErrorsAsReported(errors)
         processErrors(backendClassName, errors, Some(s"Invalid arguments have been passed to the backend $backendClassName:"))
+      case WarningsDuringParsing(warnings) =>
+        markErrorsAsReported(warnings)
+        processErrors(backendClassName, warnings)
+      case WarningsDuringTypechecking(warnings) =>
+        markErrorsAsReported(warnings)
+        processErrors(backendClassName, warnings)
+      case WarningsDuringVerification(warnings) =>
+        markErrorsAsReported(warnings)
+        processErrors(backendClassName, warnings)
       case EntitySuccessMessage(_, concerning, _, _) =>
         if (progress == null) {
           coordinator.logger.debug("The backend must send a VerificationStart message before the ...Verified message.")
@@ -243,7 +252,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         val newErrors = failure.errors.filterNot(hasAlreadyBeenReported)
         markErrorsAsReported(newErrors)
         processErrors(backendClassName, newErrors)
-      // the completion handler is not yet invoked (but as part of Status.Success)
+        // the completion handler is not yet invoked (but as part of Status.Success)
       case m: Message => coordinator.client.notifyUnhandledViperServerMessage(UnhandledViperServerMessageTypeParams(m.name, m.toString, LogLevel.Info.id))
       case Status.Success =>
         // Success is sent when the stream is completed
@@ -258,6 +267,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
     private def processErrors(backendClassName: String, errors: Seq[AbstractError], errorMsgPrefix: Option[String] = None): Unit = {
       val diags = errors.map(err => {
         var errorType: String = ""
+        var severity = DiagnosticSeverity.Error
         if (err.fullId != null && err.fullId == "typechecker.error") {
           typeCheckingCompleted = false
           errorType = "Typechecker error"
@@ -265,6 +275,15 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
           parsingCompleted = false
           typeCheckingCompleted = false
           errorType = "Parser error"
+        } else if (err.fullId != null && err.fullId == "typechecker.warning") {
+          severity = DiagnosticSeverity.Warning
+          errorType = "Typechecker warning"
+        } else if (err.fullId != null && err.fullId == "parser.warning") {
+          severity = DiagnosticSeverity.Warning
+          errorType = "Parser warning"
+        } else if (err.fullId != null && err.fullId == "verifier.warning") {
+          severity = DiagnosticSeverity.Warning
+          errorType = "Verification warning"
         } else {
           errorType = "Verification error"
         }
@@ -287,9 +306,8 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
           s"${if(err.fullId != null) "[" + err.fullId + "] " else ""}" +
           s"${range.getStart.getLine + 1}:${range.getStart.getCharacter + 1} $errMsgPrefixWithWhitespace${err.readableMessage}s")
 
-
         val cachFlag: String = if(err.cached) "(cached)" else ""
-        new Diagnostic(range, errMsgPrefixWithWhitespace + err.readableMessage + cachFlag, DiagnosticSeverity.Error, "")
+        new Diagnostic(range, errMsgPrefixWithWhitespace + err.readableMessage + cachFlag, severity, "")
       })
 
       diagnostics.appendAll(diags)
