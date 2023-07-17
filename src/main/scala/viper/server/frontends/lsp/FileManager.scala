@@ -216,6 +216,15 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
       case InvalidArgumentsReport(_, errors) =>
         markErrorsAsReported(errors)
         processErrors(backendClassName, errors, Some(s"Invalid arguments have been passed to the backend $backendClassName:"))
+      case WarningsDuringParsing(warnings) =>
+        markErrorsAsReported(warnings)
+        processErrors(backendClassName, warnings)
+      case WarningsDuringTypechecking(warnings) =>
+        markErrorsAsReported(warnings)
+        processErrors(backendClassName, warnings)
+      case WarningsDuringVerification(warnings) =>
+        markErrorsAsReported(warnings)
+        processErrors(backendClassName, warnings)
       case EntitySuccessMessage(_, concerning, _, _) =>
         if (progress == null) {
           coordinator.logger.debug("The backend must send a VerificationStart message before the ...Verified message.")
@@ -243,16 +252,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         val newErrors = failure.errors.filterNot(hasAlreadyBeenReported)
         markErrorsAsReported(newErrors)
         processErrors(backendClassName, newErrors)
-      case WarningsDuringParsing(warnings) =>
-        markErrorsAsReported(warnings)
-        processErrors(backendClassName, warnings)
-      case WarningsDuringTypechecking(warnings) =>
-        markErrorsAsReported(warnings)
-        processErrors(backendClassName, warnings)
-      case WarningsDuringVerification(warnings) =>
-        markErrorsAsReported(warnings)
-        processErrors(backendClassName, warnings)
-      // the completion handler is not yet invoked (but as part of Status.Success)
+        // the completion handler is not yet invoked (but as part of Status.Success)
       case m: Message => coordinator.client.notifyUnhandledViperServerMessage(UnhandledViperServerMessageTypeParams(m.name, m.toString, LogLevel.Info.id))
       case Status.Success =>
         // Success is sent when the stream is completed
