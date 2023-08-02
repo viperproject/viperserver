@@ -12,15 +12,20 @@ on:
   workflow_dispatch: # allow to manually trigger this workflow
     inputs:
       type:
-        description: 'Specifies whether a stable or nightly release should be triggered. Has to be "stable" or "nightly". Note that "stable" can only be used on branch "release".'
+        description: 'Specifies whether a stable or nightly release should be triggered. Note that "stable" can only be used on branch "release".'
         required: true
-        default: 'stable'
+        default: 'nightly'
+        options: 
+          - stable
+          - nightly
       tag_name:
         description: 'Tag name for stable release. Ignored if a nightly release will be created.'
         required: true
+        default: '-'
       release_name:
         description: 'Release title for stable release. Ignored if a nightly release will be created.'
         required: true
+        default: '-'
   schedule:
     - cron: '0 7 * * *' # run every day at 07:00 UTC
 

@@ -32,7 +32,9 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
 
   override def start(): Future[Done] = {
     port = config.port.toOption.getOrElse(0) // 0 causes HTTP server to automatically select a free port
-    super.start(config.maximumActiveJobs()).map({ _ =>
+    // we call here `ViperCoreServer.start()` (which internally calls `VerificationServer.start(activeJobs)`)
+    // Note that `VerificationServer.start(activeJobs)` is overridden in VerificationServerHttp.
+    super.start().map({ _ =>
       println(s"ViperServer online at http://localhost:$port")
       Done
     })(executor)

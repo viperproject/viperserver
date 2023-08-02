@@ -68,6 +68,7 @@ class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteT
   private val tool = "silicon"
   private val testSimpleViperCode_cmd = s"$tool --disableCaching ${verifiableFile}"
   private val testEmptyFile_cmd = s"$tool --disableCaching ${emptyFile}"
+  private val testEmptyFileWithCaching_cmd = s"$tool $emptyFile"
   private val testNonExistingFile_cmd = s"$tool --disableCaching ${nonExistingFile}"
 
   "ViperServer" should {
@@ -112,6 +113,23 @@ class ViperServerHttpSpec extends AnyWordSpec with Matchers with ScalatestRouteT
         status should ===(StatusCodes.OK)
         contentType should ===(ContentTypes.`application/json`)
         responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
+      }
+    }
+
+    s"start another verification process with caching enabled using `$tool` on an empty file (Issue #111)" in {
+      Post("/verify", VerificationRequest(testEmptyFileWithCaching_cmd)) ~> _routesUnderTest ~> check {
+        status should ===(StatusCodes.OK)
+        contentType should ===(ContentTypes.`application/json`)
+        responseAs[String] should not include ("""File not found""")
+      }
+    }
+
+    "respond with the result for process #2 that should not contain an exception report (Issue #111)" in {
+      Get("/verify/2") ~> _routesUnderTest ~> check {
+        status should ===(StatusCodes.OK)
+        contentType should ===(ContentTypes.`application/json`)
+        responseAs[String] should include (s""""kind":"overall","status":"success","verifier":"$tool"""")
+        responseAs[String] should not include(s""""msg_type":"exception_report"""")
       }
     }
 

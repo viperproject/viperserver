@@ -15,13 +15,14 @@ import viper.silver.frontend.{SilFrontend, ViperAstProvider}
 import viper.silver.reporter.{NoopReporter, Reporter}
 
 class AstGenerator(private val _logger: Logger,
-                   private val _reporter: Reporter = NoopReporter) extends ProgramDefinitionsProvider {
+                   private val _reporter: Reporter = NoopReporter,
+                   private val disablePlugins: Boolean = false) extends ProgramDefinitionsProvider {
 
   /** Creates a backend that reads and parses the file
     */
   protected override val _frontend: SilFrontend = {
     _logger.info(s"Creating new AstGenerator instance.")
-    new ViperAstProvider(_reporter)
+    new ViperAstProvider(_reporter, disablePlugins = disablePlugins)
   }
   /** Parses and translates a Viper file into a Viper AST.
     *

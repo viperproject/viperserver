@@ -155,6 +155,12 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     }
   }, numberHandler("Int")))
 
+  val disablePlugins: ScallopOption[Boolean] = opt[Boolean]("disablePlugins",
+    descr = "Disables all plugins.",
+    default = Some(false),
+    noshort = true
+  )
+
   /**
     * Exception handling
     */

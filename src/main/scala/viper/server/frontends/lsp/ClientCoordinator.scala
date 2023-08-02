@@ -114,6 +114,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     Option(_files.get(uri))
       .map(fm => fm.stopVerification()
         .map(_ => {
+          logger.trace(s"stopVerification has completed for ${fm.uri}")
           val params = StateChangeParams(Ready.id, verificationCompleted = 0, verificationNeeded = 0, uri = uri)
           sendStateChangeNotification(params, Some(fm))
           true

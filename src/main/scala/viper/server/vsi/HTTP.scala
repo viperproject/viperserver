@@ -62,10 +62,11 @@ sealed trait CustomizableHttp extends BasicHttp {
   * responses as type [[ToResponseMarshallable]].
   * */
 trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
+  import scala.language.postfixOps
 
   def setRoutes(): Route
 
-  private var stoppedPromise: Promise[Done] = _
+  private val stoppedPromise: Promise[Done] = Promise()
   var bindingFuture: Future[Http.ServerBinding] = _
 
   /**
@@ -76,7 +77,6 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
   override def start(active_jobs: Int): Future[Done] = {
     ast_jobs = new JobPool("AST-pool", active_jobs)
     ver_jobs = new JobPool("Verification-pool", active_jobs)
-    stoppedPromise = Promise()
     bindingFuture = Http().newServerAt("localhost", port).bindFlow(setRoutes())
     _termActor = system.actorOf(Terminator.props(ast_jobs, ver_jobs, Some(bindingFuture)), "terminator")
     bindingFuture.map { serverBinding =>
