@@ -332,6 +332,7 @@ jobs:
           release_name: Nightly Release ${{ env.TAG_NAME }}
           body_path: versions.txt
           keep_num: 1 # keep the previous nightly release such that there are always two
+          keep_tags: true
 
       - name: Upload ViperServer skinny jars
         if: env.MATCHING_RELEASE != 'true'
