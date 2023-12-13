@@ -71,9 +71,7 @@ jobs:
             ${{ env.PR_BODY_LINE2 }}
 
       - name: Enable auto-merge of PR
-        uses: peter-evans/create-or-update-comment@v2
         if: (env.PREV_SILICON_REF != env.CUR_SILICON_REF) || (env.PREV_CARBON_REF != env.CUR_CARBON_REF)
-        with:
-          token: ${{ secrets.VIPER_ADMIN_TOKEN }}
-          issue-number: ${{ steps.pr.outputs.pull-request-number }}"
-          body: bors merge
+        run: gh pr merge --merge --auto "${{ steps.pr.outputs.pull-request-number }}"
+        env:
+          GH_TOKEN: ${{ secrets.VIPER_ADMIN_TOKEN }}
