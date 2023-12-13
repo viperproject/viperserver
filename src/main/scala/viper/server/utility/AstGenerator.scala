@@ -16,7 +16,10 @@ import viper.silver.reporter.{NoopReporter, Reporter}
 
 class AstGenerator(private val _logger: Logger,
                    private val _reporter: Reporter = NoopReporter,
+                   private val argList: Seq[String],
                    private val disablePlugins: Boolean = false) extends ProgramDefinitionsProvider {
+
+
 
   /** Creates a backend that reads and parses the file
     */
@@ -35,10 +38,21 @@ class AstGenerator(private val _logger: Logger,
       throw new NoSuchFileException(vpr_file_path)
     }
     
-    val args: Seq[String] = Seq(vpr_file_path)
     _logger.info(s"Parsing `$vpr_file_path` ...")
-
-    _frontend.execute(args)
+    var filteredArgs: Seq[String] = Seq(vpr_file_path)
+    for (option <- optionWhiteList) {
+      val optionArgIndex = argList.indexOf(option)
+      if (optionArgIndex != -1) {
+        filteredArgs = argList.slice(optionArgIndex, 2) ++ filteredArgs
+      }
+    }
+    for (flag <- flagWhiteList) {
+      val flagArgIndex = argList.indexOf(flag)
+      if (flagArgIndex != -1) {
+        filteredArgs = Seq(argList(flagArgIndex)) ++ filteredArgs
+      }
+    }
+    _frontend.execute(filteredArgs)
     if (_frontend.program.isDefined) {
       reportProgramStats()
     }
@@ -49,4 +63,7 @@ class AstGenerator(private val _logger: Logger,
       None
     }
   }
+
+  val flagWhiteList: Seq[String] = Seq("--disableDefaultPlugins", "--disableAdtPlugin", "--disableTerminationPlugin")
+  val optionWhiteList: Seq[String] = Seq("--plugin")
 }

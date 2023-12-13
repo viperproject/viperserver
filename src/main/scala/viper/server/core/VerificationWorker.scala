@@ -175,6 +175,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     if (!_frontend.prepare(argsWithDummyFilename)) {
       return
     }
+    _frontend.resetPlugins()
     _frontend.init( _frontend.verifier )
   }
 
