@@ -9,6 +9,7 @@ name: Build, Test, and Publish
 on:
   push: # run this workflow on every push
   pull_request: # run this workflow on every pull_request
+  merge_group: # run this workflow on every PR in the merge queue
   workflow_dispatch: # allow to manually trigger this workflow
     inputs:
       type:
