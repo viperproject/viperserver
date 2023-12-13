@@ -16,7 +16,7 @@ import viper.silver.reporter.{NoopReporter, Reporter}
 
 class AstGenerator(private val _logger: Logger,
                    private val _reporter: Reporter = NoopReporter,
-                   private val argList: Seq[String],
+                   private val argList: Seq[String] = Seq(),
                    private val disablePlugins: Boolean = false) extends ProgramDefinitionsProvider {
 
 
