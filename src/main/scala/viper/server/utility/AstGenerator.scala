@@ -39,6 +39,11 @@ class AstGenerator(private val _logger: Logger,
     }
     
     _logger.info(s"Parsing `$vpr_file_path` ...")
+
+    // We need to pass all arguments relevant to AST creation to the frontend (e.g. everything plugin-related), but we
+    // cannot pass any backend-specific arguments, since the argument parser used here does not know those and argument
+    // parsing would fail.
+    // So for now, we use a whitelist of arguments that are relevant for AST creation and pass only those.
     var filteredArgs: Seq[String] = Seq(vpr_file_path)
     for (option <- optionWhiteList) {
       val optionArgIndex = argList.indexOf(option)
@@ -64,6 +69,8 @@ class AstGenerator(private val _logger: Logger,
     }
   }
 
+  // Parameters that are relevant for AST creation and are boolean flags
   val flagWhiteList: Seq[String] = Seq("--disableDefaultPlugins", "--disableAdtPlugin", "--disableTerminationPlugin")
+  // Parameters that are relevant for AST creation and are passed additional values
   val optionWhiteList: Seq[String] = Seq("--plugin")
 }

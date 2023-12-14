@@ -175,6 +175,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     if (!_frontend.prepare(argsWithDummyFilename)) {
       return
     }
+    // Initialize plugins based on the configuration that was just created from the passed arguments.
     _frontend.resetPlugins()
     _frontend.init( _frontend.verifier )
   }
