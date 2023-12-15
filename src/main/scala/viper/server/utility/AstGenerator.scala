@@ -48,7 +48,14 @@ class AstGenerator(private val _logger: Logger,
     for (option <- optionWhiteList) {
       val optionArgIndex = argList.indexOf(option)
       if (optionArgIndex != -1) {
-        filteredArgs = argList.slice(optionArgIndex, 2) ++ filteredArgs
+        // argument is the next item in the argList
+        filteredArgs = argList.slice(optionArgIndex, optionArgIndex + 2) ++ filteredArgs
+      } else {
+        argList.find(_.startsWith(s"${option}=")) match {
+          case Some(arg) =>
+            filteredArgs = Seq(arg) ++ filteredArgs
+          case _ =>
+        }
       }
     }
     for (flag <- flagWhiteList) {
