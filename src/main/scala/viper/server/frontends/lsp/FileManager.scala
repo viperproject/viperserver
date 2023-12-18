@@ -328,7 +328,11 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
     } else if (is_aborting) {
       Aborted
     } else if (diagnostics.nonEmpty) {
-      VerificationFailed
+      if (diagnostics.exists(d => d.getSeverity == DiagnosticSeverity.Error)) {
+        VerificationFailed
+      } else {
+        VerificationSuccess.Success
+      }
     } else {
       VerificationSuccess.Success
     }
