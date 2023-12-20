@@ -14,6 +14,7 @@ import viper.silicon.{Silicon, SiliconFrontend}
 import viper.silver.ast._
 import viper.silver.frontend.SilFrontend
 import viper.silver.reporter.{Reporter, _}
+import viper.silver.utility.ViperProgramSubmitter
 import viper.silver.verifier.{AbstractVerificationError, VerificationResult, _}
 
 import scala.collection.mutable.ListBuffer
@@ -114,6 +115,8 @@ class VerificationWorker(private val command: List[String],
   */
 class ViperBackend(val backendName: String, private val _frontend: SilFrontend, private val programId: String, private val _ast: Program, private val disablePlugins: Boolean = false) {
 
+  // ProgramSubmitter that sends program to viper-data-collection API if _frontend.config.submitForEvaluation enabled
+  private val submitter: ViperProgramSubmitter = initSubmitter
   override def toString: String = {
     if ( _frontend.verifier == null )
       s"ViperBackend( ${_frontend.getClass.getName} /with uninitialized verifier/ )"
@@ -159,6 +162,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       turnEitherIntoVerificationResult(res)
     } finally {
       stop()
+      submitter.submit()
     }
 
     finish(overallResult)
@@ -178,6 +182,8 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     // Initialize plugins based on the configuration that was just created from the passed arguments.
     _frontend.resetPlugins()
     _frontend.init( _frontend.verifier )
+
+    submitter.setArgs(args.toArray)
   }
 
   private def filter(input: Program): Either[Seq[AbstractError], Program] = {
@@ -394,5 +400,14 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       case Left(errs) => Failure(errs)
       case Right(res) => res
     }
+  }
+
+  private def initSubmitter: ViperProgramSubmitter = {
+    val s = new ViperProgramSubmitter(_frontend) {
+      override def originalFrontend: String = "ViperServer"
+    }
+    s.setName(programId.split("/").last)
+    s.setProgram(_ast)
+    s
   }
 }
