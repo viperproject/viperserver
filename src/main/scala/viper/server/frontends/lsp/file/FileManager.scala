@@ -42,6 +42,7 @@ case class FileManager(file: PathInfo, coordinator: lsp.ClientCoordinator, conte
   // Can force a refresh in the future if we get new ones, so return immediately
   def getCodeLens(uri: String): Future[Seq[lsp4j.CodeLens]] =
     Future.successful(getInProject(uri).getCodeLens())
+  // Currently unused
   def getDiagnostics(uri: String): Future[Seq[lsp4j.Diagnostic]] =
     Future.successful(getInProject(uri).getDiagnostic())
   def getInlayHints(uri: String): Future[Seq[lsp4j.InlayHint]] =
@@ -50,9 +51,9 @@ case class FileManager(file: PathInfo, coordinator: lsp.ClientCoordinator, conte
     Future.successful(getInProject(uri).getSemanticHighlight())
 
   // Even though we may be returning a stale request
-  def getGotoDefinitions(uri: String, pos: lsp4j.Position): Future[Option[Seq[lsp4j.LocationLink]]] =
+  def getGotoDefinitions(uri: String, pos: lsp4j.Position): Future[Seq[lsp4j.LocationLink]] =
     getInFuture(getGotoDefinitionProject(uri, pos))
-  def getHoverHints(uri: String, pos: lsp4j.Position): Future[Option[Seq[lsp4j.Hover]]] =
+  def getHoverHints(uri: String, pos: lsp4j.Position): Future[Seq[lsp4j.Hover]] =
     Future.successful(getHoverHintProject(uri, pos))
   def getFindReferences(uri: String, pos: lsp4j.Position, includeDeclaration: Boolean, fromReferences: Boolean = true): Future[Seq[lsp4j.Location]] =
     getInFuture(getFindReferencesProject(uri, pos, includeDeclaration, fromReferences))
@@ -68,6 +69,8 @@ case class FileManager(file: PathInfo, coordinator: lsp.ClientCoordinator, conte
     getInFuture(getInProject(uri).getDocumentLink())
   def getFoldingRanges(uri: String): Future[Seq[lsp4j.FoldingRange]] =
     getInFuture(getInProject(uri).getFoldingRange())
+  def getCompletionProposal(uri: String, pos: lsp4j.Position, char: Option[String]): Future[Seq[lsp4j.CompletionItem]] =
+    getInFuture(getCompletionProposal(uri, pos, char, ()))
   // def getSignatureHelps(): Future[Seq[lsp4j.SignatureHelp]] = getInFuture(signatureHelp.get(())(coordinator.logger))
 
   var isOpen: Boolean = true

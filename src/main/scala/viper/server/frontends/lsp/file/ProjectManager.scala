@@ -23,6 +23,7 @@ import viper.silver.ast.utility.lsp.GotoDefinition
 import viper.silver.parser.PIdnUse
 import viper.silver.ast.FilePosition
 import viper.silver.parser.PIdnDef
+import viper.silver.ast.utility.lsp.DocumentSymbol
 
 case class LeafInfo(private val roots: ArrayBuffer[String]) {
   def lastRoot: String = roots.head
@@ -101,7 +102,12 @@ trait ProjectManager extends FullManager with ProjectAware {
   def projectLeaves: Option[Set[String]] = project.left.toOption.map(_.keySet)
   def isRoot: Boolean = project.isLeft
 
-  def getInProject(uri: String): FullManager = if (uri == file.file_uri) this else project.left.toOption.get(uri)
+  def getInProject(uri: String): FullManager = {
+    println("Get in project " + uri)
+    val res = if (uri == file.file_uri) this else project.left.toOption.get.get(uri).get
+    println("Res " + res.toString() + " fm " + res.file.toString())
+    res
+  }
   def getLeaf(uri: String): LeafManager = project.left.toOption.get(uri)
   // override def add[T <: lsp.BelongsToFile](phase: VerificationPhase, v: T)
 
@@ -121,8 +127,10 @@ trait ProjectManager extends FullManager with ProjectAware {
   override def addCodeLens(phase: VerificationPhase)(vs: Seq[lsp.CodeLens]): Unit =
     addBtf(uri => if (uri == file.file_uri) super.addCodeLens(phase) else getInProject(uri).addCodeLens(phase), vs)
 
-  override def addDiagnostic(phase: VerificationPhase)(vs: Seq[Diagnostic]): Unit =
+  override def addDiagnostic(phase: VerificationPhase)(vs: Seq[Diagnostic]): Unit = {
+    println(s"Adding DIAGS PJ in phase ${phase.toString()}:\n${vs.toString()}, ${vs.map(_.file.toString())}")
     addBtf(uri => if (uri == file.file_uri) super.addDiagnostic(phase) else getInProject(uri).addDiagnostic(phase), vs)
+  }
 
   override def addDocumentSymbol(phase: VerificationPhase)(vs: Seq[lsp.DocumentSymbol]): Unit =
     addBtf(uri => if (uri == file.file_uri) super.addDocumentSymbol(phase) else getInProject(uri).addDocumentSymbol(phase), vs)
@@ -132,21 +140,19 @@ trait ProjectManager extends FullManager with ProjectAware {
 
   override def addGotoDefinition(phase: VerificationPhase)(vs: Seq[lsp.GotoDefinition]): Unit =
     addSib(uri => if (uri == file.file_uri) super.addGotoDefinition(phase) else getInProject(uri).addGotoDefinition(phase), vs)
-  def getGotoDefinitionProject(uri: String, pos: lsp4j.Position): Option[Seq[lsp4j.LocationLink]] =
-    getIdentAtPos(uri, pos).map {
-      case (keyword, range) =>
-        if (uri == file.file_uri) super.getGotoDefinition(keyword, Some(pos), range)
-        else super.getGotoDefinition(keyword, None, range) ++ getInProject(uri).getGotoDefinition(keyword, Some(pos), range)
-    }
+  def getGotoDefinitionProject(uri: String, pos: lsp4j.Position): Seq[lsp4j.LocationLink] = {
+    val keyword = getIdentAtPos(uri, pos)
+    if (uri == file.file_uri) super.getGotoDefinition(Some(pos), keyword)
+    else super.getGotoDefinition(None, keyword) ++ getInProject(uri).getGotoDefinition(Some(pos), keyword)
+  }
 
   override def addHoverHint(phase: VerificationPhase)(vs: Seq[lsp.HoverHint]): Unit =
     addSib(uri => if (uri == file.file_uri) super.addHoverHint(phase) else getInProject(uri).addHoverHint(phase), vs)
-  def getHoverHintProject(uri: String, pos: lsp4j.Position): Option[Seq[lsp4j.Hover]] =
-    getIdentAtPos(uri, pos).map {
-      case (keyword, range) =>
-        if (uri == file.file_uri) super.getHoverHint(keyword, Some(pos), range)
-        else super.getHoverHint(keyword, None, range) ++ getInProject(uri).getHoverHint(keyword, Some(pos), range)
-    }
+  def getHoverHintProject(uri: String, pos: lsp4j.Position): Seq[lsp4j.Hover] = {
+    val keyword = getIdentAtPos(uri, pos)
+    if (uri == file.file_uri) super.getHoverHint(Some(pos), keyword)
+    else super.getHoverHint(None, keyword) ++ getInProject(uri).getHoverHint(Some(pos), keyword)
+  }
 
   override def addInlayHint(phase: VerificationPhase)(vs: Seq[lsp.InlayHint]): Unit =
     addBtf(uri => if (uri == file.file_uri) super.addInlayHint(phase) else getInProject(uri).addInlayHint(phase), vs)
@@ -157,8 +163,8 @@ trait ProjectManager extends FullManager with ProjectAware {
   override def addSignatureHelp(phase: VerificationPhase)(vs: Seq[lsp.SignatureHelp]): Unit =
     addSib(uri => if (uri == file.file_uri) super.addSignatureHelp(phase) else getInProject(uri).addSignatureHelp(phase), vs)
   def getSignatureHelpProject(uri: String, keyword: String, pos: lsp4j.Position, range: Range): Seq[lsp4j.SignatureInformation] =
-    if (uri == file.file_uri) super.getSignatureHelp(keyword, Some(pos), range)
-    else super.getSignatureHelp(keyword, None, range) ++ getInProject(uri).getSignatureHelp(keyword, Some(pos), range)
+    if (uri == file.file_uri) super.getSignatureHelp(Some(pos), Some((keyword, range)))
+    else super.getSignatureHelp(None, Some((keyword, range))) ++ getInProject(uri).getSignatureHelp(Some(pos), Some((keyword, range)))
 
 
   override def addFindReferences(phase: VerificationPhase)(vs: Seq[lsp.ReferenceTo]): Unit =
@@ -166,11 +172,34 @@ trait ProjectManager extends FullManager with ProjectAware {
   def getFindReferencesProject(uri: String, pos: lsp4j.Position, includeDeclaration: Boolean, fromReferences: Boolean): Seq[lsp4j.Location] = {
     val refs = getInProject(uri).getFindReferences(pos, includeDeclaration)
     if (!refs.isEmpty || !fromReferences) refs else {
-      getGotoDefinitionProject(uri, pos).toSeq.flatMap(defns => {
-        if (defns.length != 1) Nil
-        else getInProject(defns(0).getTargetUri).getFindReferences(defns(0).getTargetSelectionRange.getStart, includeDeclaration)
-      })
+      val defns = getGotoDefinitionProject(uri, pos)
+      if (defns.length != 1) Nil
+      else getInProject(defns(0).getTargetUri).getFindReferences(defns(0).getTargetSelectionRange.getStart, includeDeclaration)
     }
+  }
+
+  override def addSuggestionScopeRange(phase: VerificationPhase)(vs: Seq[lsp.SuggestionScopeRange]): Unit =
+    addSib(uri => if (uri == file.file_uri) super.addSuggestionScopeRange(phase) else getInProject(uri).addSuggestionScopeRange(phase), vs)
+
+  override def addCompletionProposal(phase: VerificationPhase)(vs: Seq[lsp.CompletionProposal]): Unit =
+    addSib(uri => if (uri == file.file_uri) super.addCompletionProposal(phase) else getInProject(uri).addCompletionProposal(phase), vs)
+  def getCompletionProposal(uri: String, pos: lsp4j.Position, _char: Option[String], u: Unit) = {
+    val m = getInProject(uri)
+    val scope: lsp.SuggestionScope = m.getSuggestionScopeRange(pos).head
+    // val char = char.filter(_.length == 1).map(_.head).getOrElse
+    val c = m.content
+    val ident = c.getIdentAtPos(pos)
+    val start = ident.map(_._2.getStart).getOrElse(pos)
+    // Get character
+    val char = c.iterBackward(start).drop(1).find{ case (c, _) => c != ' ' }.map(_._1).getOrElse('\n')
+    println(s"suggestionScopeRangeContainer: ${m.suggestionScopeRangeContainer.all(_ => true)}")
+    // println(s"completionProposalContainer: ${completionProposalContainer.all(_ => true)}")
+    println(s"CompletionProposal: $scope, \"$c\" (${start.toString()})\"${m.content.fileContent.mkString("\n")}\"")
+    println(s"completionProposalContainer: ${m.completionProposalContainer.all(_ => true)}")
+    val r = if (uri == file.file_uri) super.getCompletionProposal(scope, Some(pos), char)
+    else super.getCompletionProposal(scope, None, char) ++ getInProject(uri).getCompletionProposal(scope, Some(pos), char)
+    println(s"got: ${r.toString()}")
+    r
   }
 
   def getIdentAtPos(uri: String, pos: lsp4j.Position): Option[(String, Range)] =
@@ -241,7 +270,7 @@ trait ProjectManager extends FullManager with ProjectAware {
       coordinator.removeFromProject(leaf, root)
     }
 
-    def getLeafManager(uri: String): LeafManager = oldProject.getOrElse(uri, LeafManager(file.file_uri, np(uri)._1.get, coordinator))
+    def getLeafManager(uri: String): LeafManager = oldProject.getOrElse(uri, LeafManager(uri, np(uri)._1.get, coordinator))
     this.project = Left(newProject.map(uri => uri -> getLeafManager(uri)).toMap)
 
     val setupProject = SetupProjectParams(file.file_uri, newProject.toArray)

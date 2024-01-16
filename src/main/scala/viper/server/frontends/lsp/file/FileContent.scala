@@ -13,12 +13,41 @@ import viper.silver.ast.utility.DiskLoader
 import java.nio.file.Path
 import org.eclipse.lsp4j.Position
 import viper.server.frontends.lsp.Common
+// import viper.silver.ast.utility.lsp.RangePosition
 
-case class FileContent(path: Path, fileContent: ArrayBuffer[String]) extends DiskLoader {
+// case class CharRange(start: Int, end: Int)
+
+case class FileContent(path: Path) extends DiskLoader {
+  case class FileContentIter(fc: FileContent, delta: Int, var currPos: Option[Position]) extends Iterator[(Char, Position)] {
+    override def hasNext: Boolean = currPos.isDefined
+    override def next(): (Char, Position) = {
+      val pos = currPos.get
+      val char = fc.getCharAt(pos)
+      pos.setCharacter(pos.getCharacter + delta)
+      currPos = fc.normalize(pos)
+      (char, pos)
+    }
+  }
+
+  val fileContent = new ArrayBuffer[String]
+  // val lineToChar = new ArrayBuffer[Int]
+
   def set(newContent: String): Unit = {
     fileContent.clear()
     fileContent.addAll(newContent.split("\n", -1))
+    // var idx = 0
+    // fileContent.foreach(line => {
+    //   lineToChar.addOne(idx)
+    //   idx += line.length + 1
+    // })
   }
+
+  // def rpToCharRange(rp: RangePosition): CharRange = {
+  //   CharRange(
+  //     lineToChar(rp.start.line) + rp.start.column,
+  //     lineToChar(rp._end.line) + rp._end.column,
+  //   )
+  // }
 
   override def loadContent(path: Path): Try[String] =
     if (this.path == path) Success(fileContent.mkString("\n")) else super.loadContent(path)
@@ -33,24 +62,8 @@ case class FileContent(path: Path, fileContent: ArrayBuffer[String]) extends Dis
     fileContent.patchInPlace(startLine, lines, endLine - startLine + 1)
   }
 
-  def getIdentAtPos(pos: Position): Option[(String, Range)] = {
-    val lineIdx = pos.getLine
-    fileContent.lift(lineIdx).flatMap(line => {
-      var start = pos.getCharacter
-      if (start >= line.length) return None
-      while (start > 0 && Common.isIdentChar(line(start - 1))) {
-        start -= 1
-      }
-      if (!Common.isIdentStartChar(line(start))) {
-        start += 1
-      }
-      val ident = line.drop(start).takeWhile(Common.isIdentChar)
-      if (ident.isEmpty) None else {
-        val range = new Range(new Position(lineIdx, start), new Position(lineIdx, start + ident.length))
-        Some((ident, range))
-      }
-    })
-  }
+  def iterForward(pos: Position): FileContentIter = FileContentIter(this, 1, normalize(pos))
+  def iterBackward(pos: Position): FileContentIter = FileContentIter(this, -1, normalize(pos))
 
   def normalize(pos: Position): Option[Position] = {
     if (pos.getLine < 0 || pos.getLine >= fileContent.length) return None
@@ -77,40 +90,40 @@ case class FileContent(path: Path, fileContent: ArrayBuffer[String]) extends Dis
     val line = fileContent(pos.getLine)
     if (pos.getCharacter == line.length) '\n' else line(pos.getCharacter)
   }
-  def find(start: Position, pred: Char => Boolean, delta: Int, skipN: Int = 0, bound: Option[Position] = None): Option[Position] = {
-    assert(delta != 0)
-    var potential = normalize(start)
-    var count = 0
-    while (potential.isDefined && potential != bound && (skipN > count || !pred(getCharAt(potential.get)))) {
-      count += 1
-      val curr = potential.get
-      curr.setCharacter(curr.getCharacter + delta)
-      potential = normalize(curr)
-    }
-    if (potential == bound) None else potential
+
+  def getIdentAtPos(pos: Position): Option[(String, Range)] = {
+    normalize(pos).flatMap(nPos => {
+      val start = iterBackward(nPos).drop(1).takeWhile { case (c, _) => Common.isIdentChar(c) }.length
+      val startPos = new Position(nPos.getLine, nPos.getCharacter - start)
+      println("startPos: " + startPos.toString() + " " + nPos.toString())
+      if (!Common.isIdentStartChar(getCharAt(startPos))) return None
+      val end = iterForward(nPos).takeWhile { case (c, _) => Common.isIdentChar(c) }.length
+      val endPos = new Position(nPos.getLine, nPos.getCharacter + end)
+      if (start == 0 && end == 0 || inComment(nPos)) None else {
+        val ident = fileContent(nPos.getLine).slice(startPos.getCharacter, endPos.getCharacter)
+        println("got: " + ident)
+        Some((ident, new Range(startPos, endPos)))
+      }
+    })
   }
-  // def scanLeft(start: Position, pred: Char => Option[Boolean]): Either[Position, Position] = {
-  //   if (!isValidPos(start)) return Right(start)
-  //   var curr = Option(start)
-  //   while (curr.isDefined && fileContent(curr.get.getLine).isEmpty()) {
-  //     curr = decPos(curr.get)
-  //   }
-  //   while (curr.isDefined) {
-  //     val pos = curr.get
-  //     val line = fileContent(pos.getLine)
-  //     val char = line(pos.getCharacter)
-  //     pred(char) match {
-  //       case Some(true) => return Left(pos)
-  //       case Some(false) => curr = decPos(pos)
-  //       case None => return Right(pos)
-  //     }
-  //   }
-  //   Right(new Position(0, 0))
-  // }
+  def inComment(pos: Position): Boolean = {
+    normalize(pos).map(nPos => {
+      var isComment = false
+      var noComment = false
+      iterBackward(nPos).sliding(2).find { case Seq((prevChar, _), (currChar, p)) => {
+        isComment = isComment || p.getLine() == nPos.getLine() && currChar == '/' && prevChar == '/'
+        isComment = isComment || (!noComment && currChar == '/' && prevChar == '*')
+        noComment = noComment || currChar == '*' && prevChar == '/'
+        isComment || (noComment && p.getLine() != nPos.getLine())
+      }}
+      isComment
+    }).getOrElse(false)
+  }
 }
 object FileContent {
   def apply(path: Path, content: String): FileContent = {
-    val fileContent = content.split("\n", -1).to(ArrayBuffer)
-    new FileContent(path, fileContent)
+    val fc = new FileContent(path)
+    fc.set(content)
+    fc
   }
 }

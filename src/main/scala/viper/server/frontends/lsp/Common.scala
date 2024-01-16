@@ -60,15 +60,18 @@ object Common {
     else 0
   }
 
-  /** `-3` if `r1 < r2`, `3` if `r1 > r2`, `0` if they are equal
+  /** `-4` if `r1 < r2`, `4` if `r1 > r2`,
+   * `-3` if `r1 <= r2`, `3` if `r1 => r2`, `0` if they are equal
    * `-2` if `r1` contains `r2` start, `2` if `r1` contains `r2` end
    * `-1` if `r1` is contained in `r2`, `1` if `r2` is contained in `r1`
   */
   def compareRange(r1: Range, r2: Range): Int = {
     val endStart = Common.comparePosition(r1.getEnd, r2.getStart)
-    if (endStart <= 0) return -3
+    if (endStart < 0) return -4
+    if (endStart == 0) return -3
     val startEnd = Common.comparePosition(r1.getStart, r2.getEnd)
-    if (startEnd >= 0) return 3
+    if (startEnd > 0) return 4
+    if (startEnd == 0) return 3
     val startStart = Common.comparePosition(r1.getStart, r2.getStart)
     val endEnd = Common.comparePosition(r1.getEnd, r2.getEnd)
     if (endEnd == 0 && startStart == 0) 0

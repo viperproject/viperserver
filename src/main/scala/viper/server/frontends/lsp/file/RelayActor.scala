@@ -15,12 +15,10 @@ import viper.silver.reporter._
 import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
 
 import viper.server.frontends.lsp.file.ProgressCoordinator
-import viper.silver.parser.PIdnUse
-import viper.silver.parser.PIdnDef
 // import viper.server.frontends.lsp.file.HoverHintManager
 // import viper.server.frontends.lsp.file.SemanticHighlightManager
 
-trait MessageHandler extends VerificationManager with ProjectManager with QuantifierCodeLens with QuantifierInlayHints with SignatureHelp {
+trait MessageHandler extends ProjectManager with VerificationManager with QuantifierCodeLens with QuantifierInlayHints with SignatureHelp {
   override def props(backendClassName: Option[String]): Props = RelayActor.props(this, backendClassName)
 
   // var filesInProject: Set[String] = Set.empty
@@ -125,7 +123,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
     case PProgramReport(success, pProgram) =>
       // New project
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] got new pProgram for ${task.filename}")
-      val files = pProgram.imports.filter(_.resolved != null).map(_.resolved.toUri().toString()).toSet
+      val files = pProgram.imports.flatMap(_.resolved).map(_.toUri().toString()).toSet
       // coordinator.logger.debug(s"pProgram.imports ${pProgram.imports.toString()}")
       task.setupProject(files)
       if (success) {
@@ -141,6 +139,10 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       task.addInlayHint(phase)(pProgram.getInlayHints)
       task.addSemanticHighlight(phase)(pProgram.getSemanticHighlights)
       task.addSignatureHelp(phase)(pProgram.getSignatureHelps)
+      println("addSuggestionScopeRange: " + pProgram.getSuggestionScopeRanges.toString())
+      task.addSuggestionScopeRange(phase)(pProgram.getSuggestionScopeRanges)
+      println("addCompletionProposal: " + pProgram.getCompletionProposals.toString())
+      task.addCompletionProposal(phase)(pProgram.getCompletionProposals)
 
       // Update getSymbols
     //   dsm.symbolInformation.clear()
@@ -190,6 +192,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       }
     case EntityFailureMessage(_, _, _, res, _) =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] EntityFailureMessage")
+      println("EF Errors: " + res.errors.toString())
       markErrorsAsReported(res.errors)
       task.processErrors(backendClassName, res.errors)
     case OverallSuccessMessage(_, verificationTime) =>
@@ -205,6 +208,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       // this is important since Silicon provides errors as part of EntityFailureMessages and the OverallFailureMessage
       // where else Carbon does not produce EntityFailureMessages (except for cached members in which case
       // ViperServer produces EntitySuccessMessage and EntityFailureMessages)
+      println("N Errors: " + failure.errors.toString())
       val newErrors = failure.errors.filterNot(hasAlreadyBeenReported)
       markErrorsAsReported(newErrors)
       task.processErrors(backendClassName, newErrors)

@@ -22,8 +22,8 @@ trait QuantifierInlayHints extends ProjectAware {
   }
   private def inlayChosenTriggersAt(m: FullManager, expStart: RangePosition, triggers: Seq[Trigger], oldTriggers: Seq[Trigger]): Unit = {
     val start = Common.toPosition(expStart.start)
-    m.content.find(start, c => c != ' ' && c != '\n', -1, 1) match {
-      case Some(found) =>
+    m.content.iterBackward(start).drop(1).find { case (c, _) => c != ' ' && c != '\n' } match {
+      case Some((_, found)) =>
         found.setCharacter(found.getCharacter + 1)
         val trueStart = m.content.normalize(found).get
         expStart.shiftStart(trueStart.getLine - start.getLine, trueStart.getCharacter - start.getCharacter)

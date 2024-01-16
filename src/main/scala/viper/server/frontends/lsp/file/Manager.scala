@@ -38,6 +38,7 @@ import ch.qos.logback.classic.Logger
 import viper.server.frontends.lsp.file.utility.StageContainer
 import viper.silver.ast.utility.lsp.GotoDefinition
 import viper.server.frontends.lsp.Common
+import viper.silver.ast.utility.lsp.DocumentSymbol
 
 case class Diagnostic(backendClassName: Option[String], position: lsp.RangePosition, message: String, cached: Boolean, errorMsgPrefix: Option[String]) extends lsp.HasRangePositions with lsp.BelongsToFile {
   override def rangePositions: Seq[lsp.RangePosition] = Seq(position)
@@ -71,14 +72,49 @@ case class Diagnostic(backendClassName: Option[String], position: lsp.RangePosit
 // }
 
 trait Manager {
+  val file: PathInfo
+  val content: FileContent
   val coordinator: ClientCoordinator
   implicit def logger = coordinator.logger
   protected val containers: ArrayBuffer[utility.LspContainer[_, _, _, _, _]]
+
+  def getCodeLens(): Seq[lsp4j.CodeLens]
+  def addCodeLens(phase: VerificationPhase)(vs: Seq[lsp.CodeLens]): Unit
+
+  def getDiagnostic(): Seq[lsp4j.Diagnostic]
+  def addDiagnostic(phase: VerificationPhase)(vs: Seq[Diagnostic]): Unit
+
+  def getDocumentSymbol(): Seq[lsp4j.DocumentSymbol]
+  def addDocumentSymbol(phase: VerificationPhase)(vs: Seq[lsp.DocumentSymbol]): Unit
+
+  def getDocumentLink(): Seq[lsp4j.DocumentLink]
+
+  def getFoldingRange(): Seq[lsp4j.FoldingRange]
+  def addFoldingRange(phase: VerificationPhase)(vs: Seq[lsp.FoldingRange]): Unit
+
+  def getGotoDefinition(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]): Seq[lsp4j.LocationLink]
+  def addGotoDefinition(phase: VerificationPhase)(vs: Seq[lsp.GotoDefinition]): Unit
+
+  def getHoverHint(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]): Seq[lsp4j.Hover]
+  def addHoverHint(phase: VerificationPhase)(vs: Seq[lsp.HoverHint]): Unit
+
+  def getInlayHint(): Seq[lsp4j.InlayHint]
+  def addInlayHint(phase: VerificationPhase)(vs: Seq[lsp.InlayHint]): Unit
+
+  def getSemanticHighlight(): Seq[Lsp4jSemanticHighlight]
+  def addSemanticHighlight(phase: VerificationPhase)(vs: Seq[lsp.SemanticHighlight]): Unit
+
+  def getSignatureHelp(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]): Seq[lsp4j.SignatureInformation]
+  def addSignatureHelp(phase: VerificationPhase)(vs: Seq[lsp.SignatureHelp]): Unit
+
+  def getSuggestionScopeRange(pos: lsp4j.Position): Seq[lsp.SuggestionScope]
+  def addSuggestionScopeRange(phase: VerificationPhase)(vs: Seq[lsp.SuggestionScopeRange]): Unit
+
+  def getCompletionProposal(scope: lsp.SuggestionScope, pos: Option[lsp4j.Position], char: Char): Seq[lsp4j.CompletionItem]
+  def addCompletionProposal(phase: VerificationPhase)(vs: Seq[lsp.CompletionProposal]): Unit
 }
 
 trait StandardManager extends Manager {
-  val file: PathInfo
-  val content: FileContent
   protected val containers: ArrayBuffer[utility.LspContainer[_, _, _, _, _]] = ArrayBuffer()
 
   def reset(phase: VerificationPhase.VerificationPhase): Unit = {
@@ -137,14 +173,14 @@ trait StandardManager extends Manager {
   type GotoDefinitionContainer = utility.StageRangeContainer.RangeContainer[lsp.GotoDefinition, lsp4j.LocationLink]
   val gotoDefinitionContainer: GotoDefinitionContainer = utility.LspContainer(utility.GotoDefinitionTranslator)
   containers.addOne(gotoDefinitionContainer)
-  def getGotoDefinition(keyword: String, pos: Option[lsp4j.Position], range: lsp4j.Range) = gotoDefinitionContainer.get((keyword, pos, range))
+  def getGotoDefinition(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]) = gotoDefinitionContainer.get((pos, keyword))
   def addGotoDefinition(phase: VerificationPhase)(vs: Seq[lsp.GotoDefinition]): Unit = add(gotoDefinitionContainer, phase, vs)
 
   // HoverHint
   type HoverHintContainer = utility.StageRangeContainer.RangeContainer[lsp.HoverHint, lsp4j.Hover]
   val hoverHintContainer: HoverHintContainer = utility.LspContainer(utility.HoverHintTranslator)
   containers.addOne(hoverHintContainer)
-  def getHoverHint(keyword: String, pos: Option[lsp4j.Position], range: lsp4j.Range) = hoverHintContainer.get((keyword, pos, range))
+  def getHoverHint(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]) = hoverHintContainer.get((pos, keyword))
   def addHoverHint(phase: VerificationPhase)(vs: Seq[lsp.HoverHint]): Unit = add(hoverHintContainer, phase, vs)
 
   // InlayHint
@@ -165,8 +201,23 @@ trait StandardManager extends Manager {
   type SignatureHelpContainer = utility.StageRangeContainer.RangeContainer[lsp.SignatureHelp, lsp4j.SignatureInformation]
   val signatureHelpContainer: SignatureHelpContainer = utility.LspContainer(utility.SignatureHelpTranslator)
   containers.addOne(signatureHelpContainer)
-  def getSignatureHelp(keyword: String, pos: Option[lsp4j.Position], range: lsp4j.Range) = signatureHelpContainer.get((keyword, pos, range))
+  def getSignatureHelp(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]) = signatureHelpContainer.get((pos, keyword))
   def addSignatureHelp(phase: VerificationPhase)(vs: Seq[lsp.SignatureHelp]): Unit = add(signatureHelpContainer, phase, vs)
+
+  // SuggestionScopeRange
+  type SuggestionScopeRangeContainer = utility.StageRangeContainer.RangeContainer[lsp.SuggestionScopeRange, lsp.SuggestionScope]
+  val suggestionScopeRangeContainer: SuggestionScopeRangeContainer = utility.LspContainer(utility.SuggestionScopeRangeTranslator, expandOnBorder = true)
+  containers.addOne(suggestionScopeRangeContainer)
+  def getSuggestionScopeRange(pos: lsp4j.Position) = suggestionScopeRangeContainer.get((Some(pos), None))
+  def addSuggestionScopeRange(phase: VerificationPhase)(vs: Seq[lsp.SuggestionScopeRange]): Unit = add(suggestionScopeRangeContainer, phase, vs)
+
+
+  // CompletionProposal
+  type CompletionProposalContainer = utility.StageSuggestableContainer.SuggestableContainer[lsp.CompletionProposal, lsp4j.CompletionItem]
+  val completionProposalContainer: CompletionProposalContainer = utility.LspContainer(utility.CompletionProposalTranslator, expandOnBorder = true)
+  containers.addOne(completionProposalContainer)
+  def getCompletionProposal(scope: lsp.SuggestionScope, pos: Option[lsp4j.Position], char: Char) = completionProposalContainer.get((scope, pos, char))
+  def addCompletionProposal(phase: VerificationPhase)(vs: Seq[lsp.CompletionProposal]): Unit = add(completionProposalContainer, phase, vs)
 }
 
 trait FullManager extends StandardManager with FindReferencesManager

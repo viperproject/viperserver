@@ -24,10 +24,10 @@ trait SignatureHelp extends ProjectAware {
         val m = getInProject(uri)
         var closeBracketCount = 0
         var commaCount = 0
-        var currPos = m.content.find(pos, c => c == ',' || c == '(' || c == ')', -1, 1, Some(start))
+        var currPos = m.content.iterBackward(pos).drop(1).takeWhile(_._2 != start).find { case (c, _) => c == ',' || c == '(' || c == ')' }
         while (currPos.isDefined) {
-            var p = currPos.get
-            m.content.getCharAt(p) match {
+            var (c, p) = currPos.get
+            c match {
                 case ',' if closeBracketCount == 0 =>
                     commaCount += 1
                 case ')' =>
@@ -35,8 +35,8 @@ trait SignatureHelp extends ProjectAware {
                 case '(' if closeBracketCount > 0 =>
                     closeBracketCount -= 1
                 case '(' => {
-                    val identEnd = m.content.find(p, c => c != ' ' && c != '\n', -1, 1, Some(start))
-                    identEnd.flatMap(m.content.getIdentAtPos).foreach(i => {
+                    val identEnd = m.content.iterBackward(p).drop(1).takeWhile(_._2 != start).find { case (c, _) => c != ' ' && c != '\n' }
+                    identEnd.map(_._2).flatMap(m.content.getIdentAtPos).foreach(i => {
                         p = i._2.getStart
                         val sh = getSignatureHelpProject(uri, i._1, i._2.getStart, i._2)
                         sh.map(_.setActiveParameter(commaCount))
@@ -46,7 +46,7 @@ trait SignatureHelp extends ProjectAware {
                 }
                 case _ =>
             }
-            currPos = m.content.find(p, c => c == ',' || c == '(' || c == ')', -1, 1, Some(start))
+            currPos = m.content.iterBackward(p).drop(1).takeWhile(_._2 != start).find { case (c, _) => c == ',' || c == '(' || c == ')' }
         }
         if (signatureHelps.length > 0) {
             oldSignatureHelpStart = Some(start)

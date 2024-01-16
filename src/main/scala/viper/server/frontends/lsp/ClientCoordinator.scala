@@ -85,7 +85,10 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   }
 
   def handleChange(uri: String, range: Range, text: String): Unit = {
-    getFileManager(uri).handleContentChange(range, text)
+    val fm = getFileManager(uri)
+    fm.synchronized {
+      fm.handleContentChange(range, text)
+    }
     // TODO: remove
     // val project = toProjectRoot(uri)
     // Option(_files.get(project))

@@ -29,7 +29,7 @@ class AstGenerator(private val _logger: Logger,
     *
     * Throws an exception when passed an non-existent file!
     */
-  def generateViperAst(vpr_file_path: String, loader: Option[FileLoader]): Option[Program] = {
+  def generateViperAst(vpr_file_path: String, loader: Option[FileLoader] = None): Option[Program] = {
 
     if (!validateViperFile(vpr_file_path)) {
       _logger.error(s"No such file: `$vpr_file_path`")

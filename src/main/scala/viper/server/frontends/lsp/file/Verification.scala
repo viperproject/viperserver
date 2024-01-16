@@ -60,7 +60,7 @@ object VerificationPhase {
   case object VerifyEnd extends VerificationPhase
 }
 
-trait VerificationManager extends FullManager {
+trait VerificationManager extends Manager {
   // def coordinator: lsp.ClientCoordinator
   // def content: FileContent
   implicit def ec: ExecutionContext
@@ -84,7 +84,7 @@ trait VerificationManager extends FullManager {
     if (neverParsed) {
       runParseTypecheck(content)
     }
-    futureAst.map(_.map(_ => f)).getOrElse(Future.successful(f))
+    futureAst.map(_.map(_ => this.synchronized(f))).getOrElse(Future.successful(this.synchronized(f)))
   }
 
   //other

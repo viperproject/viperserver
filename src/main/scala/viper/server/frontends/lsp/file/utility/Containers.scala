@@ -13,7 +13,7 @@ import viper.silver.ast.utility.lsp.{BelongsToFile, HasRangePositions, RangePosi
 import viper.server.frontends.lsp.Common
 import ch.qos.logback.classic.Logger
 import scala.collection.mutable.HashMap
-import viper.silver.ast.utility.lsp.SelectionBoundTrait
+import viper.silver.ast.utility.lsp
 import viper.silver.ast.utility.lsp.SelectionBoundScopeTrait
 import viper.silver.ast.utility.lsp.SelectionBoundScope
 import viper.silver.ast.utility.lsp.SelectionBoundBoth
@@ -76,58 +76,119 @@ object StageArrayContainer {
 //   def default[V <: BelongsToFile](uriToStage: String => StageArrayContainer[V])(implicit root: String): StageArrayProjectContainer[V] = StageArrayProjectContainer[V](uriToStage)
 // }
 
-case class StageRangeContainer[V <: SelectableInBound]() extends StageContainer[(String, Option[lsp4j.Position], lsp4j.Range), V, (Option[String], Int)] {
+case class StageRangeContainer[V <: SelectableInBound]() extends StageContainer[(Option[lsp4j.Position], Option[(String, lsp4j.Range)]), V, (Option[String], Int)] {
   // Has a `scope` bound
-  val localKeyword: HashMap[String, ArrayBuffer[(Option[lsp4j.Range], V)]] = HashMap()
-  val local: ArrayBuffer[(Option[lsp4j.Range], V)] = ArrayBuffer()
+  val localKeyword: HashMap[String, ArrayBuffer[V]] = HashMap()
+  val local: ArrayBuffer[V] = ArrayBuffer()
 
   override protected def innerReset(): Unit = {
     localKeyword.clear()
     local.clear()
   }
   override protected def innerAdd(v: V): (Option[String], Int) = {
-    val range = v.bound match {
-      case s: SelectionBoundScopeTrait => Some(Common.toRange(s.scope))
-      case _ => None
-    }
     v.bound match {
       case k: SelectionBoundKeywordTrait => {
         val array = localKeyword.getOrElseUpdate(k.keyword, ArrayBuffer())
-        array.addOne((range, v))
+        array += v
         (Some(k.keyword), array.length - 1)
       }
       case _ => {
-        local.addOne((range, v))
+        local += v
         (None, local.length - 1)
       }
     }
   }
-  override def get(k: (String, Option[lsp4j.Position], lsp4j.Range)): Seq[V] = {
-    val (keyword, position, _) = k
-    val all = local.iterator ++ localKeyword.get(keyword).iterator.flatten
-    all.filter(h => h._1.isEmpty || (position.isDefined && Common.containsPosition(h._1.get, position.get) == 0))
-      .map(_._2).toSeq
+  def filter(position: Option[lsp4j.Position])(v: V): Boolean = {
+    v.bound match {
+      case s: SelectionBoundScopeTrait =>
+        position.isDefined && Common.containsPosition(Common.toRange(s.scope), position.get) == 0
+      case _ => true
+    }
+  }
+  override def get(k: (Option[lsp4j.Position], Option[(String, lsp4j.Range)])): Seq[V] = {
+    val (position, keyword) = k
+    val keywordMatches = keyword.flatMap(k => localKeyword.get(k._1)).iterator.flatten
+    val all = local.iterator ++ keywordMatches
+    all.filter(filter(position)).toSeq
   }
   override protected def innerUpdate(i: (Option[String], Int), f: V => V): Boolean = {
     val a = i._1.map(localKeyword).getOrElse(local)
     val oldV = a(i._2)
-    val newV = f(oldV._2)
-    assert(newV.bound == oldV._2.bound, "Cannot update to new element with a different bound")
-    a(i._2) = (oldV._1, newV)
+    val newV = f(oldV)
+    assert(newV.bound == oldV.bound, "Cannot update to new element with a different bound")
+    a(i._2) = newV
     true
   }
   override def all(): Iterator[V] =
-    local.iterator.map(_._2) ++ localKeyword.values.flatten.map(_._2)
+    local.iterator ++ localKeyword.values.flatten
   override def filterInPlace(p: V => Boolean): Unit = {
-    local.filterInPlace(l => p(l._2))
-    localKeyword.values.foreach(_.filterInPlace(l => p(l._2)))
+    local.filterInPlace(p)
+    localKeyword.values.foreach(_.filterInPlace(p))
     localKeyword.filterInPlace((_, g) => g.nonEmpty)
   }
 }
 // case class StageRangeContainer[V <: SelectableInBound[_, SelectionBoundScopeTrait]]() extends StageRangeContainerTrait[V]
 object StageRangeContainer {
-  type RangeContainer[V <: HasRangePositions with SelectableInBound, U] = LspContainer[StageRangeContainer[V], (String, Option[lsp4j.Position], lsp4j.Range), V, (Option[String], Int), U]
+  type RangeContainer[V <: HasRangePositions with SelectableInBound, U] = LspContainer[StageRangeContainer[V], (Option[lsp4j.Position], Option[(String, lsp4j.Range)]), V, (Option[String], Int), U]
   implicit def default[V <: SelectableInBound]: () => StageRangeContainer[V] = () => StageRangeContainer()
+}
+
+case class StageSuggestableContainer[V <: lsp.SuggestableInBound]() extends StageContainer[(lsp.SuggestionScope, Option[lsp4j.Position], Char), V, Map[Option[lsp.SuggestionScope], Int]] {
+  val perScope: HashMap[lsp.SuggestionScope, ArrayBuffer[V]] = HashMap()
+  val onCharMatch: ArrayBuffer[V] = ArrayBuffer()
+
+  override protected def innerReset(): Unit = {
+    perScope.clear()
+    onCharMatch.clear()
+  }
+  override protected def innerAdd(v: V): Map[Option[lsp.SuggestionScope], Int] = {
+    val ocm = v.suggestionBound.starting.map(_ => {
+      onCharMatch += v
+      None -> (onCharMatch.length - 1)
+    }).toSeq
+    val others = v.suggestionBound.scope.map(s => {
+      val array = perScope.getOrElseUpdate(s._1, ArrayBuffer())
+      array += v
+      Some(s._1) -> (array.length - 1)
+    })
+    (ocm ++ others).toMap
+  }
+  def filter(position: Option[lsp4j.Position], char: Char)(v: V): Boolean = {
+    v.suggestionBound.starting.map(_.contains(char)).getOrElse(true) && (v.bound match {
+      case s: SelectionBoundScopeTrait =>
+        position.isDefined && Common.containsPosition(Common.toRange(s.scope), position.get) == 0
+      case _ => true
+    })
+  }
+  override def get(k: (lsp.SuggestionScope, Option[lsp4j.Position], Char)): Seq[V] = {
+    val (scope, position, char) = k
+    val ocms = onCharMatch.filter(ocm => {
+      !ocm.suggestionBound.scope.contains(scope) &&
+      ocm.suggestionBound.starting.get.contains(char)
+    })
+    ocms.toSeq ++ perScope.get(scope).toSeq.flatMap(_.filter(filter(position, char)))
+  }
+  override protected def innerUpdate(i: Map[Option[lsp.SuggestionScope], Int], f: V => V): Boolean = {
+    def index(i: Option[lsp.SuggestionScope]): ArrayBuffer[V] = i.map(perScope).getOrElse(onCharMatch)
+    i.headOption.foreach(h => {
+      val oldV = index(h._1)(h._2)
+      val newV = f(oldV)
+      assert(newV.suggestionBound == oldV.suggestionBound, "Cannot update to new element with a different bound")
+      i.foreach(h => index(h._1)(h._2) = newV)
+    })
+    true
+  }
+  override def all(): Iterator[V] =
+    perScope.values.flatten.iterator
+  override def filterInPlace(p: V => Boolean): Unit = {
+    perScope.values.foreach(_.filterInPlace(p))
+    perScope.filterInPlace((_, g) => g.nonEmpty)
+  }
+}
+// case class StageRangeContainer[V <: SelectableInBound[_, SelectionBoundScopeTrait]]() extends StageRangeContainerTrait[V]
+object StageSuggestableContainer {
+  type SuggestableContainer[V <: HasRangePositions with lsp.SuggestableInBound, U] = LspContainer[StageSuggestableContainer[V], (lsp.SuggestionScope, Option[lsp4j.Position], Char), V, Map[Option[lsp.SuggestionScope], Int], U]
+  implicit def default[V <: lsp.SuggestableInBound]: () => StageSuggestableContainer[V] = () => StageSuggestableContainer()
 }
 
 // case class StageRangeProjectContainer[V <: SelectableInBound[V, SelectionBoundTrait]](uriToStage: String => StageRangeContainer[SelectableInBound[V, SelectionBoundScopeTrait]])(implicit root: String) extends StageRangeContainerTrait[SelectableInBound[V, SelectionBoundScopeTrait]] {
@@ -151,7 +212,7 @@ object StageRangeContainer {
 //     case _ => global.addOne(v)
 //     }
 //   }
-//   override def get(k: (String, Option[lsp4j.Position], lsp4j.Range)): Seq[V] = {
+//   override def get(k: (Option[lsp4j.Position], Option[(String, lsp4j.Range)])): Seq[V] = {
 //     val local = if (uri == root) super.get(uri, k) else uriToStage(uri).get(uri, k)
 //     global.toSeq ++ globalKeyword.get(k._1).toSeq.flatten ++ local.map(_.get)
 //   }
@@ -165,7 +226,7 @@ object StageRangeContainer {
 //   }
 // }
 // object StageRangeProjectContainer {
-//   type RangeProjectContainer[V <: HasRangePositions with SelectableInBound[V, SelectionBoundTrait], U] = LspContainer[StageRangeProjectContainer[V], (String, Option[lsp4j.Position], lsp4j.Range), V, U]
+//   type RangeProjectContainer[V <: HasRangePositions with SelectableInBound[V, SelectionBoundTrait], U] = LspContainer[StageRangeProjectContainer[V], (Option[lsp4j.Position], Option[(String, lsp4j.Range)]), V, U]
 
 //   def default[V <: SelectableInBound[V, SelectionBoundTrait]](uriToStage: String => StageRangeContainer[SelectableInBound[V, SelectionBoundScopeTrait]])(implicit root: String): StageRangeProjectContainer[V] = StageRangeProjectContainer[V](uriToStage)
 // }
@@ -192,7 +253,7 @@ object StageRangeContainer {
 // }
 
 case class LspContainer[+C <: StageContainer[K, V, I], K, V <: HasRangePositions, I, U]
-  (translator: Translates[V, U, K], onUpdate: () => Unit = () => {})(implicit initial: () => C) {
+  (translator: Translates[V, U, K], onUpdate: () => Unit = () => {}, expandOnBorder: Boolean = false)(implicit initial: () => C) {
   private val parse: C = initial()
   private val typeck: C = initial()
   private val verify: C = initial()
@@ -265,16 +326,22 @@ case class LspContainer[+C <: StageContainer[K, V, I], K, V <: HasRangePositions
         // println("PRange: " + pRange.toString() + " Range: " + range.toString())
         // println("Cmp: " + cmp)
         cmp match {
-          case -3 =>
-          case -2 =>
-            pos.shiftEnd(range.getStart.getLine - pRange.getEnd.getLine, range.getStart.getCharacter - pRange.getEnd.getCharacter)
+          case -4 =>
+          case -3 | -2 =>
+            if (expandOnBorder && deltaLines == 0)
+              pos.shiftEnd(newEndLine - pRange.getEnd.getLine, newEndCharacter - pRange.getEnd.getCharacter)
+            else
+              pos.shiftEnd(range.getStart.getLine - pRange.getEnd.getLine, range.getStart.getCharacter - pRange.getEnd.getCharacter)
           case -1 => overlapped = true
           case 0 => overlapped = true
           case 1 => shiftEnd(pos, pRange.getEnd())
-          case 2 =>
-            pos.shiftStart(newEndLine - pRange.getStart.getLine, newEndCharacter - pRange.getStart.getCharacter)
+          case 2 | 3 =>
+            if (expandOnBorder)
+              pos.shiftStart(range.getStart.getLine - pRange.getStart.getLine, range.getStart.getCharacter - pRange.getStart.getCharacter)
+            else
+              pos.shiftStart(newEndLine - pRange.getStart.getLine, newEndCharacter - pRange.getStart.getCharacter)
             shiftEnd(pos, pRange.getEnd())
-          case 3 =>
+          case 4 =>
             shiftStart(pos, pRange.getStart())
             shiftEnd(pos, pRange.getEnd())
           case _ =>

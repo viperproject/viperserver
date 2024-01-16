@@ -29,7 +29,7 @@ trait FindReferencesManager extends Manager {
   val findReferencesContainer: FindReferencesContainer = utility.LspContainer(utility.FindReferencesTranslator)
   containers.addOne(findReferencesContainer)
   def getFindReferences(pos: lsp4j.Position, includeDeclaration: Boolean): Seq[lsp4j.Location] =
-    findReferencesContainer.get(("", Some(pos), new lsp4j.Range(pos, pos)))
+    findReferencesContainer.get((Some(pos), None))
       .filter(l => includeDeclaration || Common.containsPosition(l.getRange, pos) != 0)
 
   def addFindReferences(phase: VerificationPhase)(vs: Seq[lsp.ReferenceTo]): Unit = {

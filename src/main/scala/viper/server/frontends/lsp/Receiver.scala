@@ -21,7 +21,6 @@ import scala.concurrent.duration.DurationInt
 import scala.jdk.CollectionConverters._
 import scala.jdk.FutureConverters._
 import scala.language.postfixOps
-import java.{util => ju}
 
 trait StandardReceiver {
   val coordinator: ClientCoordinator
@@ -80,15 +79,15 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     // Inlay Hint (disabled Resolve):
     capabilities.setInlayHintProvider(true)
     // Moniker:                 [N/A]
-    // Completion Proposals:    TODO
-    // capabilities.setCompletionProvider(new CompletionOptions(false, Seq(".", ":", "(", "[", "{").asJava))
-    // Pull Diagnostics:
-    capabilities.setDiagnosticProvider(new DiagnosticRegistrationOptions(true, false))
+    // Completion Proposals:
+    capabilities.setCompletionProvider(new CompletionOptions(false, Seq(".", ":", "(", "[", "{", "\n", "\t").asJava))
+    // Pull Diagnostics:        DISABLED (we use `publishDiagnostics` instead)
+    // capabilities.setDiagnosticProvider(new DiagnosticRegistrationOptions(true, false))
     // Signature Help:
         // Allow a `,` to try and restart the signature help even after it has ended
     capabilities.setSignatureHelpProvider(new SignatureHelpOptions(Seq("(", ",").asJava, Seq().asJava))
-    // Code Action:             TODO
-    // capabilities.setCodeActionProvider(true)
+    // Code Action:
+    capabilities.setCodeActionProvider(true)
     // Document Color:          [N/A]
     // Color Presentation:      [N/A]
     // Formatting:              TODO
@@ -181,18 +180,6 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
   // Optional
   //////////////////
 
-  override def diagnostic(params: DocumentDiagnosticParams) = {
-    coordinator.logger.trace(s"[Req: textDocument/diagnostic] ${params.toString()}")
-    val uri = params.getTextDocument.getUri
-    val ds = coordinator.getRoot(uri).getDiagnostics(uri)
-    ds.map(ds => {
-      val diagnostics = new RelatedFullDocumentDiagnosticReport(ds.asJava)
-      // Maybe use this in future LSP versions?
-      // diagnostics.setRelatedDocuments
-      new DocumentDiagnosticReport(diagnostics)
-    }).asJava.toCompletableFuture
-  }
-
   override def documentSymbol(params: DocumentSymbolParams) = {
     // This happens for every edit, so `trace` to avoid spam
     // coordinator.logger.trace(s"[Req: textDocument/documentSymbol] ${params.toString()}")
@@ -206,9 +193,9 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
     coordinator.logger.debug(s"[Req: textDocument/definition] ${params.toString()}")
     val uri = params.getTextDocument.getUri
     val pos = params.getPosition
-    coordinator.getRoot(uri).getGotoDefinitions(uri, pos).map(_.map(defns => {
+    coordinator.getRoot(uri).getGotoDefinitions(uri, pos).map(defns => {
         Either.forRight[java.util.List[_ <: Location], java.util.List[_ <: LocationLink]](defns.asJava)
-    }).orNull).asJava.toCompletableFuture
+    }).asJava.toCompletableFuture
   }
 
   override def hover(params: HoverParams) = {
@@ -218,7 +205,7 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
     val pos = params.getPosition
     coordinator.getRoot(uri)
       .getHoverHints(uri, pos)
-      .map(_.map(_.head).orNull)
+      .map(_.head)
       .asJava.toCompletableFuture
   }
 
@@ -272,64 +259,6 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
         }
     }
     CompletableFuture.completedFuture(help.orNull)
-    // val uri = params.getTextDocument.getUri
-    // val pos = params.getPosition
-    // val ctx = params.getContext
-    // val active = ctx.getActiveSignatureHelp
-    // coordinator.logger.info(s"On getting signature help, kind ${ctx.getTriggerKind}, char ${ctx.getTriggerCharacter}, active ${active == null}")
-
-    // val couldBeStart = ctx.getTriggerKind() == SignatureHelpTriggerKind.TriggerCharacter && ctx.getTriggerCharacter() == "(" && active == null
-    // val startPos = if (couldBeStart) {
-    //   Some(new Position(pos.getLine, 0))
-    // } else {
-    //   coordinator.getSignatureHelpStart(uri)
-    // }
-    // startPos.flatMap(startPos => if (Common.comparePosition(startPos, pos) < 0) Some(startPos) else None) match {
-    //   case None => CompletableFuture.completedFuture(null)
-    //   case Some(startPos) => {
-    //     val definitions = coordinator.getDefinitionsForPos(uri, startPos).filter(_.signatureHelp.isDefined)
-    //     if (definitions.isEmpty) {
-    //       CompletableFuture.completedFuture(null)
-    //     } else {
-    //       coordinator.client.requestRange(new Range(startPos, pos)).thenApply(res => {
-    //         coordinator.logger.trace(s"Got range: ${res.range}")
-    //         val callsAll = Common.findCallsIn(res.range)
-    //         coordinator.logger.trace(s"Got callsAll: ${callsAll.toString()}")
-    //         val calls = callsAll.flatMap(c =>
-    //           definitions.find(_.name == c._3).map(d => (c._1, c._2, d.signatureHelp.get))
-    //         )
-    //         // coordinator.logger.trace(s"Got calls: ${calls.toString()} (${definitions})")
-    //         if (calls.length == 0) {
-    //           null
-    //         } else {
-    //           if (couldBeStart) {
-    //             val firstCallPos = calls.last._1
-    //             startPos.setLine(startPos.getLine + firstCallPos.getLine)
-    //             // startPos.getCharacter is 0
-    //             startPos.setCharacter(firstCallPos.getCharacter)
-    //             coordinator.registerSignatureHelpStart(uri, startPos)
-    //           }
-    //           val result = new SignatureHelp(Seq().asJava, 0, 0)
-    //           val sigInfos = calls.map { case (_, commas, sigHelp) => {
-    //             val sigInfo = new SignatureInformation(sigHelp.label, "", sigHelp.args.asJava)
-    //             // Can be more than `sigHelp.args.length - 1`, but that is fine:
-    //             // no parameter is highlighted in such a case
-    //             sigInfo.setActiveParameter(commas)
-    //             sigInfo
-    //           }}
-    //           result.setSignatures(sigInfos.asJava)
-    //           var activeSig = 0
-    //           if (active != null && active.getActiveSignature() != 0) {
-    //             val newActiveSig = active.getActiveSignature() + sigInfos.length - active.getSignatures().size()
-    //             activeSig = newActiveSig.max(0)
-    //           }
-    //           result.setActiveSignature(new Integer(activeSig))
-    //           result
-    //         }
-    //       })
-    //     }
-    //   }
-    // }
   }
 
   override def references(params: ReferenceParams) = {
@@ -377,7 +306,35 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
     links.map(_.asJava).asJava.toCompletableFuture
   }
 
-  // Disabled, see comment in `initialize`
+  override def completion(params: CompletionParams) = {
+    coordinator.logger.trace(s"[Req: textDocument/completion] ${params.toString()}")
+    val uri = params.getTextDocument.getUri
+    val pos = params.getPosition
+    val char = params.getContext.getTriggerCharacter
+    val proposals = coordinator.getRoot(uri).getCompletionProposal(uri, pos, Option(char))
+    val jProposals = proposals.map(p => Either.forLeft[java.util.List[CompletionItem], CompletionList](p.asJava))
+    jProposals.asJava.toCompletableFuture
+  }
+
+  override def codeAction(params: CodeActionParams) = {
+    // TODO
+    CompletableFuture.completedFuture(Nil.asJava)
+  }
+
+  // --- DISABLED, see comment in `initialize` ---
+  override def diagnostic(params: DocumentDiagnosticParams) = {
+    coordinator.logger.trace(s"[Req: textDocument/diagnostic] ${params.toString()}")
+    val uri = params.getTextDocument.getUri
+    val ds = coordinator.getRoot(uri).getDiagnostics(uri)
+    ds.map(ds => {
+      val diagnostics = new RelatedFullDocumentDiagnosticReport(ds.asJava)
+      // Maybe use this in future LSP versions?
+      // diagnostics.setRelatedDocuments
+      new DocumentDiagnosticReport(diagnostics)
+    }).asJava.toCompletableFuture
+  }
+
+  // --- DISABLED, see comment in `initialize` ---
   override def linkedEditingRange(params: LinkedEditingRangeParams) = {
     coordinator.logger.trace(s"[Req: textDocument/linkedEditingRange] ${params.toString()}")
     val uri = params.getTextDocument.getUri
