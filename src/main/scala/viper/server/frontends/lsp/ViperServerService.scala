@@ -29,12 +29,13 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     val logger = combineLoggers(localLogger)
     logger.debug("Requesting ViperServer to start new job...")
 
+    val arg_list = getArgListFromArgString(file)
     if (!validateViperFile(file)) {
       logger.debug(s"file not found: $file")
       return AstJobId(-1)
     }
 
-    requestAst(file, localLogger, loader)
+    requestAst(arg_list, localLogger, loader)
   }
 
   // def discardAstOnCompletion(jid: AstJobId, jobActor: ActorRef): Unit = discardAstJobOnCompletion(jid, jobActor)

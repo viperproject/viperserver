@@ -25,7 +25,7 @@ object OutOfResourcesException extends AstConstructionException
 case class ServerCrashException(e: Throwable) extends Exception(e)
 
 
-class AstWorker(val file: String,
+class AstWorker(val arg_list: List[String],
                 override val logger: Logger,
                 private val config: ViperConfig,
                 private val loader: Option[FileLoader]

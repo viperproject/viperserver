@@ -65,7 +65,7 @@ class AstGenerator(private val _logger: Logger,
         filteredArgs = Seq(argList(flagArgIndex)) ++ filteredArgs
       }
     }
-    _frontend.execute(args, loader)
+    _frontend.execute(filteredArgs, loader)
     if (_frontend.saProgram.isDefined || _frontend.pProgram.isDefined) {
       val pprog = _frontend.saProgram.getOrElse(_frontend.pProgram.get)
       _frontend.reporter.report(PProgramReport(_frontend.saProgram.isDefined, pprog))
