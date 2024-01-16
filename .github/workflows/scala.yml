@@ -9,6 +9,7 @@ name: Build, Test, and Publish
 on:
   push: # run this workflow on every push
   pull_request: # run this workflow on every pull_request
+  merge_group: # run this workflow on every PR in the merge queue
   workflow_dispatch: # allow to manually trigger this workflow
     inputs:
       type:
@@ -332,6 +333,7 @@ jobs:
           release_name: Nightly Release ${{ env.TAG_NAME }}
           body_path: versions.txt
           keep_num: 1 # keep the previous nightly release such that there are always two
+          keep_tags: true
 
       - name: Upload ViperServer skinny jars
         if: env.MATCHING_RELEASE != 'true'

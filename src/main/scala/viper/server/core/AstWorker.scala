@@ -32,9 +32,11 @@ class AstWorker(val file: String,
                )(override val executor: VerificationExecutionContext)
   extends MessageReportingTask[Option[Program]] {
 
-  private def constructAst(): Option[Program] = {
+  private def constructAst(arg_list: Seq[String]): Option[Program] = {
+    val file: String = arg_list.last
+
     val reporter = new ActorReporter("AstGenerationReporter")
-    val astGen = new AstGenerator(logger, reporter, disablePlugins = config.disablePlugins())
+    val astGen = new AstGenerator(logger, reporter, arg_list, disablePlugins = config.disablePlugins())
 
     val ast_option: Option[Program] = try {
       astGen.generateViperAst(file, loader)
@@ -68,5 +70,5 @@ class AstWorker(val file: String,
     ???
   }
 
-  override def call(): Option[Program] = constructAst()
+  override def call(): Option[Program] = constructAst(arg_list)
 }
