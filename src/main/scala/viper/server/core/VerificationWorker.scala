@@ -406,7 +406,6 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     val s = new ViperProgramSubmitter(_frontend) {
       override def originalFrontend: String = "ViperServer"
     }
-    s.setName(programId.split("/").last)
     s.setProgram(_ast)
     s
   }
