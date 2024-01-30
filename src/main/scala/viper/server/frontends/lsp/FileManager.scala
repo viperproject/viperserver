@@ -101,11 +101,6 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
 
   /** the file that should be verified has to already be part of `customArgs` */
   def getVerificationCommand(backendClassName: String, customArgs: String): String = {
-    if (backendClassName != "silicon" && backendClassName != "carbon") {
-      throw new Error(s"Invalid verification backend value. " +
-        s"Possible values are [silicon | carbon] " +
-        s"but found $backendClassName")
-    }
     s"$backendClassName $customArgs"
   }
 
@@ -113,7 +108,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
     prepareVerification()
     this.manuallyTriggered = manuallyTriggered
 
-    coordinator.logger.info(s"verify $filename")
+    coordinator.logger.info(s"verify $filename using $backendClassName")
 
     val params = StateChangeParams(VerificationRunning.id, filename = filename)
     coordinator.sendStateChangeNotification(params, Some(this))
