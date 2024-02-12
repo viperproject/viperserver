@@ -38,8 +38,6 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     requestAst(arg_list, localLogger, loader)
   }
 
-  // def discardAstOnCompletion(jid: AstJobId, jobActor: ActorRef): Unit = discardAstJobOnCompletion(jid, jobActor)
-
   def verifyAst(astJob: AstJobId, command: String, localLogger: Option[Logger] = None): VerJobId = {
     if (astJob.id < 0) {
       return VerJobId(-1)
@@ -93,11 +91,6 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
       ()
     }))
   }
-  // def startStreamingVer(jid: VerJobId, relay_actor: ActorRef, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
-  //   val logger = combineLoggers(localLogger)
-  //   logger.debug("Sending verification only request to ViperServer...")
-  //   streamMessages(jid, relay_actor, false).map(_.map(_ => ()))
-  // }
 
   def stopVerification(jid: VerJobId, localLogger: Option[Logger] = None): Future[Boolean] = {
     val logger = combineLoggers(localLogger)

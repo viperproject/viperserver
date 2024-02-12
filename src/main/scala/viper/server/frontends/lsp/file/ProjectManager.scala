@@ -6,7 +6,6 @@
 
 package viper.server.frontends.lsp.file
 
-// import scala.collection.mutable.HashSet
 import viper.server.frontends.lsp.SetupProjectParams
 import scala.collection.mutable.ArrayBuffer
 import org.eclipse.lsp4j.Range

@@ -59,13 +59,6 @@ trait SuggestableInBound extends SelectableInBound {
   val bound: SelectionBoundTrait = suggestionBound.bound
 }
 
-// trait SelectableInBound[+A <: SelectableInBound[A, T], +T <: SelectionBoundTrait] { this: A =>
-//   val bound: T
-//   def get: A = this
-//   def selectableInScope: Option[SelectableInBound[A, _ <: SelectionBoundScopeTrait]] =
-//     if (bound.isInstanceOf[SelectionBoundScopeTrait]) Some(this.asInstanceOf[SelectableInBound[A, _ <: SelectionBoundScopeTrait]]) else None
-// }
-
 trait HasRangePositions {
   def rangePositions: Seq[RangePosition]
 }

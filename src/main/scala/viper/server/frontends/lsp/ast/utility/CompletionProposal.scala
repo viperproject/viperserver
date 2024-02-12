@@ -36,12 +36,6 @@ case class CompletionProposal(
    * See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#snippet_syntax
   */
   insertTextFormat: InsertTextFormat.InsertTextFormat,
-  /** Items are always first grouped by the SuggestionScope and these groups are sorted by
-   * the size of their corresponding scope (items from the more specific groups are shown first).
-   * Then within these groups items are first sorted by `sortPriority` and then alphabetically by 
-   * the `label`.
-  */
-  // sortPriority: Byte = 0,
   /** Determines how the label appears (e.g. strikethrough) */
   tags: Seq[SymbolTag.SymbolTag] = Seq(),
   documentationTitle: Option[String] = None,
@@ -83,14 +77,6 @@ case class SuggestionBound(
    * For field names this is `Seq('.')`, for types this is `Seq(':')`.
   */
   starting: Option[Map[Char, Byte]],
-  // /** Is the suggestion scope above strict? If true the suggestion will only
-  //  * appear within the given scope type, otherwise it will appear in all scopes
-  //  * but will be ranked lower. This is useful for smaller scopes which are not
-  //  * always very precise or are parsed only after writing is complete. For example,
-  //  * the `Expression` scope after an `assert` is not immediately visible since we
-  //  * get a parse error when there is nothing after an `assert`.
-  // */
-  // strictScope: Boolean,
 ) extends SelectableInBound with HasRangePositions {
   override val bound: SelectionBoundTrait = range.map(SelectionBoundScope(_)).getOrElse(SelectionBound)
   override def rangePositions: Seq[RangePosition] = range.toSeq

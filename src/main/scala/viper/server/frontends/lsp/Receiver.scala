@@ -171,7 +171,6 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
 
   override def didSave(params: DidSaveTextDocumentParams): Unit = {
     coordinator.logger.trace(s"[Req: textDocument/didSave] ${params.toString()}")
-    // coordinator.resetFileInfo(params.getTextDocument.getUri)
   }
 
   //////////////////

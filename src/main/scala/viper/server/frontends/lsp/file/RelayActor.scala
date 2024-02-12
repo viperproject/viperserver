@@ -20,7 +20,6 @@ import viper.silver.parser._
 trait MessageHandler extends ProjectManager with VerificationManager with QuantifierCodeLens with QuantifierInlayHints with SignatureHelp {
   override def props(backendClassName: Option[String]): Props = RelayActor.props(this, backendClassName)
 
-  // var filesInProject: Set[String] = Set.empty
   var progress: ProgressCoordinator = null
 
   private def determineSuccess(code: Int): VerificationSuccess = {
@@ -42,7 +41,6 @@ trait MessageHandler extends ProjectManager with VerificationManager with Quanti
   def completionHandler(code: Int): Unit = {
     try {
       coordinator.logger.debug(s"completionHandler is called with code $code")
-      // handleFinish()
 
       var params: lsp.StateChangeParams = null
       var success = NA
@@ -76,11 +74,9 @@ trait MessageHandler extends ProjectManager with VerificationManager with Quanti
 
       // reset for next verification
       lastSuccess = success
-      // onVerifyEnd.foreach(_(lastSuccess))
       timeMs = 0
     } catch {
       case e: Throwable =>
-        // is_verifying = false
         coordinator.client.notifyVerificationNotStarted(lsp.VerificationNotStartedParams(file_uri))
         coordinator.logger.debug(s"Error handling verification completion: $e")
     }
@@ -123,7 +119,6 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       // New project
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] got new pProgram for ${task.filename}")
       val files = pProgram.imports.flatMap(_.resolved).map(_.toUri().toString()).toSet
-      // coordinator.logger.debug(s"pProgram.imports ${pProgram.imports.toString()}")
       task.setupProject(files)
       val parseSuccess = pProgram.errors.isEmpty
       val phase = if (typeckSuccess) VerificationPhase.TypeckEnd

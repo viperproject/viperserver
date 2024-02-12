@@ -13,9 +13,6 @@ import viper.silver.ast.utility.DiskLoader
 import java.nio.file.Path
 import org.eclipse.lsp4j.Position
 import viper.server.frontends.lsp.Common
-// import viper.silver.ast.utility.lsp.RangePosition
-
-// case class CharRange(start: Int, end: Int)
 
 case class FileContent(path: Path) extends DiskLoader {
   case class FileContentIter(fc: FileContent, delta: Int, var currPos: Option[Position]) extends Iterator[(Char, Position)] {
