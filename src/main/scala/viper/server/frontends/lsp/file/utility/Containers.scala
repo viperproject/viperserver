@@ -76,7 +76,7 @@ object StageArrayContainer {
 //   def default[V <: BelongsToFile](uriToStage: String => StageArrayContainer[V])(implicit root: String): StageArrayProjectContainer[V] = StageArrayProjectContainer[V](uriToStage)
 // }
 
-case class StageRangeContainer[V <: SelectableInBound]() extends StageContainer[(Option[lsp4j.Position], Option[(String, lsp4j.Range)]), V, (Option[String], Int)] {
+case class StageRangeContainer[V <: SelectableInBound]() extends StageContainer[(Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean), V, (Option[String], Int)] {
   // Has a `scope` bound
   val localKeyword: HashMap[String, ArrayBuffer[V]] = HashMap()
   val local: ArrayBuffer[V] = ArrayBuffer()
@@ -98,18 +98,20 @@ case class StageRangeContainer[V <: SelectableInBound]() extends StageContainer[
       }
     }
   }
-  def filter(position: Option[lsp4j.Position])(v: V): Boolean = {
+  def filter(position: Option[lsp4j.Position], strictPosition: Boolean)(v: V): Boolean = {
     v.bound match {
       case s: SelectionBoundScopeTrait =>
-        position.isDefined && Common.containsPosition(Common.toRange(s.scope), position.get) == 0
+        val range = Common.toRange(s.scope)
+        if (strictPosition) range.getEnd().setCharacter(range.getEnd().getCharacter - 1)
+        position.isDefined && Common.containsPosition(range, position.get) == 0
       case _ => true
     }
   }
-  override def get(k: (Option[lsp4j.Position], Option[(String, lsp4j.Range)])): Seq[V] = {
-    val (position, keyword) = k
+  override def get(k: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)): Seq[V] = {
+    val (position, keyword, strictPosition) = k
     val keywordMatches = keyword.flatMap(k => localKeyword.get(k._1)).iterator.flatten
     val all = local.iterator ++ keywordMatches
-    all.filter(filter(position)).toSeq
+    all.filter(filter(position, strictPosition)).toSeq
   }
   override protected def innerUpdate(i: (Option[String], Int), f: V => V): Boolean = {
     val a = i._1.map(localKeyword).getOrElse(local)
@@ -129,7 +131,7 @@ case class StageRangeContainer[V <: SelectableInBound]() extends StageContainer[
 }
 // case class StageRangeContainer[V <: SelectableInBound[_, SelectionBoundScopeTrait]]() extends StageRangeContainerTrait[V]
 object StageRangeContainer {
-  type RangeContainer[V <: HasRangePositions with SelectableInBound, U] = LspContainer[StageRangeContainer[V], (Option[lsp4j.Position], Option[(String, lsp4j.Range)]), V, (Option[String], Int), U]
+  type RangeContainer[V <: HasRangePositions with SelectableInBound, U] = LspContainer[StageRangeContainer[V], (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean), V, (Option[String], Int), U]
   implicit def default[V <: SelectableInBound]: () => StageRangeContainer[V] = () => StageRangeContainer()
 }
 
@@ -166,7 +168,12 @@ case class StageSuggestableContainer[V <: lsp.SuggestableInBound]() extends Stag
       !ocm.suggestionBound.scope.contains(scope) &&
       ocm.suggestionBound.starting.get.contains(char)
     })
-    ocms.toSeq ++ perScope.get(scope).toSeq.flatMap(_.filter(filter(position, char)))
+    val all = ocms.toSeq ++ perScope.get(scope).toSeq.flatMap(_.filter(filter(position, char)))
+    all.filter(_.suggestionBound.range.zip(position).forall(r => {
+      val range = Common.toRange(r._1)
+      range.getEnd().setCharacter(range.getEnd().getCharacter - 1)
+      Common.containsPosition(range, r._2) == 0
+    }))
   }
   override protected def innerUpdate(i: Map[Option[lsp.SuggestionScope], Int], f: V => V): Boolean = {
     def index(i: Option[lsp.SuggestionScope]): ArrayBuffer[V] = i.map(perScope).getOrElse(onCharMatch)
@@ -258,6 +265,7 @@ case class LspContainer[+C <: StageContainer[K, V, I], K, V <: HasRangePositions
   private val typeck: C = initial()
   private val verify: C = initial()
   private def toPhase(phase: VerificationPhase): C = phase match {
+    case ParseStart => ???
     case ParseEnd => parse
     case TypeckEnd => typeck
     case VerifyEnd => verify

@@ -174,8 +174,7 @@ case class StateChangeParams(
               verificationNeeded: Double = -1,
               uri: String = null,
               stage: String = null,
-              error: String = null,
-              diagnostics: Array[Diagnostic] = null)
+              error: String = null)
 
 case class UnhandledViperServerMessageTypeParams(msgType: String, msg: String, logLevel: Int)
 

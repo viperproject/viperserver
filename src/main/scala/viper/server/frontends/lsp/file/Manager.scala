@@ -40,7 +40,7 @@ import viper.silver.ast.utility.lsp.GotoDefinition
 import viper.server.frontends.lsp.Common
 import viper.silver.ast.utility.lsp.DocumentSymbol
 
-case class Diagnostic(backendClassName: Option[String], position: lsp.RangePosition, message: String, cached: Boolean, errorMsgPrefix: Option[String]) extends lsp.HasRangePositions with lsp.BelongsToFile {
+case class Diagnostic(backendClassName: Option[String], position: lsp.RangePosition, message: String, severity: lsp4j.DiagnosticSeverity, cached: Boolean, errorMsgPrefix: Option[String]) extends lsp.HasRangePositions with lsp.BelongsToFile {
   override def rangePositions: Seq[lsp.RangePosition] = Seq(position)
   override def file: Path = position.file
 }
@@ -76,7 +76,10 @@ trait Manager {
   val content: FileContent
   val coordinator: ClientCoordinator
   implicit def logger = coordinator.logger
-  protected val containers: ArrayBuffer[utility.LspContainer[_, _, _, _, _]]
+  def addContainer(c: utility.LspContainer[_, _, _, _, _]): Unit
+  def resetContainers(phase: VerificationPhase.VerificationPhase): Unit
+
+  var lastPhase: Option[VerificationPhase] = None
 
   def getCodeLens(): Seq[lsp4j.CodeLens]
   def addCodeLens(phase: VerificationPhase)(vs: Seq[lsp.CodeLens]): Unit
@@ -115,9 +118,10 @@ trait Manager {
 }
 
 trait StandardManager extends Manager {
-  protected val containers: ArrayBuffer[utility.LspContainer[_, _, _, _, _]] = ArrayBuffer()
+  private val containers: ArrayBuffer[utility.LspContainer[_, _, _, _, _]] = ArrayBuffer()
 
-  def reset(phase: VerificationPhase.VerificationPhase): Unit = {
+  def addContainer(c: utility.LspContainer[_, _, _, _, _]): Unit = containers.addOne(c)
+  def resetContainers(phase: VerificationPhase.VerificationPhase): Unit = {
     containers.foreach(_.reset(phase))
   }
   def handleContentChange(range: Range, text: String): Unit = {
@@ -173,14 +177,14 @@ trait StandardManager extends Manager {
   type GotoDefinitionContainer = utility.StageRangeContainer.RangeContainer[lsp.GotoDefinition, lsp4j.LocationLink]
   val gotoDefinitionContainer: GotoDefinitionContainer = utility.LspContainer(utility.GotoDefinitionTranslator)
   containers.addOne(gotoDefinitionContainer)
-  def getGotoDefinition(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]) = gotoDefinitionContainer.get((pos, keyword))
+  def getGotoDefinition(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]) = gotoDefinitionContainer.get((pos, keyword, false))
   def addGotoDefinition(phase: VerificationPhase)(vs: Seq[lsp.GotoDefinition]): Unit = add(gotoDefinitionContainer, phase, vs)
 
   // HoverHint
   type HoverHintContainer = utility.StageRangeContainer.RangeContainer[lsp.HoverHint, lsp4j.Hover]
   val hoverHintContainer: HoverHintContainer = utility.LspContainer(utility.HoverHintTranslator)
   containers.addOne(hoverHintContainer)
-  def getHoverHint(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]) = hoverHintContainer.get((pos, keyword))
+  def getHoverHint(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]) = hoverHintContainer.get((pos, keyword, true))
   def addHoverHint(phase: VerificationPhase)(vs: Seq[lsp.HoverHint]): Unit = add(hoverHintContainer, phase, vs)
 
   // InlayHint
@@ -201,14 +205,14 @@ trait StandardManager extends Manager {
   type SignatureHelpContainer = utility.StageRangeContainer.RangeContainer[lsp.SignatureHelp, lsp4j.SignatureInformation]
   val signatureHelpContainer: SignatureHelpContainer = utility.LspContainer(utility.SignatureHelpTranslator)
   containers.addOne(signatureHelpContainer)
-  def getSignatureHelp(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]) = signatureHelpContainer.get((pos, keyword))
+  def getSignatureHelp(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]) = signatureHelpContainer.get((pos, keyword, false))
   def addSignatureHelp(phase: VerificationPhase)(vs: Seq[lsp.SignatureHelp]): Unit = add(signatureHelpContainer, phase, vs)
 
   // SuggestionScopeRange
   type SuggestionScopeRangeContainer = utility.StageRangeContainer.RangeContainer[lsp.SuggestionScopeRange, lsp.SuggestionScope]
   val suggestionScopeRangeContainer: SuggestionScopeRangeContainer = utility.LspContainer(utility.SuggestionScopeRangeTranslator, expandOnBorder = true)
   containers.addOne(suggestionScopeRangeContainer)
-  def getSuggestionScopeRange(pos: lsp4j.Position) = suggestionScopeRangeContainer.get((Some(pos), None))
+  def getSuggestionScopeRange(pos: lsp4j.Position) = suggestionScopeRangeContainer.get((Some(pos), None, false))
   def addSuggestionScopeRange(phase: VerificationPhase)(vs: Seq[lsp.SuggestionScopeRange]): Unit = add(suggestionScopeRangeContainer, phase, vs)
 
 

@@ -24,7 +24,7 @@ trait QuantifierInlayHints extends ProjectAware {
     val start = Common.toPosition(expStart.start)
     m.content.iterBackward(start).drop(1).find { case (c, _) => c != ' ' && c != '\n' } match {
       case Some((_, found)) =>
-        found.setCharacter(found.getCharacter + 1)
+        found.setCharacter(found.getCharacter + 2)
         val trueStart = m.content.normalize(found).get
         expStart.shiftStart(trueStart.getLine - start.getLine, trueStart.getCharacter - start.getCharacter)
       case None =>

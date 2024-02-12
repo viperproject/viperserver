@@ -95,9 +95,6 @@ case class FileManager(file: PathInfo, coordinator: lsp.ClientCoordinator, conte
     var manuallyTriggered: Boolean = _
     var canResetReferences: Boolean = false
     var gotNewMembers: Boolean = false
-    // does not correspond to `diagnostics.size` when
-    // there are errors in other files
-    var diagnosticCount: Int = 0
 
     //verification results
     var jid: Int = -1

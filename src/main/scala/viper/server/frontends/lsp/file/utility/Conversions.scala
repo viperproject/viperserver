@@ -33,7 +33,7 @@ case object CodeLensTranslator extends Translates[lsp.CodeLens, lsp4j.CodeLens, 
 case object DiagnosticTranslator extends Translates[Diagnostic, lsp4j.Diagnostic, Unit] {
   override def translate(diag: Diagnostic)(i: Unit): lsp4j.Diagnostic = {
     val range = Common.toRange(diag.position)
-    new lsp4j.Diagnostic(range, diag.message, lsp4j.DiagnosticSeverity.Error, "")
+    new lsp4j.Diagnostic(range, diag.message, diag.severity, "viper")
   }
 }
 
@@ -65,8 +65,8 @@ case object FoldingRangeTranslator extends Translates[lsp.FoldingRange, lsp4j.Fo
   }
 }
 
-case object GotoDefinitionTranslator extends Translates[lsp.GotoDefinition, lsp4j.LocationLink, (Option[lsp4j.Position], Option[(String, lsp4j.Range)])] {
-  override def translate(goto: lsp.GotoDefinition)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)])): lsp4j.LocationLink = {
+case object GotoDefinitionTranslator extends Translates[lsp.GotoDefinition, lsp4j.LocationLink, (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)] {
+  override def translate(goto: lsp.GotoDefinition)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)): lsp4j.LocationLink = {
     val range = Common.toRange(goto.target)
     val targetRange = Common.toRange(goto.targetSelection)
     // Origin range:
@@ -77,10 +77,10 @@ case object GotoDefinitionTranslator extends Translates[lsp.GotoDefinition, lsp4
   }
 }
 
-case object HoverHintTranslator extends Translates[lsp.HoverHint, lsp4j.Hover, (Option[lsp4j.Position], Option[(String, lsp4j.Range)])] {
-  override def translate(hh: lsp.HoverHint)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)])): lsp4j.Hover = ???
-  override def translate(hhs: Seq[lsp.HoverHint])(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)]))(implicit log: Logger): Seq[lsp4j.Hover] = {
-    val hoverStr = hhs.map(_.hint).mkString("\n---\n")
+case object HoverHintTranslator extends Translates[lsp.HoverHint, lsp4j.Hover, (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)] {
+  override def translate(hh: lsp.HoverHint)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)): lsp4j.Hover = ???
+  override def translate(hhs: Seq[lsp.HoverHint])(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean))(implicit log: Logger): Seq[lsp4j.Hover] = {
+    val hoverStr = hhs.map(h => s"```\n${h.hint}\n```${h.documentation.map("\n" + _).getOrElse("")}").mkString("\n\n---\n\n")
     // Origin range:
     val highlightRange = hhs.headOption.flatMap(_.highlight).map(Common.toRange)
     val keywordSelectRange = i._2.map(_._2)
@@ -141,8 +141,8 @@ case object SemanticHighlightTranslator extends Translates[lsp.SemanticHighlight
   }
 }
 
-case object SignatureHelpTranslator extends Translates[lsp.SignatureHelp, lsp4j.SignatureInformation, (Option[lsp4j.Position], Option[(String, lsp4j.Range)])] {
-  override def translate(sh: lsp.SignatureHelp)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)])): lsp4j.SignatureInformation = {
+case object SignatureHelpTranslator extends Translates[lsp.SignatureHelp, lsp4j.SignatureInformation, (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)] {
+  override def translate(sh: lsp.SignatureHelp)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)): lsp4j.SignatureInformation = {
     val label = sh.help.map(_.text).mkString
     val si = new lsp4j.SignatureInformation(label)
     sh.documentation.foreach(d => si.setDocumentation(new lsp4j.MarkupContent("markdown", d)))
@@ -163,9 +163,9 @@ case object SignatureHelpTranslator extends Translates[lsp.SignatureHelp, lsp4j.
   }
 }
 
-case object FindReferencesTranslator extends Translates[FindReferences, lsp4j.Location, (Option[lsp4j.Position], Option[(String, lsp4j.Range)])] {
-  override def translate(fr: FindReferences)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)])): lsp4j.Location = ???
-  override def translate(frs: Seq[FindReferences])(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)]))(implicit log: Logger): Seq[lsp4j.Location] = {
+case object FindReferencesTranslator extends Translates[FindReferences, lsp4j.Location, (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)] {
+  override def translate(fr: FindReferences)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)): lsp4j.Location = ???
+  override def translate(frs: Seq[FindReferences])(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean))(implicit log: Logger): Seq[lsp4j.Location] = {
     frs.flatMap(_.references.map(Common.toLocation))
   }
 }
@@ -203,9 +203,9 @@ case object CompletionProposalTranslator extends Translates[lsp.CompletionPropos
   }
 }
 
-case object SuggestionScopeRangeTranslator extends Translates[lsp.SuggestionScopeRange, lsp.SuggestionScope, (Option[lsp4j.Position], Option[(String, lsp4j.Range)])] {
-  override def translate(ssr: lsp.SuggestionScopeRange)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)])): lsp.SuggestionScope = ???
-  override def translate(ssrs: Seq[lsp.SuggestionScopeRange])(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)]))(implicit log: Logger): Seq[lsp.SuggestionScope] = {
+case object SuggestionScopeRangeTranslator extends Translates[lsp.SuggestionScopeRange, lsp.SuggestionScope, (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)] {
+  override def translate(ssr: lsp.SuggestionScopeRange)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)): lsp.SuggestionScope = ???
+  override def translate(ssrs: Seq[lsp.SuggestionScopeRange])(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean))(implicit log: Logger): Seq[lsp.SuggestionScope] = {
     def ordering(ssr: lsp.SuggestionScopeRange) = (ssr.range._end.line - ssr.range.start.line, ssr.range._end.column - ssr.range.start.column)
     val min = ssrs.minByOption(ordering).map(_.scope).getOrElse(lsp.MemberScope)
     Seq(min)

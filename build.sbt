@@ -18,7 +18,7 @@ lazy val server = (project in file("."))
         // General settings
         name := "ViperServer",
         organization := "viper",
-        version := "2.0.0", // has to be a proper semver
+        version := "3.0.0", // has to be a proper semver
 
         // Fork test to a different JVM than SBT's, avoiding SBT's classpath interfering with
         // classpath used by Scala's reflection.

@@ -15,8 +15,7 @@ import viper.silver.reporter._
 import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
 
 import viper.server.frontends.lsp.file.ProgressCoordinator
-// import viper.server.frontends.lsp.file.HoverHintManager
-// import viper.server.frontends.lsp.file.SemanticHighlightManager
+import viper.silver.parser._
 
 trait MessageHandler extends ProjectManager with VerificationManager with QuantifierCodeLens with QuantifierInlayHints with SignatureHelp {
   override def props(backendClassName: Option[String]): Props = RelayActor.props(this, backendClassName)
@@ -33,7 +32,7 @@ trait MessageHandler extends ProjectManager with VerificationManager with Quanti
       TypecheckingFailed
     } else if (is_aborting) {
       Aborted
-    } else if (diagnosticCount != 0) {
+    } else if (errorCount != 0) {
       VerificationFailed
     } else {
       lsp.VerificationSuccess.Success
@@ -120,29 +119,44 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
     case m if task.is_aborting =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] ignoring message because we are aborting: $m")
 
-    case PProgramReport(success, pProgram) =>
+    case PProgramReport(typeckSuccess, pProgram) =>
       // New project
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] got new pProgram for ${task.filename}")
       val files = pProgram.imports.flatMap(_.resolved).map(_.toUri().toString()).toSet
       // coordinator.logger.debug(s"pProgram.imports ${pProgram.imports.toString()}")
       task.setupProject(files)
-      if (success) {
-        task.reset(VerificationPhase.TypeckEnd)
+      val parseSuccess = pProgram.errors.isEmpty
+      val phase = if (typeckSuccess) VerificationPhase.TypeckEnd
+        else if (parseSuccess) VerificationPhase.ParseEnd
+        else VerificationPhase.ParseStart
+      if (typeckSuccess || task.lastPhase.forall(_ <= phase)) {
+        task.lastPhase match {
+          case Some(VerificationPhase.VerifyEnd) | Some(VerificationPhase.TypeckEnd) =>
+            task.resetContainers(VerificationPhase.TypeckEnd)
+          case Some(VerificationPhase.ParseEnd) | Some(VerificationPhase.ParseStart) =>
+            task.resetContainers(VerificationPhase.ParseEnd)
+          case None => {
+            task.resetContainers(VerificationPhase.ParseEnd)
+            task.resetContainers(VerificationPhase.TypeckEnd)
+          }
+        }
+        task.lastPhase = Some(phase)
+
+        task.addCodeLens(phase)(HasCodeLens(pProgram))
+        task.addDocumentSymbol(phase)(HasDocumentSymbol(pProgram))
+        task.addHoverHint(phase)(HasHoverHints(pProgram))
+        task.addGotoDefinition(phase)(HasGotoDefinitions(pProgram))
+        task.addFindReferences(phase)(HasReferenceTos(pProgram))
+        task.addFoldingRange(phase)(HasFoldingRanges(pProgram))
+        task.addInlayHint(phase)(HasInlayHints(pProgram))
+        task.addSemanticHighlight(phase)(HasSemanticHighlights(pProgram))
+        task.addSignatureHelp(phase)(HasSignatureHelps(pProgram))
+        task.addSuggestionScopeRange(phase)(HasSuggestionScopeRanges(pProgram))
+        task.addCompletionProposal(phase)(HasCompletionProposals(pProgram))
       }
-      val phase = if (success) VerificationPhase.TypeckEnd else VerificationPhase.ParseEnd
-      task.addCodeLens(phase)(pProgram.getCodeLens)
-      task.addDocumentSymbol(phase)(pProgram.getSymbolChildren)
-      task.addHoverHint(phase)(pProgram.getHoverHints)
-      task.addGotoDefinition(phase)(pProgram.getGotoDefinitions)
-      task.addFindReferences(phase)(pProgram.getReferenceTos)
-      task.addFoldingRange(phase)(pProgram.getFoldingRanges)
-      task.addInlayHint(phase)(pProgram.getInlayHints)
-      task.addSemanticHighlight(phase)(pProgram.getSemanticHighlights)
-      task.addSignatureHelp(phase)(pProgram.getSignatureHelps)
-      println("addSuggestionScopeRange: " + pProgram.getSuggestionScopeRanges.toString())
-      task.addSuggestionScopeRange(phase)(pProgram.getSuggestionScopeRanges)
-      println("addCompletionProposal: " + pProgram.getCompletionProposals.toString())
-      task.addCompletionProposal(phase)(pProgram.getCompletionProposals)
+      // if (success) {
+      //   task.resetContainers(VerificationPhase.TypeckEnd)
+      // }
 
       // Update getSymbols
     //   dsm.symbolInformation.clear()
@@ -212,6 +226,15 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       val newErrors = failure.errors.filterNot(hasAlreadyBeenReported)
       markErrorsAsReported(newErrors)
       task.processErrors(backendClassName, newErrors)
+    case WarningsDuringParsing(warnings) =>
+      markErrorsAsReported(warnings)
+      task.processErrors(backendClassName, warnings)
+    case WarningsDuringTypechecking(warnings) =>
+      markErrorsAsReported(warnings)
+      task.processErrors(backendClassName, warnings)
+    case WarningsDuringVerification(warnings) =>
+      markErrorsAsReported(warnings)
+      task.processErrors(backendClassName, warnings)
     // the completion handler is not yet invoked (but as part of Status.Success)
     case QuantifierChosenTriggersMessage(qexp, triggers, oldTriggers) =>
       coordinator.logger.trace(s"[receive@${task.filename}/${backendClassName.isDefined}] QuantifierChosenTriggersMessage")

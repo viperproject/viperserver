@@ -27,9 +27,9 @@ trait FindReferencesManager extends Manager {
   // FindReferences
   type FindReferencesContainer = utility.StageRangeContainer.RangeContainer[FindReferences, lsp4j.Location]
   val findReferencesContainer: FindReferencesContainer = utility.LspContainer(utility.FindReferencesTranslator)
-  containers.addOne(findReferencesContainer)
+  addContainer(findReferencesContainer)
   def getFindReferences(pos: lsp4j.Position, includeDeclaration: Boolean): Seq[lsp4j.Location] =
-    findReferencesContainer.get((Some(pos), None))
+    findReferencesContainer.get((Some(pos), None, false))
       .filter(l => includeDeclaration || Common.containsPosition(l.getRange, pos) != 0)
 
   def addFindReferences(phase: VerificationPhase)(vs: Seq[lsp.ReferenceTo]): Unit = {

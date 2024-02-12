@@ -95,13 +95,13 @@ case class FileContent(path: Path) extends DiskLoader {
     normalize(pos).flatMap(nPos => {
       val start = iterBackward(nPos).drop(1).takeWhile { case (c, _) => Common.isIdentChar(c) }.length
       val startPos = new Position(nPos.getLine, nPos.getCharacter - start)
-      println("startPos: " + startPos.toString() + " " + nPos.toString())
+      // println("startPos: " + startPos.toString() + " " + nPos.toString())
       if (!Common.isIdentStartChar(getCharAt(startPos))) return None
       val end = iterForward(nPos).takeWhile { case (c, _) => Common.isIdentChar(c) }.length
       val endPos = new Position(nPos.getLine, nPos.getCharacter + end)
       if (start == 0 && end == 0 || inComment(nPos)) None else {
         val ident = fileContent(nPos.getLine).slice(startPos.getCharacter, endPos.getCharacter)
-        println("got: " + ident)
+        // println("got: " + ident)
         Some((ident, new Range(startPos, endPos)))
       }
     })
@@ -110,12 +110,15 @@ case class FileContent(path: Path) extends DiskLoader {
     normalize(pos).map(nPos => {
       var isComment = false
       var noComment = false
-      iterBackward(nPos).sliding(2).find { case Seq((prevChar, _), (currChar, p)) => {
-        isComment = isComment || p.getLine() == nPos.getLine() && currChar == '/' && prevChar == '/'
-        isComment = isComment || (!noComment && currChar == '/' && prevChar == '*')
-        noComment = noComment || currChar == '*' && prevChar == '/'
-        isComment || (noComment && p.getLine() != nPos.getLine())
-      }}
+      iterBackward(nPos).sliding(2).find {
+        case Seq((prevChar, _), (currChar, p)) => {
+          isComment = isComment || p.getLine() == nPos.getLine() && currChar == '/' && prevChar == '/'
+          isComment = isComment || (!noComment && currChar == '/' && prevChar == '*')
+          noComment = noComment || currChar == '*' && prevChar == '/'
+          isComment || (noComment && p.getLine() != nPos.getLine())
+        }
+        case _ => false
+      }
       isComment
     }).getOrElse(false)
   }

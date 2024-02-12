@@ -54,7 +54,18 @@ case class VerificationHandler(server: lsp.ViperServerService) {
 }
 
 object VerificationPhase {
-  sealed trait VerificationPhase
+  sealed trait VerificationPhase {
+    def <=(other: VerificationPhase): Boolean = {
+      (this, other) match {
+        case _ if this == other => true
+        case (ParseStart, _) => true
+        case (ParseEnd, TypeckEnd) => true
+        case (_, VerifyEnd) => true
+        case _ => false
+      }
+    }
+  }
+  case object ParseStart extends VerificationPhase
   case object ParseEnd extends VerificationPhase
   case object TypeckEnd extends VerificationPhase
   case object VerifyEnd extends VerificationPhase
@@ -105,7 +116,9 @@ trait VerificationManager extends Manager {
   var typeCheckingCompleted: Boolean = false
   // var progress: ProgressCoordinator = _
 
-  //new
+  // does not correspond to `diagnostics.size` when
+  // there are errors in other files
+  var errorCount: Int = 0
   var diagnosticCount: Int = 0
 
   def prepareVerification(mt: Boolean): Unit = {
@@ -170,9 +183,10 @@ trait VerificationManager extends Manager {
 
   /** Do full parsing, type checking and verification */
   def startVerification(backendClassName: String, customArgs: String, loader: FileContent, mt: Boolean): Future[Boolean] = {
-    coordinator.logger.info(s"verify $filename")
+    coordinator.logger.info(s"verify $filename ($backendClassName)")
     if (handler.isVerifying) stop()
     futureCancel.getOrElse(Future.unit).map(_ => {
+      lastPhase = None
       val (astJob, actorRef) = handler.astHandle match {
         case None => startConstructAst(loader, mt) match {
           case None => return Future.successful(false)
@@ -185,7 +199,8 @@ trait VerificationManager extends Manager {
       val verJob = coordinator.server.verifyAst(astJob, command, Some(coordinator.localLogger))
       if (verJob.id >= 0) {
         // Execute all handles
-        containers.foreach(_.reset(VerificationPhase.VerifyEnd))
+        resetContainers(VerificationPhase.VerifyEnd)
+        lastPhase = Some(VerificationPhase.VerifyEnd)
         handler.waitOn(verJob)
         val receiver = props(Some(backendClassName))//actorRef
         futureVer = coordinator.server.startStreamingVer(verJob, receiver, Some(coordinator.localLogger))
@@ -216,7 +231,6 @@ trait VerificationManager extends Manager {
     val astJob = coordinator.server.constructAst(path.toString(), Some(coordinator.localLogger), Some(loader))
     if (astJob.id >= 0) {
       // Execute all handles
-      containers.foreach(_.reset(VerificationPhase.ParseEnd))
       val (newFut, newActorRef) = coordinator.server.startStreamingAst(astJob, props(None), Some(coordinator.localLogger))
       futureAst = newFut
       val ast = (astJob, newActorRef)
@@ -230,7 +244,6 @@ trait VerificationManager extends Manager {
   def props(backendClassName: Option[String]): Props
 
   def processErrors(backendClassName: Option[String], errors: Seq[AbstractError], errorMsgPrefix: Option[String] = None): Unit = {
-    diagnosticCount += errors.size
     val errMsgPrefixWithWhitespace = errorMsgPrefix.map(s => s"$s ").getOrElse("")
     val files = HashSet[String]()
 
@@ -238,6 +251,7 @@ trait VerificationManager extends Manager {
       coordinator.logger.info(s"Handling error ${err.toString()}")
       var errorType: String = ""
       var phase: VerificationPhase.VerificationPhase = VerificationPhase.ParseEnd
+      var severity = lsp4j.DiagnosticSeverity.Error
       if (err.fullId != null && err.fullId == "typechecker.error") {
         typeCheckingCompleted = false
         errorType = "Typechecker error"
@@ -245,6 +259,15 @@ trait VerificationManager extends Manager {
         parsingCompleted = false
         typeCheckingCompleted = false
         errorType = "Parser error"
+      } else if (err.fullId != null && err.fullId == "typechecker.warning") {
+        severity = lsp4j.DiagnosticSeverity.Warning
+        errorType = "Typechecker warning"
+      } else if (err.fullId != null && err.fullId == "parser.warning") {
+        severity = lsp4j.DiagnosticSeverity.Warning
+        errorType = "Parser warning"
+      } else if (err.fullId != null && err.fullId == "verifier.warning") {
+        severity = lsp4j.DiagnosticSeverity.Warning
+        errorType = "Verification warning"
       } else {
         phase = VerificationPhase.VerifyEnd
         errorType = "Verification error"
@@ -271,8 +294,10 @@ trait VerificationManager extends Manager {
 
       val cachFlag: String = if(err.cached) " (cached)" else ""
       val message = s"$errMsgPrefixWithWhitespace${err.readableMessage}$cachFlag"
-      (phase, Diagnostic(backendClassName, rp, message, err.cached, errorMsgPrefix))
+      (phase, Diagnostic(backendClassName, rp, message, severity, err.cached, errorMsgPrefix))
     })
+    diagnosticCount += errors.size
+    errorCount += diags.count(_._2.severity == lsp4j.DiagnosticSeverity.Error)
     diags.groupBy(d => d._1).foreach { case (phase, diags) =>
       addDiagnostic(phase)(diags.map(_._2))
     }

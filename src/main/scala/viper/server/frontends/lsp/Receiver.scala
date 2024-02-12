@@ -373,7 +373,7 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
 
   override def getWorkspaceService(): WorkspaceService = this
 
-  val MIN_CLIENT_VERSION = "4.0.0"
+  val MIN_CLIENT_VERSION = "5.0.0"
 
   // receives version of client to perform some checks before replying with the server's version
   @JsonRequest(C2S_Commands.GetVersion)

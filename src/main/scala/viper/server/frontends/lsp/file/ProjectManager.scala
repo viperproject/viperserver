@@ -73,8 +73,6 @@ trait ProjectAware {
 }
 
 trait ProjectManager extends FullManager with ProjectAware {
-  // val manager: FileManager
-
   var project: Either[Map[String, LeafManager], LeafInfo] = Left(Map())
   def removeFromProject(root: String) = {
     this.removeDiagnostics()
@@ -103,9 +101,9 @@ trait ProjectManager extends FullManager with ProjectAware {
   def isRoot: Boolean = project.isLeft
 
   def getInProject(uri: String): FullManager = {
-    println("Get in project " + uri)
+    // println("Get in project " + uri)
     val res = if (uri == file.file_uri) this else project.left.toOption.get.get(uri).get
-    println("Res " + res.toString() + " fm " + res.file.toString())
+    // println("Res " + res.toString() + " fm " + res.file.toString())
     res
   }
   def getLeaf(uri: String): LeafManager = project.left.toOption.get(uri)
@@ -192,13 +190,13 @@ trait ProjectManager extends FullManager with ProjectAware {
     val start = ident.map(_._2.getStart).getOrElse(pos)
     // Get character
     val char = c.iterBackward(start).drop(1).find{ case (c, _) => c != ' ' }.map(_._1).getOrElse('\n')
-    println(s"suggestionScopeRangeContainer: ${m.suggestionScopeRangeContainer.all(_ => true)}")
+    // println(s"suggestionScopeRangeContainer: ${m.suggestionScopeRangeContainer.all(_ => true)}")
     // println(s"completionProposalContainer: ${completionProposalContainer.all(_ => true)}")
-    println(s"CompletionProposal: $scope, \"$c\" (${start.toString()})\"${m.content.fileContent.mkString("\n")}\"")
-    println(s"completionProposalContainer: ${m.completionProposalContainer.all(_ => true)}")
+    // println(s"CompletionProposal: $scope, \"$c\" (${start.toString()})\"${m.content.fileContent.mkString("\n")}\"")
+    // println(s"completionProposalContainer: ${m.completionProposalContainer.all(_ => true)}")
     val r = if (uri == file.file_uri) super.getCompletionProposal(scope, Some(pos), char)
     else super.getCompletionProposal(scope, None, char) ++ getInProject(uri).getCompletionProposal(scope, Some(pos), char)
-    println(s"got: ${r.toString()}")
+    // println(s"got: ${r.toString()}")
     r
   }
 
