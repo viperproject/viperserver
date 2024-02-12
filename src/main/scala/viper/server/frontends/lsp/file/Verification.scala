@@ -188,10 +188,12 @@ trait VerificationManager extends Manager {
       val verJob = coordinator.server.verifyAst(astJob, command, Some(coordinator.localLogger))
       if (verJob.id >= 0) {
         // Execute all handles
-        resetContainers(false)
-        lastPhase = Some(VerificationPhase.VerifyEnd)
+        this.resetContainers(false)
+        this.resetDiagnostics(false)
+        errorCount = 0
+        diagnosticCount = 0
         handler.waitOn(verJob)
-        val receiver = props(Some(backendClassName))//actorRef
+        val receiver = props(Some(backendClassName))
         futureVer = coordinator.server.startStreamingVer(verJob, receiver, Some(coordinator.localLogger))
         true
       } else {
@@ -219,6 +221,7 @@ trait VerificationManager extends Manager {
 
     val astJob = coordinator.server.constructAst(path.toString(), Some(coordinator.localLogger), Some(loader))
     if (astJob.id >= 0) {
+      this.resetDiagnostics(true)
       // Execute all handles
       val (newFut, newActorRef) = coordinator.server.startStreamingAst(astJob, props(None), Some(coordinator.localLogger))
       futureAst = newFut

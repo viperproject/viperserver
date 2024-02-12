@@ -74,6 +74,8 @@ trait MessageHandler extends ProjectManager with VerificationManager with Quanti
 
       // reset for next verification
       lastSuccess = success
+      if (success == VerificationFailed || success == Success)
+        lastPhase = Some(VerificationPhase.VerifyEnd)
       timeMs = 0
     } catch {
       case e: Throwable =>
@@ -125,30 +127,20 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
         else if (parseSuccess) VerificationPhase.ParseEnd
         else VerificationPhase.ParseStart
       if (typeckSuccess || task.lastPhase.forall(_.order <= phase.order)) {
-        task.lastPhase match {
-          case Some(VerificationPhase.VerifyEnd) | Some(VerificationPhase.TypeckEnd) =>
-            task.resetContainers(false)
-          case Some(VerificationPhase.ParseEnd) | Some(VerificationPhase.ParseStart) =>
-            task.resetContainers(true)
-          case None => {
-            task.resetContainers(true)
-            task.resetContainers(false)
-          }
-        }
+        task.resetContainers(true)
         task.lastPhase = Some(phase)
-        val first = !typeckSuccess
 
-        task.addCodeLens(first)(HasCodeLens(pProgram))
-        task.addDocumentSymbol(first)(HasDocumentSymbol(pProgram))
-        task.addHoverHint(first)(HasHoverHints(pProgram))
-        task.addGotoDefinition(first)(HasGotoDefinitions(pProgram))
-        task.addFindReferences(first)(HasReferenceTos(pProgram))
-        task.addFoldingRange(first)(HasFoldingRanges(pProgram))
-        task.addInlayHint(first)(HasInlayHints(pProgram))
-        task.addSemanticHighlight(first)(HasSemanticHighlights(pProgram))
-        task.addSignatureHelp(first)(HasSignatureHelps(pProgram))
-        task.addSuggestionScopeRange(first)(HasSuggestionScopeRanges(pProgram))
-        task.addCompletionProposal(first)(HasCompletionProposals(pProgram))
+        task.addCodeLens(true)(HasCodeLens(pProgram))
+        task.addDocumentSymbol(true)(HasDocumentSymbol(pProgram))
+        task.addHoverHint(true)(HasHoverHints(pProgram))
+        task.addGotoDefinition(true)(HasGotoDefinitions(pProgram))
+        task.addFindReferences(true)(HasReferenceTos(pProgram))
+        task.addFoldingRange(true)(HasFoldingRanges(pProgram))
+        task.addInlayHint(true)(HasInlayHints(pProgram))
+        task.addSemanticHighlight(true)(HasSemanticHighlights(pProgram))
+        task.addSignatureHelp(true)(HasSignatureHelps(pProgram))
+        task.addSuggestionScopeRange(true)(HasSuggestionScopeRanges(pProgram))
+        task.addCompletionProposal(true)(HasCompletionProposals(pProgram))
       }
     case StatisticsReport(m, f, p, _, _) =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] StatisticsReport")

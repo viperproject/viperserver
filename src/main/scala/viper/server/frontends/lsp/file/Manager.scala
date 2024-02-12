@@ -40,6 +40,7 @@ trait Manager {
 
   def getDiagnostic(): Seq[lsp4j.Diagnostic]
   def addDiagnostic(first: Boolean)(vs: Seq[Diagnostic]): Unit
+  def resetDiagnostics(first: Boolean): Unit
 
   def getDocumentSymbol(): Seq[lsp4j.DocumentSymbol]
   def addDocumentSymbol(first: Boolean)(vs: Seq[lsp.DocumentSymbol]): Unit
@@ -103,10 +104,11 @@ trait StandardManager extends Manager {
     val diagnosticParams = new PublishDiagnosticsParams(file.file_uri, getDiagnostic().asJava)
     coordinator.client.publishDiagnostics(diagnosticParams)
   }
-  containers.addOne(diagnosticContainer)
+  // containers.addOne(diagnosticContainer)
   def getDiagnostic() = diagnosticContainer.get(())
   def addDiagnostic(first: Boolean)(vs: Seq[Diagnostic]): Unit = add(diagnosticContainer, first, vs)
   def removeDiagnostics() = diagnosticContainer.resetAll()
+  def resetDiagnostics(first: Boolean): Unit = diagnosticContainer.reset(first)
 
   // DocumentSymbol
   type DocumentSymbolContainer = utility.StageArrayContainer.ArrayContainer[lsp.DocumentSymbol, lsp4j.DocumentSymbol]
