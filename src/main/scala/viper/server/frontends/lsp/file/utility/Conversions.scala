@@ -15,7 +15,6 @@ import ch.qos.logback.classic.Logger
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
-import viper.silver.ast.utility.lsp.DocumentSymbol
 
 trait Translates[-T, +U, I] {
   def translate(t: T)(i: I): U

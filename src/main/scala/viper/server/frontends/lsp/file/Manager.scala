@@ -6,39 +6,19 @@
 
 package viper.server.frontends.lsp.file
 
-import java.net.URI
-import java.nio.file.{Path, Paths}
-import akka.actor.{Actor, Props, Status}
-import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, DocumentSymbol, FoldingRange, Position, PublishDiagnosticsParams, Range, SymbolKind}
-import viper.server.core.VerificationExecutionContext
+import java.nio.file.Path
+import org.eclipse.lsp4j.{PublishDiagnosticsParams, Range}
 import viper.server.frontends.lsp.ClientCoordinator
-import viper.server.frontends.lsp.VerificationState._
-import viper.server.frontends.lsp.VerificationSuccess._
-import viper.server.vsi.VerJobId
-import viper.silver.ast
-import viper.silver.ast.{AbstractSourcePosition, HasLineColumn}
-import viper.silver.reporter._
-import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
 
 import scala.jdk.CollectionConverters._
-import scala.collection.mutable.{ArrayBuffer, HashMap}
-import scala.concurrent.Future
-import org.eclipse.lsp4j.ParameterInformation
-import org.eclipse.lsp4j.jsonrpc.messages.Tuple.Two
-import viper.server.vsi.AstJobId
+import scala.collection.mutable.ArrayBuffer
 import viper.server.frontends.lsp.file.FileContent
-import viper.server.frontends.lsp.file.ProgressCoordinator
 import viper.server.frontends.lsp.Lsp4jSemanticHighlight
 import VerificationPhase._
 
 import org.eclipse.lsp4j
 import viper.silver.ast.utility.lsp
-import viper.server.frontends.lsp.file.utility.LspContainer
-import ch.qos.logback.classic.Logger
-import viper.server.frontends.lsp.file.utility.StageContainer
-import viper.silver.ast.utility.lsp.GotoDefinition
 import viper.server.frontends.lsp.Common
-import viper.silver.ast.utility.lsp.DocumentSymbol
 
 case class Diagnostic(backendClassName: Option[String], position: lsp.RangePosition, message: String, severity: lsp4j.DiagnosticSeverity, cached: Boolean, errorMsgPrefix: Option[String]) extends lsp.HasRangePositions with lsp.BelongsToFile {
   override def rangePositions: Seq[lsp.RangePosition] = Seq(position)

@@ -30,24 +30,11 @@ case class FileContent(path: Path) extends DiskLoader {
   }
 
   val fileContent = new ArrayBuffer[String]
-  // val lineToChar = new ArrayBuffer[Int]
 
   def set(newContent: String): Unit = {
     fileContent.clear()
     fileContent.addAll(newContent.split("\n", -1))
-    // var idx = 0
-    // fileContent.foreach(line => {
-    //   lineToChar.addOne(idx)
-    //   idx += line.length + 1
-    // })
   }
-
-  // def rpToCharRange(rp: RangePosition): CharRange = {
-  //   CharRange(
-  //     lineToChar(rp.start.line) + rp.start.column,
-  //     lineToChar(rp._end.line) + rp._end.column,
-  //   )
-  // }
 
   override def loadContent(path: Path): Try[String] =
     if (this.path == path) Success(fileContent.mkString("\n")) else super.loadContent(path)
@@ -95,13 +82,11 @@ case class FileContent(path: Path) extends DiskLoader {
     normalize(pos).flatMap(nPos => {
       val start = iterBackward(nPos).drop(1).takeWhile { case (c, _) => Common.isIdentChar(c) }.length
       val startPos = new Position(nPos.getLine, nPos.getCharacter - start)
-      // println("startPos: " + startPos.toString() + " " + nPos.toString())
       if (!Common.isIdentStartChar(getCharAt(startPos))) return None
       val end = iterForward(nPos).takeWhile { case (c, _) => Common.isIdentChar(c) }.length
       val endPos = new Position(nPos.getLine, nPos.getCharacter + end)
       if (start == 0 && end == 0 || inComment(nPos)) None else {
         val ident = fileContent(nPos.getLine).slice(startPos.getCharacter, endPos.getCharacter)
-        // println("got: " + ident)
         Some((ident, new Range(startPos, endPos)))
       }
     })
