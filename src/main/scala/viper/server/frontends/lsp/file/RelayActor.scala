@@ -129,54 +129,32 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       val phase = if (typeckSuccess) VerificationPhase.TypeckEnd
         else if (parseSuccess) VerificationPhase.ParseEnd
         else VerificationPhase.ParseStart
-      if (typeckSuccess || task.lastPhase.forall(_ <= phase)) {
+      if (typeckSuccess || task.lastPhase.forall(_.order <= phase.order)) {
         task.lastPhase match {
           case Some(VerificationPhase.VerifyEnd) | Some(VerificationPhase.TypeckEnd) =>
-            task.resetContainers(VerificationPhase.TypeckEnd)
+            task.resetContainers(false)
           case Some(VerificationPhase.ParseEnd) | Some(VerificationPhase.ParseStart) =>
-            task.resetContainers(VerificationPhase.ParseEnd)
+            task.resetContainers(true)
           case None => {
-            task.resetContainers(VerificationPhase.ParseEnd)
-            task.resetContainers(VerificationPhase.TypeckEnd)
+            task.resetContainers(true)
+            task.resetContainers(false)
           }
         }
         task.lastPhase = Some(phase)
+        val first = !typeckSuccess
 
-        task.addCodeLens(phase)(HasCodeLens(pProgram))
-        task.addDocumentSymbol(phase)(HasDocumentSymbol(pProgram))
-        task.addHoverHint(phase)(HasHoverHints(pProgram))
-        task.addGotoDefinition(phase)(HasGotoDefinitions(pProgram))
-        task.addFindReferences(phase)(HasReferenceTos(pProgram))
-        task.addFoldingRange(phase)(HasFoldingRanges(pProgram))
-        task.addInlayHint(phase)(HasInlayHints(pProgram))
-        task.addSemanticHighlight(phase)(HasSemanticHighlights(pProgram))
-        task.addSignatureHelp(phase)(HasSignatureHelps(pProgram))
-        task.addSuggestionScopeRange(phase)(HasSuggestionScopeRanges(pProgram))
-        task.addCompletionProposal(phase)(HasCompletionProposals(pProgram))
+        task.addCodeLens(first)(HasCodeLens(pProgram))
+        task.addDocumentSymbol(first)(HasDocumentSymbol(pProgram))
+        task.addHoverHint(first)(HasHoverHints(pProgram))
+        task.addGotoDefinition(first)(HasGotoDefinitions(pProgram))
+        task.addFindReferences(first)(HasReferenceTos(pProgram))
+        task.addFoldingRange(first)(HasFoldingRanges(pProgram))
+        task.addInlayHint(first)(HasInlayHints(pProgram))
+        task.addSemanticHighlight(first)(HasSemanticHighlights(pProgram))
+        task.addSignatureHelp(first)(HasSignatureHelps(pProgram))
+        task.addSuggestionScopeRange(first)(HasSuggestionScopeRanges(pProgram))
+        task.addCompletionProposal(first)(HasCompletionProposals(pProgram))
       }
-      // if (success) {
-      //   task.resetContainers(VerificationPhase.TypeckEnd)
-      // }
-
-      // Update getSymbols
-    //   dsm.symbolInformation.clear()
-    //   for (i <- imports) {
-    //     val key = i.from.file.toUri().toString()
-    //     dsm.symbolInformation.getOrElseUpdate(key, ArrayBuffer()) += ImportMember(i)
-    //   }
-    // case ProgramOutlineReport(newMembers) =>
-    //   data.gotNewMembers = true
-    //   members.clear()
-    //   for (member <- newMembers) {
-    //     // Traverse all nodes
-    //     val newSymbols = receiveNode(member).map(DocumentSymbolMember)
-    //     val key = member.pos.asInstanceOf[AbstractSourcePosition].file.toUri().toString()
-    //     dsm.symbolInformation.getOrElseUpdate(key, ArrayBuffer()) ++= newSymbols
-    //   }
-    // case ProgramDefinitionsReport(defs) =>
-    //   definitions.clear()
-    //   assert(data.gotNewMembers, "got definitions before members")
-    //   defs.foreach(receiveDefinition)
     case StatisticsReport(m, f, p, _, _) =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] StatisticsReport")
       task.progress = new ProgressCoordinator(coordinator, p, f, m)

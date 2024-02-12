@@ -15,7 +15,6 @@ import viper.server.ViperConfig
 import viper.server.core.VerificationExecutionContext
 import viper.viperserver.BuildInfo
 
-import scala.annotation.unused
 import scala.concurrent.Future
 import scala.concurrent.duration.DurationInt
 import scala.jdk.CollectionConverters._
@@ -107,17 +106,17 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
   }
 
   override def initialized(params: InitializedParams): Unit = {
-    coordinator.logger.debug(s"[Req: initialized] ${params.toString()}")
+    coordinator.logger.trace(s"[Req: initialized] ${params.toString()}")
   }
 
   override def exit(): Unit = {
-    coordinator.logger.debug("[Req: exit]")
+    coordinator.logger.trace("[Req: exit]")
     coordinator.exit()
   }
 
   // 'shutdown' is called before 'exit'
   override def shutdown(): CompletableFuture[AnyRef] = {
-    coordinator.logger.debug("[Req: shutdown]")
+    coordinator.logger.trace("[Req: shutdown]")
     // we instruct the server to stop all verifications but we only wait for 2s for their completion since
     // the LSP client expects a response within 3s
     val stopVerifications = coordinator.stopAllRunningVerifications()
@@ -126,11 +125,11 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
   }
 
   override def setTrace(params: SetTraceParams): Unit = {
-    coordinator.logger.debug(s"[Req: $$/setTrace] ${params.toString()}")
+    coordinator.logger.trace(s"[Req: $$/setTrace] ${params.toString()}")
   }
 
   override def cancelProgress(params: WorkDoneProgressCancelParams): Unit = {
-    coordinator.logger.debug(s"[Req: window/workDoneProgress/cancel] ${params.toString()}")
+    coordinator.logger.trace(s"[Req: window/workDoneProgress/cancel] ${params.toString()}")
   }
 }
 
@@ -151,18 +150,17 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
   }
 
   override def didChange(params: DidChangeTextDocumentParams): Unit = {
-    coordinator.logger.debug(s"[Req: textDocument/didChange] ${params.toString()}")
+    coordinator.logger.trace(s"[Req: textDocument/didChange] ${params.toString()}")
     val uri = params.getTextDocument.getUri
     for (cc <- params.getContentChanges.asScala) {
       val (range, text) = (cc.getRange(), cc.getText())
       coordinator.handleChange(uri, range, text)
     }
-    // TODO: uncomment
-    // coordinator.startParseTypecheck(uri)
+    coordinator.startParseTypecheck(uri)
   }
 
   override def didClose(params: DidCloseTextDocumentParams): Unit = {
-    coordinator.logger.debug(s"[Req: textDocument/didClose] ${params.toString()}")
+    coordinator.logger.trace(s"[Req: textDocument/didClose] ${params.toString()}")
     try {
       val uri = params.getTextDocument.getUri
       coordinator.closeFile(uri)
@@ -172,7 +170,7 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
   }
 
   override def didSave(params: DidSaveTextDocumentParams): Unit = {
-    coordinator.logger.debug(s"[Req: textDocument/didSave] ${params.toString()}")
+    coordinator.logger.trace(s"[Req: textDocument/didSave] ${params.toString()}")
     // coordinator.resetFileInfo(params.getTextDocument.getUri)
   }
 
@@ -182,7 +180,7 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
 
   override def documentSymbol(params: DocumentSymbolParams) = {
     // This happens for every edit, so `trace` to avoid spam
-    // coordinator.logger.trace(s"[Req: textDocument/documentSymbol] ${params.toString()}")
+    coordinator.logger.trace(s"[Req: textDocument/documentSymbol] ${params.toString()}")
     val uri = params.getTextDocument.getUri
     val ds = coordinator.getRoot(uri).getDocumentSymbols(uri)
     val symbolsEither = ds.map(_.map(Either.forRight[SymbolInformation, DocumentSymbol](_)).asJava)
@@ -190,7 +188,7 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
   }
 
   override def definition(params: DefinitionParams) = {
-    coordinator.logger.debug(s"[Req: textDocument/definition] ${params.toString()}")
+    coordinator.logger.trace(s"[Req: textDocument/definition] ${params.toString()}")
     val uri = params.getTextDocument.getUri
     val pos = params.getPosition
     coordinator.getRoot(uri).getGotoDefinitions(uri, pos).map(defns => {
@@ -200,7 +198,7 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
 
   override def hover(params: HoverParams) = {
     // This happens for every hover, so `trace` to avoid spam
-    // coordinator.logger.trace(s"[Req: textDocument/hover] ${params.toString()}")
+    coordinator.logger.trace(s"[Req: textDocument/hover] ${params.toString()}")
     val uri = params.getTextDocument.getUri
     val pos = params.getPosition
     coordinator.getRoot(uri)
@@ -210,7 +208,7 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
   }
 
   override def foldingRange(params: FoldingRangeRequestParams) = {
-    // coordinator.logger.trace(s"[Req: textDocument/foldingRange] ${params.toString()}")
+    coordinator.logger.trace(s"[Req: textDocument/foldingRange] ${params.toString()}")
     val uri = params.getTextDocument.getUri
     val fr = coordinator.getRoot(uri).getFoldingRanges(uri)
     val foldingRanges = fr.map(_.asJava)
@@ -218,7 +216,7 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
   }
 
   override def semanticTokensFull(params: SemanticTokensParams) = {
-    // coordinator.logger.trace(s"[Req: textDocument/semanticTokens/full] ${params.toString()}")
+    coordinator.logger.trace(s"[Req: textDocument/semanticTokens/full] ${params.toString()}")
     val uri = params.getTextDocument.getUri
     val st = coordinator.getRoot(uri).getSemanticHighlights(uri)
     val semanticTokens = st.map(st => new SemanticTokens(st.flatMap(_.toSeq()).asJava))
@@ -227,7 +225,7 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
 
   override def inlayHint(params: InlayHintParams) = {
     // This happens for every scroll, so `trace` to avoid spam
-    // coordinator.logger.trace(s"[Req: textDocument/inlayHint] ${params.toString()}")
+    coordinator.logger.trace(s"[Req: textDocument/inlayHint] ${params.toString()}")
     val uri = params.getTextDocument.getUri
     val ih = coordinator.getRoot(uri).getInlayHints(uri)
     val range = params.getRange
@@ -236,14 +234,11 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
   }
 
   override def codeLens(params: CodeLensParams) = {
-    // coordinator.logger.trace(s"[Req: textDocument/codeLens] ${params.toString()}")
+    coordinator.logger.trace(s"[Req: textDocument/codeLens] ${params.toString()}")
     val uri = params.getTextDocument.getUri
     val cl = coordinator.getRoot(uri).getCodeLens(uri)
     val CodeLens = cl.map(_.asJava.asInstanceOf[java.util.List[_ <: CodeLens]])
     CodeLens.asJava.toCompletableFuture
-
-    // val codeLens = coordinator.getCodeLens(params.getTextDocument.getUri)
-    // CompletableFuture.completedFuture(codeLens.asJava)
   }
 
   override def signatureHelp(params: SignatureHelpParams) = {
@@ -348,18 +343,11 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
 trait WorkspaceReceiver extends StandardReceiver with WorkspaceService {
 
   override def didChangeConfiguration(params: DidChangeConfigurationParams): Unit = {
-    coordinator.logger.debug(s"[Req: workspace/didChangeConfiguration] ${params.toString()}")
+    coordinator.logger.trace(s"[Req: workspace/didChangeConfiguration] ${params.toString()}")
   }
 
   override def didChangeWatchedFiles(params: DidChangeWatchedFilesParams): Unit = {
-    coordinator.logger.debug(s"[Req: workspace/didChangeWatchedFiles] ${params.toString()}")
-    // Even though we get notifications in the following order for the active file:
-    //   1. didSave
-    //   2. onVerify
-    //   3. didChangeWatchedFiles
-    // It is ok to call `resetFileInfo` since this has no effect when verifying a file.
-    // We do want to call this on any files that change without being active in the IDE.
-    // params.getChanges.forEach(ev => coordinator.resetFileInfo(ev.getUri))
+    coordinator.logger.trace(s"[Req: workspace/didChangeWatchedFiles] ${params.toString()}")
   }
 }
 
@@ -462,12 +450,4 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
   def disconnected(): Unit = {
     coordinator.exit()
   }
-
-  // @JsonRequest("$/cancelRequest")
-  // def cancelRequest(params: CancelRequestParams): CompletableFuture[Unit] = {
-  //   coordinator.logger.debug("on cancel request " + params.id)
-  //   CompletableFuture.completedFuture(())
-  // }
 }
-
-// case class CancelRequestParams(id: String)

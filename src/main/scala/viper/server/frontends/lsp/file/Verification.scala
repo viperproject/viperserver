@@ -26,7 +26,6 @@ import viper.silver.ast.utility.lsp.RangePosition
 import viper.silver.ast.HasLineColumn
 import viper.silver.ast.LineColumnPosition
 import java.nio.file.Path
-import scala.collection.mutable.ArrayBuffer
 
 case class VerificationHandler(server: lsp.ViperServerService) {
   private var waitingOn: Option[Either[(AstJobId, ActorRef), VerJobId]] = None
@@ -55,32 +54,27 @@ case class VerificationHandler(server: lsp.ViperServerService) {
 
 object VerificationPhase {
   sealed trait VerificationPhase {
-    def <=(other: VerificationPhase): Boolean = {
-      (this, other) match {
-        case _ if this == other => true
-        case (ParseStart, _) => true
-        case (ParseEnd, TypeckEnd) => true
-        case (_, VerifyEnd) => true
-        case _ => false
-      }
-    }
+    val order: Int
   }
-  case object ParseStart extends VerificationPhase
-  case object ParseEnd extends VerificationPhase
-  case object TypeckEnd extends VerificationPhase
-  case object VerifyEnd extends VerificationPhase
+  case object ParseStart extends VerificationPhase {
+    override val order = 0
+  }
+  case object ParseEnd extends VerificationPhase {
+    override val order = 1
+  }
+  case object TypeckEnd extends VerificationPhase {
+    override val order = 2
+  }
+  case object VerifyEnd extends VerificationPhase {
+    override val order = 3
+  }
 }
 
 trait VerificationManager extends Manager {
-  // def coordinator: lsp.ClientCoordinator
-  // def content: FileContent
   implicit def ec: ExecutionContext
-  // def file: PathInfo
   def file_uri: String = file.file_uri
   def filename: String = file.filename
   def path: Path = file.path
-  // protected def containers: ArrayBuffer[lsp.file.utility.LspContainer[_, _, _, _]]
-  // protected def diagnostic: utility.StageArrayContainer.ArrayContainer[Diagnostic, lsp4j.Diagnostic]
 
   private var futureAst: Option[Future[Unit]] = None
   private var futureCancel: Option[Future[Unit]] = None
@@ -114,7 +108,6 @@ trait VerificationManager extends Manager {
   var timeMs: Long = 0
   var parsingCompleted: Boolean = false
   var typeCheckingCompleted: Boolean = false
-  // var progress: ProgressCoordinator = _
 
   // does not correspond to `diagnostics.size` when
   // there are errors in other files
@@ -161,10 +154,6 @@ trait VerificationManager extends Manager {
     }
   }
 
-  // def onConstructedAst(): Unit = {
-  //   containers.foreach(_.resetTypeck())
-  // }
-
   /** Run parsing and typechecking but no verification */
   def runParseTypecheck(loader: FileContent): Boolean = {
     coordinator.logger.info(s"construct AST for $filename")
@@ -175,7 +164,7 @@ trait VerificationManager extends Manager {
     // Execute all handles
     startConstructAst(loader, false) match {
       case None => false
-      case Some(ast) => {
+      case Some(_) => {
         true
       }
     }
@@ -187,7 +176,7 @@ trait VerificationManager extends Manager {
     if (handler.isVerifying) stop()
     futureCancel.getOrElse(Future.unit).map(_ => {
       lastPhase = None
-      val (astJob, actorRef) = handler.astHandle match {
+      val (astJob, _) = handler.astHandle match {
         case None => startConstructAst(loader, mt) match {
           case None => return Future.successful(false)
           case Some(ast) => ast
@@ -199,7 +188,7 @@ trait VerificationManager extends Manager {
       val verJob = coordinator.server.verifyAst(astJob, command, Some(coordinator.localLogger))
       if (verJob.id >= 0) {
         // Execute all handles
-        resetContainers(VerificationPhase.VerifyEnd)
+        resetContainers(false)
         lastPhase = Some(VerificationPhase.VerifyEnd)
         handler.waitOn(verJob)
         val receiver = props(Some(backendClassName))//actorRef
@@ -299,29 +288,7 @@ trait VerificationManager extends Manager {
     diagnosticCount += errors.size
     errorCount += diags.count(_._2.severity == lsp4j.DiagnosticSeverity.Error)
     diags.groupBy(d => d._1).foreach { case (phase, diags) =>
-      addDiagnostic(phase)(diags.map(_._2))
+      addDiagnostic(phase.order <= VerificationPhase.TypeckEnd.order)(diags.map(_._2))
     }
-    // for (uri <- files) {
-    //   if (uri == file_uri) {
-    //     publishDiags()
-    //   } else {
-    //     coordinator.getFileManager(uri).publishDiags()
-    //   }
-    // }
   }
 }
-
-
-// import akka.actor.{Actor, Props, Status}
-
-// object PrintActor {
-//   def props(): Props = Props(new PrintActor())
-// }
-
-// class PrintActor() extends Actor {
-
-//   override def receive: PartialFunction[Any, Unit] = m => {
-//       println("PrintActor receive " + m.toString())
-//   }
-// }
-

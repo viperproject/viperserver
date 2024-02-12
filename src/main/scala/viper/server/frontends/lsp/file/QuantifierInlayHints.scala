@@ -34,7 +34,7 @@ trait QuantifierInlayHints extends ProjectAware {
     for (trigger <- triggers) {
       if (!oldTriggers.contains(trigger)) {
         val ih = InlayHint(expStart, Seq(InlayHintLabelPart(trigger.toString())), None, isFirst, true)
-        m.inlayHintContainer.receive(VerificationPhase.VerifyEnd, ih)
+        m.inlayHintContainer.receive(false, ih)
         isFirst = false
       }
     }

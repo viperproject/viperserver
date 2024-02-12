@@ -261,41 +261,33 @@ object StageSuggestableContainer {
 
 case class LspContainer[+C <: StageContainer[K, V, I], K, V <: HasRangePositions, I, U]
   (translator: Translates[V, U, K], onUpdate: () => Unit = () => {}, expandOnBorder: Boolean = false)(implicit initial: () => C) {
-  private val parse: C = initial()
-  private val typeck: C = initial()
+  private val parseTypeck: C = initial()
   private val verify: C = initial()
-  private def toPhase(phase: VerificationPhase): C = phase match {
-    case ParseStart => ???
-    case ParseEnd => parse
-    case TypeckEnd => typeck
-    case VerifyEnd => verify
-  }
+  private def toPhase(first: Boolean): C = if (first) parseTypeck else verify
 
   def resetAll() = {
-    parse.reset()
-    typeck.reset()
+    parseTypeck.reset()
     verify.reset()
     onUpdate()
   }
-  def reset(phase: VerificationPhase) = {
-    toPhase(phase).reset()
+  def reset(first: Boolean) = {
+    toPhase(first).reset()
     onUpdate()
   }
 
-  def receive(phase: VerificationPhase, v: V): (Int, I) = {
-    toPhase(phase).add(v)
+  def receive(first: Boolean, v: V): (Int, I) = {
+    toPhase(first).add(v)
   }
-  def update(phase: VerificationPhase, i: (Int, I), f: V => V): Boolean = {
-    toPhase(phase).update(i, f)
+  def update(first: Boolean, i: (Int, I), f: V => V): Boolean = {
+    toPhase(first).update(i, f)
   }
 
-  def get(k: K)(implicit log: Logger): Seq[U] = translator.translate(Seq(parse.get(k), typeck.get(k), verify.get(k)).flatten)(k)
-  def all(f: V => Boolean): Seq[V] = Seq(parse.all(), typeck.all(), verify.all()).flatten.filter(f)
+  def get(k: K)(implicit log: Logger): Seq[U] = translator.translate(Seq(parseTypeck.get(k), verify.get(k)).flatten)(k)
+  def all(f: V => Boolean): Seq[V] = Seq(parseTypeck.all(), verify.all()).flatten.filter(f)
 
   /** If a range position is aliased, we do not want to update it twice */
   def resetModifiedFlag(): Unit = {
-    parse.all().foreach(_.rangePositions.foreach(_.modified = false))
-    typeck.all().foreach(_.rangePositions.foreach(_.modified = false))
+    parseTypeck.all().foreach(_.rangePositions.foreach(_.modified = false))
     verify.all().foreach(_.rangePositions.foreach(_.modified = false))
   }
   /**
@@ -323,7 +315,7 @@ case class LspContainer[+C <: StageContainer[K, V, I], K, V <: HasRangePositions
       else pos.shiftStart(deltaLines, 0)
     }
 
-    for (buffer <- Seq(parse, typeck, verify)) buffer.filterInPlace(v => {
+    for (buffer <- Seq(parseTypeck, verify)) buffer.filterInPlace(v => {
       // println("Updating pos for " + v.toString)
       val positions = v.rangePositions
       var overlapped = false

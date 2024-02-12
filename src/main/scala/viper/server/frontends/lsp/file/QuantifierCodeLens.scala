@@ -6,27 +6,12 @@
 
 package viper.server.frontends.lsp.file
 
-import org.eclipse.lsp4j
-import scala.collection.mutable.{ArrayBuffer, HashMap}
+import scala.collection.mutable.HashMap
 
-import scala.jdk.CollectionConverters._
-import viper.silver.reporter.Import
 import viper.silver.ast.utility.lsp._
-import viper.server.frontends.lsp.Common
-// import viper.server.frontends.lsp.file.RangeSelector
-import viper.silver.ast.utility.lsp.{HoverHint, SelectionBoundTrait}
-import lsp4j.jsonrpc.messages.Either
-import viper.silver.ast.QuantifiedExp
-import viper.silver.ast.Trigger
-import viper.silver.ast.AbstractSourcePosition
 import viper.silver.ast.LineColumnPosition
-import viper.silver.ast.SourcePosition
-import java.net.URI
 import java.nio.file.Paths
 import akka.actor.ActorSystem
-import akka.actor.setup.ActorSystemSetup
-import akka.actor.Cancellable
-import viper.server.frontends.lsp.file.utility.{CodeLensTranslator, StageArrayContainer, LspContainer}
 import scala.collection.mutable.HashSet
 import scala.concurrent.duration.Duration
 import java.util.concurrent.TimeUnit
@@ -65,14 +50,14 @@ trait QuantifierCodeLens extends ProjectAware {
     def newCl() = CodeLens(pos, s"Instantiations $instantiations, Max generation $maxGen, Max cost $maxCost")
     Locker.synchronized {
       val idx = quantifierMap.get(pos) match {
-        case None => Some(m.codeLensContainer.receive(VerificationPhase.VerifyEnd, newCl()))
+        case None => Some(m.codeLensContainer.receive(false, newCl()))
         case Some((_, oldInsts, oldMaxGen, oldMaxCost)) if instantiations == oldInsts && maxGen == oldMaxGen && maxCost == oldMaxCost =>
           None
         case Some((idx, _, _, _)) => {
-          val updated = m.codeLensContainer.update(VerificationPhase.VerifyEnd, idx, _ => newCl())
+          val updated = m.codeLensContainer.update(false, idx, _ => newCl())
           if (updated) Some(idx)
           else {
-            Some(m.codeLensContainer.receive(VerificationPhase.VerifyEnd, newCl()))
+            Some(m.codeLensContainer.receive(false, newCl()))
           }
         }
       }

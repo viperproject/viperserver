@@ -8,10 +8,7 @@ package viper.server.frontends.lsp.file
 
 import org.eclipse.lsp4j
 import viper.silver.ast.utility.lsp
-import VerificationPhase._
-import viper.silver.parser.PIdnUse
 import scala.collection.mutable.HashMap
-import viper.silver.parser.PIdnDef
 import scala.collection.mutable.ArrayBuffer
 import scala.jdk.CollectionConverters._
 import viper.server.frontends.lsp.Common
@@ -32,11 +29,11 @@ trait FindReferencesManager extends Manager {
     findReferencesContainer.get((Some(pos), None, false))
       .filter(l => includeDeclaration || Common.containsPosition(l.getRange, pos) != 0)
 
-  def addFindReferences(phase: VerificationPhase)(vs: Seq[lsp.ReferenceTo]): Unit = {
+  def addFindReferences(first: Boolean)(vs: Seq[lsp.ReferenceTo]): Unit = {
     val definitions = HashMap[lsp.RangePosition, ArrayBuffer[lsp.RangePosition]]()
     vs.foreach(v => definitions.getOrElseUpdate(v.to, ArrayBuffer()) += v.from)
     val findReferences = definitions.map(e => FindReferences(lsp.SelectionBoundScope(e._1), e._2.toSeq))
-    findReferences.foreach(findReferencesContainer.receive(phase, _))
+    findReferences.foreach(findReferencesContainer.receive(first, _))
     findReferencesContainer.onUpdate()
   }
 
@@ -47,14 +44,4 @@ trait FindReferencesManager extends Manager {
       .asJava
     Some(new lsp4j.WorkspaceEdit(edits))
   }
-  // def getFindReferences(path: Path, pos: lsp4j.Position): Seq[lsp4j.Location] = {
-  //   val uri = path.toUri().toString()
-  //   val m = getInProject(uri)
-  //   val defns = m.gotoDefinitionContainer.all(g =>
-  //     g.definition.file == path && Common.containsPos(Common.toRange(g.definition), pos)
-  //   )
-  //   val p = Common.toPosition(pos)
-  //   val res = m.findReferences(p)
-  //   res.map(r => new lsp4j.Location(r.uri, Common.toRange(r.range)))
-  // }
 }
