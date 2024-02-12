@@ -184,7 +184,6 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       }
     case EntityFailureMessage(_, _, _, res, _) =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] EntityFailureMessage")
-      println("EF Errors: " + res.errors.toString())
       markErrorsAsReported(res.errors)
       task.processErrors(backendClassName, res.errors)
     case OverallSuccessMessage(_, verificationTime) =>
@@ -200,7 +199,6 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       // this is important since Silicon provides errors as part of EntityFailureMessages and the OverallFailureMessage
       // where else Carbon does not produce EntityFailureMessages (except for cached members in which case
       // ViperServer produces EntitySuccessMessage and EntityFailureMessages)
-      println("N Errors: " + failure.errors.toString())
       val newErrors = failure.errors.filterNot(hasAlreadyBeenReported)
       markErrorsAsReported(newErrors)
       task.processErrors(backendClassName, newErrors)

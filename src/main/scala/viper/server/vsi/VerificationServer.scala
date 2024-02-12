@@ -115,7 +115,6 @@ trait VerificationServer extends Post {
 
           /** Register cleanup task. */
           queue.watchCompletion().onComplete(_ => {
-            println(s"Queue for job ${new_jid.toString} completed")
             if (discardOnCompletion) {
                 pool.discardJob(new_jid)
                 /** FIXME: if the job actors are meant to be reused from one phase to another (only partially implemented),
@@ -226,11 +225,9 @@ trait VerificationServer extends Post {
           case (ast_handle_maybe: Option[AstHandle[Option[AST]]], ver_handle: VerHandle) =>
             val ver_source = ver_handle match {
               case VerHandle(null, null, null, _) =>
-                println("Empty VerHandle")
                 /** There were no messages produced during verification. */
                 Source.empty[Envelope]
               case _ =>
-                println("Normal VerHandle")
                 Source.fromPublisher(ver_handle.publisher)
             }
             val ast_source = ast_handle_maybe match {
@@ -241,19 +238,11 @@ trait VerificationServer extends Post {
                 Source.fromPublisher(ast_handle.publisher)
             }
             if (full) {
-              println("Full source")
               val resulting_source = ver_source.prepend(ast_source).map(e => unpack(e))
               resulting_source.runWith(Sink.actorRef(clientActor, Status.Success, Status.Failure))
             } else {
-              println("Ver source")
-              val sink = Sink.actorRef[this.A](clientActor, Status.Success, Status.Failure).contramap[this.A](e => {
-                println(s"Sink.contramap: " + e.toString())
-                e
-              })
-              val resulting_source = ver_source.map(e => {
-                println(s"ver_source.map: " + e.toString())
-                unpack(e)
-              })
+              val sink = Sink.actorRef(clientActor, Status.Success, Status.Failure)
+              val resulting_source = ver_source.map(e => unpack(e))
               resulting_source.runWith(sink)
             }
 
