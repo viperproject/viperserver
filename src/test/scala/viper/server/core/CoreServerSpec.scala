@@ -10,13 +10,14 @@ import java.nio.file.Paths
 import akka.actor.{Actor, Props, Status}
 import akka.pattern.ask
 import akka.util.Timeout
-import org.eclipse.lsp4j.{MessageActionItem, MessageParams, Position, PublishDiagnosticsParams, ShowMessageRequestParams}
+import org.eclipse.lsp4j.{MessageActionItem, MessageParams, Position, PublishDiagnosticsParams, Range, ShowMessageRequestParams}
 import org.scalatest.exceptions.TestFailedException
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.{Assertion, Outcome, Succeeded}
 import org.scalatest.wordspec.AnyWordSpec
 import viper.server.ViperConfig
-import viper.server.frontends.lsp.{ClientCoordinator, FileManager, GetIdentifierResponse, GetViperFileEndingsResponse, HintMessage, IdeLanguageClient, LogParams, StateChangeParams, UnhandledViperServerMessageTypeParams, VerificationNotStartedParams, ViperServerService}
+import viper.server.frontends.lsp.{ClientCoordinator, GetIdentifierResponse, GetRangeResponse, GetViperFileEndingsResponse, HintMessage, IdeLanguageClient, LogParams, SetupProjectParams, StateChangeParams, UnhandledViperServerMessageTypeParams, VerificationNotStartedParams, ViperServerService}
+import viper.server.frontends.lsp.file.FileManager
 import viper.server.utility.AstGenerator
 import viper.server.vsi.{DefaultVerificationServerStart, JobNotFoundException, VerJobId}
 import viper.silver.ast
@@ -30,6 +31,7 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, Future, Promise}
 import scala.util.{Failure, Success}
 import scala.language.postfixOps
+import viper.server.frontends.lsp.file.RelayActor
 
 /**
   * Although the withServer fixture deals with futures, AnyWordSpec as been purposely chosen over AsyncFlatSpec:
@@ -402,12 +404,12 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
 
       val coordinator = new ClientCoordinator(core)
       coordinator.setClient(new MockClient())
-      val fileManager = new FileManager(coordinator, Paths.get(file).toAbsolutePath.toUri.toString)
+      val fileManager = FileManager(Paths.get(file).toAbsolutePath.toUri.toString, coordinator, None)
       val jid = verifyCarbonWithCaching(core, file)
-      val relayActorRef = context.actorSystem.actorOf(fileManager.RelayActor.props(fileManager, "carbon"))
+      val relayActorRef = context.actorSystem.actorOf(fileManager.props(Some("carbon")))
       implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-      core.streamMessages(jid, relayActorRef).getOrElse(Future.failed(JobNotFoundException))
-        .flatMap(_ => (relayActorRef ? fileManager.RelayActor.GetReportedErrors()).mapTo[Seq[AbstractError]])
+      core.streamMessages(jid, relayActorRef, true).getOrElse(Future.failed(JobNotFoundException))
+        .flatMap(_ => (relayActorRef ? RelayActor.GetReportedErrors()).mapTo[Seq[AbstractError]])
         .map(actualErrors => {
           val lineNrsOfActualVerificationErrors = actualErrors
             .map(_.pos match {
@@ -421,7 +423,9 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
 
     class MockClient extends IdeLanguageClient {
       override def requestIdentifier(pos: Position): CompletableFuture[GetIdentifierResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
+      override def requestRange(range: Range): CompletableFuture[GetRangeResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
       override def requestVprFileEndings(): CompletableFuture[GetViperFileEndingsResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
+      override def requestSetupProject(param: SetupProjectParams): CompletableFuture[Unit] = CompletableFuture.failedFuture(new UnsupportedOperationException())
       override def notifyLog(param: LogParams): Unit = {}
       override def notifyHint(param: HintMessage): Unit = {}
       override def notifyUnhandledViperServerMessage(params: UnhandledViperServerMessageTypeParams): Unit = {}
@@ -555,7 +559,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       val jids = files.map(file => verifySiliconWithoutCaching(core, file))
       // stream messages to actors
       val jidsWithActors = jids zip test_actors
-      val streamOptionsWithActors = jidsWithActors map { case (jid, actor) => (core.streamMessages(jid, actor), actor) }
+      val streamOptionsWithActors = jidsWithActors map { case (jid, actor) => (core.streamMessages(jid, actor, true), actor) }
       // stream options should be defined
       val streamDones = streamOptionsWithActors map { case (streamOption, actor) =>
         assert(streamOption.isDefined)
