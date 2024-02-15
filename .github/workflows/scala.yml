@@ -357,25 +357,6 @@ jobs:
           asset_name: viperserver.jar
           asset_content_type: application/octet-stream
 
-      - name: Trigger Viper-IDE CI
-        if: env.MATCHING_RELEASE != 'true'
-        run: |
-          curl --fail --request POST \
-          --user 'viper-admin:${{ secrets.VIPER_ADMIN_TOKEN }}' \
-          --header 'Accept: application/vnd.github.v3+json' \
-          --url 'https://api.github.com/repos/viperproject/viper-ide/actions/workflows/test.yml/dispatches' \
-          --data "{ \
-            \"ref\":\"master\", \
-            \"inputs\":{ \
-              \"type\":\"nightly\", \
-              \"viperserver_tag_name\":\"${{ env.TAG_NAME }}\", \
-              \"boogie_tag_name\":\"latest\", \
-              \"z3_version\":\"${{ env.Z3_VERSION }}\", \
-              \"tag_name\":\"${{ env.TAG_NAME }}\", \
-              \"release_name\":\"Nightly Release ${{ env.TAG_NAME }}\" \
-            } \
-          }"
-
 
   create-stable-release:
     needs: test
