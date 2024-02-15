@@ -7,16 +7,15 @@
 package viper.server.frontends.lsp
 
 import ch.qos.logback.classic.Logger
-import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.DocumentSymbol
 import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp.VerificationState.Ready
 
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
+import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters._
 import scala.jdk.FutureConverters._
-import viper.server.frontends.lsp.file.FileManager
-import viper.server.frontends.lsp.file.VerificationManager
 
 /** manages per-client state and interacts with the server instance (which is shared among all clients) */
 class ClientCoordinator(val server: ViperServerService)(implicit executor: VerificationExecutionContext) {
@@ -47,41 +46,59 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     !_exited
   }
 
-  def closeFile(uri: String): Unit = {
-    val toRemove = Option(_files.get(uri)).map(fm => {
-      fm.isOpen = false
-      fm.removeDiagnostics()
-      fm.isRoot
-    }).getOrElse(false)
-    if (toRemove) {
-      logger.trace(s"Removing FileManager for $uri")
-      _files.remove(uri)
+  def addFileIfNecessary(uri: String): Unit = {
+    logger.trace(s"Adding FileManager for $uri if it does not exist yet")
+    val coordinator = this
+    val createFMFunc = new java.util.function.Function[String, FileManager]() {
+      override def apply(t: String): FileManager = {
+        logger.trace(s"FileManager created for $uri")
+        new FileManager(coordinator, uri)
+      }
     }
+    // we use `computeIfAbsent` instead of `putIfAbsent` such that a new FileManager is only created if it's absent
+    _files.computeIfAbsent(uri, createFMFunc)
+  }
+
+  def removeFileIfExists(uri: String): Unit = {
+    logger.trace(s"Removing FileManager for $uri")
+    _files.remove(uri)
+  }
+
+  /** clears definitions and symbols associated with a file */
+  def resetFile(uri: String): Unit = {
+    Option(_files.get(uri))
+      .foreach(fm => {
+        fm.symbolInformation = ArrayBuffer.empty
+        fm.definitions = ArrayBuffer.empty
+      })
   }
 
   def resetDiagnostics(uri: String): Unit = {
-    getFileManager(uri).removeDiagnostics()
+    Option(_files.get(uri))
+      .foreach(fm => fm.resetDiagnostics())
   }
 
-  def handleChange(uri: String, range: Range, text: String): Unit = {
-    val fm = getFileManager(uri)
-    fm.synchronized {
-      fm.handleContentChange(range, text)
-    }
+  def getSymbolsForFile(uri: String): Array[DocumentSymbol]= {
+    Option(_files.get(uri))
+      .map(fm => fm.symbolInformation.toArray)
+      .getOrElse(Array.empty)
+  }
+
+  def getDefinitionsForFile(uri: String): ArrayBuffer[Definition] = {
+    Option(_files.get(uri))
+      .map(fm => fm.definitions)
+      .getOrElse(ArrayBuffer.empty)
   }
 
   /** Checks if verification can be started for a given file.
     *
     * Informs client differently depending on whether or not verification attempt was triggered manually
     * */
-  def canVerificationBeStarted(uri: String, content: String, manuallyTriggered: Boolean): Boolean = {
+  def canVerificationBeStarted(uri: String, manuallyTriggered: Boolean): Boolean = {
     logger.trace("canVerificationBeStarted")
     if (server.isRunning) {
       logger.trace("server is running")
-      // This should only be necessary if one wants to verify a closed file for some reason
-      val fm = getFileManager(uri, Some(content))
-      // This will be the new project root
-      makeEmptyRoot(fm)
+      addFileIfNecessary(uri)
       true
     } else {
       logger.trace("server is not running")
@@ -94,15 +111,16 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   }
 
   def stopRunningVerification(uri: String): Future[Boolean] = {
-    val fm = getFileManager(uri)
-    fm.stop()
-      .map(_ => {
-        logger.trace(s"stopVerification has completed for ${fm.file.uri}")
-        val params = StateChangeParams(Ready.id, verificationCompleted = 0, verificationNeeded = 0, uri = uri)
-        sendStateChangeNotification(params, Some(fm))
-        true
-      })
-      .recover(_ => false)
+    Option(_files.get(uri))
+      .map(fm => fm.stopVerification()
+        .map(_ => {
+          logger.trace(s"stopVerification has completed for ${fm.uri}")
+          val params = StateChangeParams(Ready.id, verificationCompleted = 0, verificationNeeded = 0, uri = uri)
+          sendStateChangeNotification(params, Some(fm))
+          true
+        })
+        .recover(_ => false))
+      .getOrElse(Future.successful(false))
   }
 
   /** Stops all running verifications.
@@ -112,8 +130,8 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     * */
   def stopAllRunningVerifications(): Future[Unit] = {
     val tasks = _files.values().asScala.map(fm =>
-      fm.stop().map(_ => {
-        logger.trace(s"stopVerification has completed for ${fm.file.uri}")
+      fm.stopVerification().map(_ => {
+        logger.trace(s"stopVerification has completed for ${fm.uri}")
       }))
     Future.sequence(tasks).map(_ => {
       logger.debug("all running verifications have been stopped")
@@ -121,17 +139,9 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   }
 
   /** returns true if verification was started */
-  def startVerification(backendClassName: String, customArgs: String, uri: String, manuallyTriggered: Boolean): Future[Boolean] = {
-    val fm = getFileManager(uri)
-    fm.startVerification(backendClassName, customArgs, fm.content, manuallyTriggered)
-  }
-
-  /** returns true if parse/typecheck was started */
-  def startParseTypecheck(uri: String): Boolean = {
-    val fm = getFileManager(uri)
-    val project = Option(_files.get(uri)).flatMap(_.projectRoot).getOrElse(uri)
-    val root = getFileManager(project)
-    root.runParseTypecheck(fm.content)
+  def startVerification(backendClassName: String, customArgs: String, uri: String, manuallyTriggered: Boolean): Boolean = {
+    Option(_files.get(uri))
+      .exists(fm => fm.startVerification(backendClassName, customArgs, manuallyTriggered))
   }
 
   /** flushes verification cache, optionally only for a particular file */
@@ -163,9 +173,9 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     *
     * If state change is related to a particular file, its manager's state is also updated.
     * */
-  def sendStateChangeNotification(params: StateChangeParams, task: Option[VerificationManager]): Unit = {
+  def sendStateChangeNotification(params: StateChangeParams, task: Option[FileManager]): Unit = {
     // update file manager's state:
-    task.foreach(vm => vm.state = VerificationState(params.newState))
+    task.foreach(fm => fm.state = VerificationState(params.newState))
     try {
       client.notifyStateChanged(params)
     } catch {
@@ -193,49 +203,5 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   def hint(message: String, showSettingsButton: Boolean = false, showViperToolsUpdateButton: Boolean = false): Unit = {
     if (!isAlive) return
     client.notifyHint(HintMessage(message, showSettingsButton, showViperToolsUpdateButton ))
-  }
-
-  private def getFileManager(uri: String, content: Option[String] = None): FileManager = {
-    var createdNew = false
-    val coordinator = this
-    val createFMFunc = new java.util.function.Function[String, FileManager]() {
-      override def apply(t: String): FileManager = {
-        logger.trace(s"FileManager created for $uri")
-        createdNew = true
-        FileManager(uri, coordinator, content)
-      }
-    }
-    // we use `computeIfAbsent` instead of `putIfAbsent` such that a new FileManager is only created if it's absent
-    val fm = _files.computeIfAbsent(uri, createFMFunc)
-    // Override the content if we are given one and the file manager was not just created
-    if (!createdNew && content.isDefined) fm.content.set(content.get)
-    fm
-  }
-  def ensureFmExists(uri: String, content: String): FileManager = {
-    getFileManager(uri, Some(content))
-  }
-  def getRoot(uri: String): FileManager = {
-    val fm = getFileManager(uri)
-    fm.projectRoot.map(getFileManager(_)).getOrElse(fm)
-  }
-
-  ///////////////////////
-  // Project management
-  ///////////////////////
-
-  def addToProject(uri: String, root: String, getContents: Boolean): (Option[String], Option[Set[String]]) = {
-    getFileManager(uri).addToProject(root, getContents)
-  }
-  def removeFromProject(uri: String, root: String) = {
-    Option(_files.get(uri)).map(_.removeFromProject(root))
-  }
-  def makeEmptyRoot(fm: FileManager) = {
-    for (leaves <- fm.projectLeaves; leaf <- leaves) {
-      removeFromProject(leaf, fm.file_uri)
-    }
-    fm.project = Left(Map())
-  }
-  def handleChangeInLeaf(root: String, leaf: String, range: Range, text: String): Unit = {
-    Option(_files.get(root)).map(_.handleChangeInLeaf(leaf, range, text))
   }
 }

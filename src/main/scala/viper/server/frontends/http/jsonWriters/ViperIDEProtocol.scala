@@ -493,8 +493,6 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case q: QuantifierInstantiationsMessage => q.toJson
         case q: QuantifierChosenTriggersMessage => q.toJson
         case v: VerificationTerminationMessage => v.toJson
-        case p: PProgramReport => p.semanticAnalysisSuccess.toJson
-        case w: WarningsDuringVerification => w.toJson
       }))
   })
 

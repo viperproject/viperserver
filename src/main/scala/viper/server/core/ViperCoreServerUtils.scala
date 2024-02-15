@@ -56,7 +56,7 @@ object ViperCoreServerUtils {
     import scala.language.postfixOps
 
     val actor = executor.actorSystem.actorOf(SeqActor.props(jid, core.globalLogger))
-    val complete_future = core.streamMessages(jid, actor, true).getOrElse(Future.failed(JobNotFoundException))
+    val complete_future = core.streamMessages(jid, actor).getOrElse(Future.failed(JobNotFoundException))
     complete_future.flatMap(_ => {
       implicit val askTimeout: Timeout = Timeout(core.config.actorCommunicationTimeout() milliseconds)
       (actor ? SeqActor.Result).mapTo[Future[List[Message]]].flatten

@@ -6,8 +6,8 @@
 
 package viper.server.frontends.lsp
 
-import org.eclipse.lsp4j.{Diagnostic, ParameterInformation, Position, Range}
-import viper.silver.reporter
+import org.eclipse.lsp4j.{Diagnostic, Position, Range}
+import viper.silver.reporter.SymbolKind
 
 object VerificationSuccess extends Enumeration {
   type VerificationSuccess = Value
@@ -24,7 +24,7 @@ object VerificationState extends Enumeration {
   type VerificationState = Value
 
   val Stopped, Starting = Value
-  val ConstructingAst, VerificationRunning, VerificationPrintingHelp, VerificationReporting = Value
+  val VerificationRunning, VerificationPrintingHelp, VerificationReporting = Value
   val PostProcessing, Ready, Stopping, Stage = Value
 }
 
@@ -81,7 +81,6 @@ case class BackendProperties(
 
 case class VerifyParams (
               uri: String,                  // file to verify
-              content: String,             // contents of file to verify
               manuallyTriggered: Boolean,   // was the verification triggered manually
               workspace: String,            // the path to the open workspace folder
               backend: String,
@@ -110,20 +109,7 @@ case class PlatformDependentURL (
               linux: Option[String])
 
 // scope == null means global scope
-case class Definition(
-              definition_type: reporter.SymbolKind,
-              name: String,
-              uri: String,
-              hover: String,
-              code_location: Range,
-              scope: Range,
-              signatureHelp: Option[SignatureHelp] = None)
-
-case class SignatureHelp(label: String, args: Seq[ParameterInformation])
-
-case class Lsp4jSemanticHighlight(lineDelta: Integer, columnDelta: Integer, length: Integer, typ: Integer, modifiers: Integer) {
-  def toSeq(): Seq[Integer] = Seq(lineDelta, columnDelta, length, typ, modifiers)
-}
+case class Definition(definition_type: SymbolKind, name: String, code_location: Position, scope: Range)
 
 case class BackendOutput(
               typ: String,
@@ -174,7 +160,8 @@ case class StateChangeParams(
               verificationNeeded: Double = -1,
               uri: String = null,
               stage: String = null,
-              error: String = null)
+              error: String = null,
+              diagnostics: Array[Diagnostic] = null)
 
 case class UnhandledViperServerMessageTypeParams(msgType: String, msg: String, logLevel: Int)
 
@@ -199,11 +186,7 @@ case class GetViperFileEndingsResponse(fileEndings: Array[String])
 
 case class GetIdentifierResponse(identifier: String)
 
-case class GetRangeResponse(range: String)
-
 case class VerificationNotStartedParams(uri: String)
-
-case class SetupProjectParams(projectUri: String, otherUris: Array[String])
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //////              SETTINGS                                                                 ///////

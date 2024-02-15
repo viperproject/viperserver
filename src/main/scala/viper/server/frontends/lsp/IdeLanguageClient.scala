@@ -8,7 +8,7 @@ package viper.server.frontends.lsp
 
 import java.util.concurrent.CompletableFuture
 
-import org.eclipse.lsp4j.{Position, Range}
+import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.jsonrpc.services._
 import org.eclipse.lsp4j.services.LanguageClient
 
@@ -18,14 +18,8 @@ trait IdeLanguageClient extends LanguageClient {
   @JsonRequest(C2S_Commands.GetIdentifier)
   def requestIdentifier(pos: Position): CompletableFuture[GetIdentifierResponse]
 
-  @JsonRequest(C2S_Commands.GetRange)
-  def requestRange(pos: Range): CompletableFuture[GetRangeResponse]
-
   @JsonRequest(C2S_Commands.GetViperFileEndings)
   def requestVprFileEndings(): CompletableFuture[GetViperFileEndingsResponse]
-
-  @JsonRequest(C2S_Commands.SetupProject)
-  def requestSetupProject(param: SetupProjectParams): CompletableFuture[Unit]
 
   @JsonNotification(S2C_Commands.Log)
   def notifyLog(param: LogParams): Unit

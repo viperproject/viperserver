@@ -11,9 +11,8 @@ import ch.qos.logback.classic.Logger
 import java.nio.file.NoSuchFileException
 import viper.server.utility.Helpers.validateViperFile
 import viper.silver.ast.Program
-import viper.silver.ast.utility.FileLoader
 import viper.silver.frontend.{SilFrontend, ViperAstProvider}
-import viper.silver.reporter.{NoopReporter, Reporter, PProgramReport}
+import viper.silver.reporter.{NoopReporter, Reporter}
 
 class AstGenerator(private val _logger: Logger,
                    private val _reporter: Reporter = NoopReporter,
@@ -32,7 +31,7 @@ class AstGenerator(private val _logger: Logger,
     *
     * Throws an exception when passed an non-existent file!
     */
-  def generateViperAst(vpr_file_path: String, loader: Option[FileLoader] = None): Option[Program] = {
+  def generateViperAst(vpr_file_path: String): Option[Program] = {
 
     if (!validateViperFile(vpr_file_path)) {
       _logger.error(s"No such file: `$vpr_file_path`")
@@ -65,11 +64,7 @@ class AstGenerator(private val _logger: Logger,
         filteredArgs = Seq(argList(flagArgIndex)) ++ filteredArgs
       }
     }
-    _frontend.execute(filteredArgs, loader)
-    if (_frontend.saProgram.isDefined || _frontend.pProgram.isDefined) {
-      val pprog = _frontend.saProgram.getOrElse(_frontend.pProgram.get)
-      _frontend.reporter.report(PProgramReport(_frontend.saProgram.isDefined, pprog))
-    }
+    _frontend.execute(filteredArgs)
     if (_frontend.program.isDefined) {
       reportProgramStats()
     }

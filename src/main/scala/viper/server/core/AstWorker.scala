@@ -11,7 +11,6 @@ import viper.server.ViperConfig
 import viper.server.utility.AstGenerator
 import viper.server.vsi.AstConstructionException
 import viper.silver.ast.Program
-import viper.silver.ast.utility.FileLoader
 import viper.silver.reporter.{Entity, ExceptionReport}
 import viper.silver.verifier.VerificationResult
 
@@ -27,8 +26,7 @@ case class ServerCrashException(e: Throwable) extends Exception(e)
 
 class AstWorker(val arg_list: List[String],
                 override val logger: Logger,
-                private val config: ViperConfig,
-                private val loader: Option[FileLoader]
+                private val config: ViperConfig
                )(override val executor: VerificationExecutionContext)
   extends MessageReportingTask[Option[Program]] {
 
@@ -39,7 +37,7 @@ class AstWorker(val arg_list: List[String],
     val astGen = new AstGenerator(logger, reporter, arg_list, disablePlugins = config.disablePlugins())
 
     val ast_option: Option[Program] = try {
-      astGen.generateViperAst(file, loader)
+      astGen.generateViperAst(file)
     } catch {
       case _: java.nio.file.NoSuchFileException =>
         logger.error(s"The file ($file) for which verification has been requested was not found.")
