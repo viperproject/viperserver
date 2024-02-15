@@ -5,8 +5,8 @@ This is ViperServer, an HTTP server that manages verification requests to differ
 
 The main two Viper tools (a.k.a verification backends) currently are: 
 
-- [Carbon](https://github.com/viperproject/carbon), a verification condition generation (VCG) backend for the Viper language.
-- [Silicon](https://github.com/viperproject/silicon), a symbolic execution verification backend.
+- [Carbon](https://github.com/viperproject/carbon), a verification condition generation (VCG) backend for the Viper language.  
+- [Silicon](https://github.com/viperproject/silicon), a symbolic execution verification backend.  
 
 
 ### The Purpose of ViperServer ###
