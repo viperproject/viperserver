@@ -324,7 +324,7 @@ jobs:
       - name: Create nightly release
         if: env.MATCHING_RELEASE != 'true'
         id: create_release
-        uses: viperproject/create-nightly-release@v1
+        uses: actions/create-release@v1
         env:
           # This token is provided by Actions, you do not need to create your own token
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -332,8 +332,8 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}
           release_name: Nightly Release ${{ env.TAG_NAME }}
           body_path: versions.txt
-          keep_num: 1 # keep the previous nightly release such that there are always two
-          keep_tags: true
+          draft: false
+          prerelease: true
 
       - name: Upload ViperServer skinny jars
         if: env.MATCHING_RELEASE != 'true'
