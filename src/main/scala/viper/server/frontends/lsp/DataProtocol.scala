@@ -24,8 +24,8 @@ object VerificationState extends Enumeration {
   type VerificationState = Value
 
   val Stopped, Starting = Value
-  val ConstructingAst, VerificationRunning, VerificationPrintingHelp, VerificationReporting = Value
-  val PostProcessing, Ready, Stopping, Stage = Value
+  val VerificationRunning, VerificationPrintingHelp, VerificationReporting = Value
+  val PostProcessing, Ready, Stopping, Stage, ConstructingAst = Value
 }
 
 object SettingsErrorType extends Enumeration {
