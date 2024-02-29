@@ -46,7 +46,6 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
   var diagnostics: ArrayBuffer[Diagnostic] = ArrayBuffer.empty
   var parsingCompleted: Boolean = false
   var typeCheckingCompleted: Boolean = false
-  var progress: ProgressCoordinator = _
   var symbolInformation: ArrayBuffer[DocumentSymbol] = ArrayBuffer()
   var definitions: ArrayBuffer[lsp.Definition] = ArrayBuffer()
 
@@ -132,6 +131,8 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
   }
 
   class RelayActor(task: FileManager, backendClassName: String) extends Actor {
+
+    var progress: ProgressCoordinator = _
 
     /**
       * errors together with the offending node's position (only for errors that have an offending node (i.e. implement
