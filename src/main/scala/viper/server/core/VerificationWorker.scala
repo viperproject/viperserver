@@ -239,7 +239,14 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
   private def beforeVerify(input: Program): Either[Seq[AbstractError], Program] = {
     if (disablePlugins) Right(input)
     else _frontend.plugins.beforeVerify(input) match {
-      case Some(programPlugin) => Right(programPlugin)
+      case Some(programPlugin) =>
+        val stats = StatisticsReport(programPlugin.methods.size,
+          programPlugin.functions.size,
+          programPlugin.predicates.size,
+          programPlugin.domains.size,
+          programPlugin.fields.size)
+        _frontend.reporter.report(stats)
+        Right(programPlugin)
       case None => Left(_frontend.plugins.errors)
     }
   }
