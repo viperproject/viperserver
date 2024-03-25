@@ -154,6 +154,12 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       val res = for {
         filteredProgram <- filter(_ast)
         innerProgram <- beforeVerify(filteredProgram)
+        stats = StatisticsReport(innerProgram.methods.size,
+          innerProgram.functions.size,
+          innerProgram.predicates.size,
+          innerProgram.domains.size,
+          innerProgram.fields.size)
+        _ = _frontend.reporter.report(stats)
         cachingResult = caching(innerProgram)
         verificationResult <- verification(cachingResult.transformedProgram)
         combinedVerificationResult = postCaching(cachingResult, verificationResult)
@@ -239,14 +245,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
   private def beforeVerify(input: Program): Either[Seq[AbstractError], Program] = {
     if (disablePlugins) Right(input)
     else _frontend.plugins.beforeVerify(input) match {
-      case Some(programPlugin) =>
-        val stats = StatisticsReport(programPlugin.methods.size,
-          programPlugin.functions.size,
-          programPlugin.predicates.size,
-          programPlugin.domains.size,
-          programPlugin.fields.size)
-        _frontend.reporter.report(stats)
-        Right(programPlugin)
+      case Some(programPlugin) => Right(programPlugin)
       case None => Left(_frontend.plugins.errors)
     }
   }
