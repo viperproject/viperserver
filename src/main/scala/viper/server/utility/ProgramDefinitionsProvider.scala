@@ -129,27 +129,9 @@ trait ProgramDefinitionsProvider {
     } flatten) toList
   }
 
-  private def countInstances(p: Program): Map[String, Int] = p.members.groupBy({
-    case _: Method => "method"
-    case _: Function => "function"
-    case _: Predicate => "predicate"
-    case _: Domain => "domain"
-    case _: Field => "field"
-    case _ => "other"
-  }).view.mapValues(_.size).toMap
-
   def reportProgramStats(): Unit = {
     val prog = _frontend.program.get
-    val stats = countInstances(prog)
-
     _frontend.reporter.report(ProgramOutlineReport(prog.members.toList))
-    _frontend.reporter.report(StatisticsReport(
-      stats.getOrElse("method", 0),
-      stats.getOrElse("function", 0),
-      stats.getOrElse("predicate", 0),
-      stats.getOrElse("domain", 0),
-      stats.getOrElse("field", 0)
-    ))
     _frontend.reporter.report(ProgramDefinitionsReport(collect(prog)))
   }
 }
