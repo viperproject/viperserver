@@ -215,6 +215,14 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
     }
   }
 
+  @JsonRequest(C2S_Commands.GetDocumentation)
+  def onGetDocumentation(request: GetDocumentationRequest): CompletionStage[GetDocumentationResponse] = {
+    coordinator.logger.debug("On getting documentation")
+    val uri = request.uri
+    val data = coordinator.getDocumentation(uri).getOrElse("")
+    CompletableFuture.completedFuture(GetDocumentationResponse(data))
+  }
+
   override def connect(client: LanguageClient): Unit = {
     val c = client.asInstanceOf[IdeLanguageClient]
     coordinator.setClient(c)

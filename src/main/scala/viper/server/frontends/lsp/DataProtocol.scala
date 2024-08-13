@@ -188,6 +188,10 @@ case class GetIdentifierResponse(identifier: String)
 
 case class VerificationNotStartedParams(uri: String)
 
+case class GetDocumentationRequest(uri: String)
+
+case class GetDocumentationResponse(documentation: String)
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //////              SETTINGS                                                                 ///////
 ////////////////////////////////////////////////////////////////////////////////////////////////////
