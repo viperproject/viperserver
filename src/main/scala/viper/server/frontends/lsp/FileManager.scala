@@ -19,6 +19,7 @@ import viper.silver.ast
 import viper.silver.ast.{AbstractSourcePosition, Domain, Field, Function, HasLineColumn, Method, Predicate, SourcePosition}
 import viper.silver.reporter._
 import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
+import viper.server.utility.DocProvider
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
@@ -123,6 +124,11 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
     } else {
       false
     }
+  }
+
+  def getDocumentation(): Option[String] = {
+    val docProvider = new DocProvider(coordinator.logger)
+    docProvider.generateViperdocData(uri.getPath())
   }
 
   object RelayActor {

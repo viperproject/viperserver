@@ -144,6 +144,10 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
       .exists(fm => fm.startVerification(backendClassName, customArgs, manuallyTriggered))
   }
 
+  def getDocumentation(uri: String): Option[String] = {
+    _files.get(uri).getDocumentation()
+  }
+
   /** flushes verification cache, optionally only for a particular file */
   def flushCache(uriOpt: Option[String], backendOpt: Option[String]): Future[Unit] = {
     (uriOpt, backendOpt) match {
