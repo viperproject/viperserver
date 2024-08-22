@@ -154,6 +154,12 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       val res = for {
         filteredProgram <- filter(_ast)
         innerProgram <- beforeVerify(filteredProgram)
+        stats = StatisticsReport(innerProgram.methods.size,
+          innerProgram.functions.size,
+          innerProgram.predicates.size,
+          innerProgram.domains.size,
+          innerProgram.fields.size)
+        _ = _frontend.reporter.report(stats)
         cachingResult = caching(innerProgram)
         verificationResult <- verification(cachingResult.transformedProgram)
         combinedVerificationResult = postCaching(cachingResult, verificationResult)
