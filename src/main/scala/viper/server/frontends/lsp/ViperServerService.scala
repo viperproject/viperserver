@@ -13,7 +13,7 @@ import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
-import viper.server.utility.AstGenerator
+import viper.server.utility.{AstGenerator, ReformatterAstGenerator}
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
 import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
@@ -65,9 +65,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     val logger = combineLoggers(localLogger)
     logger.debug("Requesting ViperServer to create a reformatted file.");
 
-    val ast_generator = new AstGenerator(logger);
-    val normal_ast = ast_generator.generateViperAst(file);
-    println(FastPrettyPrinter.pretty(normal_ast.get))
+    val ast_generator = new ReformatterAstGenerator(logger);
     val parse_ast = ast_generator.generateViperParseAst(file);
     val res = parse_ast.map(a => ReformatPrettyPrinter.reformatProgram(a));
     res
