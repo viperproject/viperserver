@@ -86,6 +86,9 @@ case class VerifyParams (
               backend: String,
               customArgs: String)            // contains the path of the file that should be verified
 
+case class ReformatParams (
+                          uri: String)
+
 case class SettingsError (errorType: SettingsErrorType, msg: String)
 
 case class Stage(

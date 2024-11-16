@@ -37,6 +37,7 @@ For more details about using Viper, please visit: http://viper.ethz.ch/downloads
 ### Running Tests ###
 
 * Set the environment variable ```Z3_EXE``` to an executable of a recent version of [Z3](https://github.com/Z3Prover/z3).
+* Set the environment variable ```BOOGIE_EXE``` to an executable of a recent version of [Boogie](https://github.com/viperproject/boogie-builder)
 
 * Run the following command: ```sbt test```.
 

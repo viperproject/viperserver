@@ -13,9 +13,13 @@ import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
+import viper.server.utility.AstGenerator
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
 import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
+import viper.silver.ast.pretty.FastPrettyPrinter
+import viper.silver.ast.{FilePosition, HasLineColumn, SourcePosition}
+import viper.silver.parser.ReformatPrettyPrinter
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -55,6 +59,18 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
         s"the maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
     }
     ver_id
+  }
+
+  def reformatFile(file: String, localLogger: Option[Logger] = None): Option[String] = {
+    val logger = combineLoggers(localLogger)
+    logger.debug("Requesting ViperServer to create a reformatted file.");
+
+    val ast_generator = new AstGenerator(logger);
+    val normal_ast = ast_generator.generateViperAst(file);
+    println(FastPrettyPrinter.pretty(normal_ast.get))
+    val parse_ast = ast_generator.generateViperParseAst(file);
+    val res = parse_ast.map(a => ReformatPrettyPrinter.reformatProgram(a));
+    res
   }
 
   def startStreaming(jid: VerJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Unit = {

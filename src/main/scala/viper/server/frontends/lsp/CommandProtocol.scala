@@ -15,6 +15,7 @@ package viper.server.frontends.lsp
 object C2S_Commands {
   final val GetVersion = "GetVersion"
   final val Verify = "Verify"
+  final val Reformat = "Reformat"
   final val StopVerification = "StopVerification"
   final val GetLanguageServerUrl = "GetLanguageServerUrl"
   // final val ShowHeap = "ShowHeap"
