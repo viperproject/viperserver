@@ -68,9 +68,10 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     val ast_generator = new ReformatterAstGenerator(logger);
     val parse_ast = ast_generator.generateViperParseAst(file);
     val res = parse_ast.map(a => ReformatPrettyPrinter.reformatProgram(a));
+    println(s"before:")
     val res2 = parse_ast.map(a => ReformatPrettyPrinter2.reformatProgram2(a));
-    println(s"result: ${}", res2)
-    res
+    println(s"result: ${}", res2.get)
+    res2
   }
 
   def startStreaming(jid: VerJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Unit = {
