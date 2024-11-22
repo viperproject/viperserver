@@ -19,7 +19,7 @@ import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerificat
 import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
 import viper.silver.ast.pretty.FastPrettyPrinter
 import viper.silver.ast.{FilePosition, HasLineColumn, SourcePosition}
-import viper.silver.parser.ReformatPrettyPrinter
+import viper.silver.parser.{ReformatPrettyPrinter, ReformatPrettyPrinter2}
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -68,6 +68,8 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     val ast_generator = new ReformatterAstGenerator(logger);
     val parse_ast = ast_generator.generateViperParseAst(file);
     val res = parse_ast.map(a => ReformatPrettyPrinter.reformatProgram(a));
+    val res2 = parse_ast.map(a => ReformatPrettyPrinter2.reformatProgram2(a));
+    println(s"result: ${}", res2)
     res
   }
 
