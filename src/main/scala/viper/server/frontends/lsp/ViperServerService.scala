@@ -68,7 +68,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     val ast_generator = new ReformatterAstGenerator(logger);
     val parse_ast = ast_generator.generateViperParseAst(file);
     val res = parse_ast.map(a => ReformatPrettyPrinter.reformatProgram(a));
-    println(s"result: ${}", res.get)
+//    println(s"result: ${}", res.get)
     res
   }
 
