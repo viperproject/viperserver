@@ -41,6 +41,14 @@ class ReformatterTest extends AnyWordSpec with Matchers with ScalatestRouteTest 
       val actual = DiskLoader.loadContent(Path.of(expected_path)).get
       assert(reformatted == actual)
     }
+
+    s"adts" in {
+      check_inner("adts")
+    }
+
+    s"domains" in {
+      check_inner("domains")
+    }
     
     s"expressions" in {
       check_inner("expressions")
@@ -50,8 +58,24 @@ class ReformatterTest extends AnyWordSpec with Matchers with ScalatestRouteTest 
       check_inner("fields")
     }
 
+    s"functions" in {
+      check_inner("functions")
+    }
+
+    s"macros" in {
+      check_inner("macros")
+    }
+
     s"methods" in {
       check_inner("methods")
+    }
+
+    s"predicates" in {
+      check_inner("predicates")
+    }
+
+    s"trailing_comment" in {
+      check_inner("trailing_comment")
     }
 
   }
