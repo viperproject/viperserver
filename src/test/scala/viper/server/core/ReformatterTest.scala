@@ -78,5 +78,9 @@ class ReformatterTest extends AnyWordSpec with Matchers with ScalatestRouteTest 
       check_inner("trailing_comment")
     }
 
+    s"not_working" in {
+      check_inner("not_working")
+    }
+
   }
 }
