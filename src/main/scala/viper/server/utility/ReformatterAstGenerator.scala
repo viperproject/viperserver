@@ -10,7 +10,7 @@ class ReformatterAstGenerator(private val _logger: Logger,
                               private val disablePlugins: Boolean = false) extends AstGenerator(_logger, _reporter, argList, disablePlugins) {
 
   protected override val _frontend: SilFrontend = {
-    _logger.info(s"Creating new AstGenerator instance.")
+    _logger.info(s"Creating new ReformatterAstGenerator instance.")
     new ReformatterAstProvider(_reporter)
   }
 }

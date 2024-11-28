@@ -13,13 +13,11 @@ import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
-import viper.server.utility.{AstGenerator, ReformatterAstGenerator}
+import viper.server.utility.ReformatterAstGenerator
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
 import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
-import viper.silver.ast.pretty.FastPrettyPrinter
-import viper.silver.ast.{FilePosition, HasLineColumn, SourcePosition}
-import viper.silver.parser.{ReformatPrettyPrinter}
+import viper.silver.parser.ReformatPrettyPrinter
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -67,9 +65,13 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
 
     val ast_generator = new ReformatterAstGenerator(logger);
     val parse_ast = ast_generator.generateViperParseAst(file);
-    val res = parse_ast.map(a => ReformatPrettyPrinter.reformatProgram(a));
-//    println(s"result: ${}", res.get)
-    res
+    parse_ast match {
+      case Some(p) => Some(ReformatPrettyPrinter.reformatProgram(p))
+      case _ => {
+        logger.error("Failed to generate parse AST for reformatting the program.")
+        None
+      }
+    }
   }
 
   def startStreaming(jid: VerJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Unit = {

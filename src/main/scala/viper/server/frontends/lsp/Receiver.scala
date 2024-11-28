@@ -15,8 +15,8 @@ import viper.server.core.VerificationExecutionContext
 import viper.viperserver.BuildInfo
 
 import scala.annotation.unused
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration.{Duration, DurationInt}
+import scala.concurrent.Future
+import scala.concurrent.duration.DurationInt
 import scala.jdk.FutureConverters._
 import scala.language.postfixOps
 
