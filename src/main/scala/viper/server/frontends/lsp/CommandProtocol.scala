@@ -23,6 +23,7 @@ object C2S_Commands {
   final val GetViperFileEndings = "GetViperFileEndings"
   final val FlushCache = "FlushCache"
   final val GetIdentifier = "GetIdentifier"
+  final val GetDocumentation = "GetDocumentation"
 }
 
 object S2C_Commands {
