@@ -168,6 +168,13 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
     CompletableFuture.completedFuture(GetLanguageServerUrlResponse(serverUrl))
   }
 
+  @JsonRequest(C2S_Commands.Reformat)
+  def onReformat(data: ReformatParams): CompletionStage[Option[String]] = {
+    coordinator.logger.info("On reformat")
+    val result = coordinator.reformatFile(data.uri);
+    CompletableFuture.completedFuture(result)
+  }
+
   @JsonNotification(C2S_Commands.Verify)
   def onVerify(data: VerifyParams): Unit = {
     coordinator.logger.debug("On verifying")
