@@ -216,11 +216,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       return CachingResult(input, Seq.empty)
     }
 
-    println("Before");
-    input.methods.foreach(m => println(m.body.isDefined));
     val (transformed_prog, cached_results) = ViperCache.applyCache(backendName, programId, input)
-    println("After");
-    transformed_prog.methods.foreach(m => println(m.body.isDefined));
     // collect and report errors
     val all_cached_errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
     cached_results.foreach((result: CacheResult) => {

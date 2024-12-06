@@ -23,7 +23,7 @@ import scala.concurrent.duration._
 class ViperServerService(config: ViperConfig)(override implicit val executor: VerificationExecutionContext)
   extends ViperCoreServer(config)(executor) with DefaultVerificationServerStart {
 
-  def verifyWithCommand(command: String, localLogger: Option[Logger] = None): VerJobId = {
+  def verifyWithCommand(command: String, localLogger: Option[Logger] = None, verifyTarget: Option[String]): VerJobId = {
     val logger = combineLoggers(localLogger)
     logger.debug("Requesting ViperServer to start new job...")
 
@@ -47,7 +47,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
         return VerJobId(-1)
     }
 
-    val ver_id = verifyWithAstJob(file, ast_id, backend, localLogger)
+    val ver_id = verifyWithAstJob(file, ast_id, backend, localLogger, verifyTarget)
     if (ver_id.id >= 0) {
       logger.info(s"Verification process #${ver_id.id} has successfully started.")
     } else {

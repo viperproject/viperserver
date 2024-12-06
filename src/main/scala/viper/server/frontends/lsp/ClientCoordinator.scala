@@ -139,9 +139,9 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   }
 
   /** returns true if verification was started */
-  def startVerification(backendClassName: String, customArgs: String, uri: String, manuallyTriggered: Boolean): Boolean = {
+  def startVerification(backendClassName: String, customArgs: String, uri: String, manuallyTriggered: Boolean, verifyTarget: Option[String]): Boolean = {
     Option(_files.get(uri))
-      .exists(fm => fm.startVerification(backendClassName, customArgs, manuallyTriggered))
+      .exists(fm => fm.startVerification(backendClassName, customArgs, manuallyTriggered, verifyTarget))
   }
 
   /** flushes verification cache, optionally only for a particular file */

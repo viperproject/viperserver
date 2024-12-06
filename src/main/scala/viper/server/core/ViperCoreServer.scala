@@ -73,7 +73,7 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     ast_id
   }
 
-  def verifyWithAstJob(programId: String, ast_id: AstJobId, backend_config: ViperBackendConfig, localLogger: Option[Logger] = None): VerJobId = {
+  def verifyWithAstJob(programId: String, ast_id: AstJobId, backend_config: ViperBackendConfig, localLogger: Option[Logger] = None, verifyTarget: Option[String] = None): VerJobId = {
     val logger = combineLoggers(localLogger)
 
     if (!isRunning) throw new IllegalStateException("Instance of VerificationServer already stopped")
@@ -86,7 +86,13 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
         val task_backend_maybe_fut: Future[Option[VerificationWorker]] =
           handle_future.map((handle: AstHandle[Option[Program]]) => {
             val program_maybe_fut: Future[Option[Program]] = handle.artifact
-            program_maybe_fut.map(_.map(new VerificationWorker(args, programId, _, logger, config)(executor))).recover({
+            program_maybe_fut.map(_.map(p => {
+              val updated = verifyTarget match {
+                case Some(t) => p.copy(methods = Seq())(p.pos, p.info, p.errT)
+                case None => p
+              }
+              new VerificationWorker(args, programId, updated, logger, config)(executor)
+            })).recover({
               case e: Throwable =>
                 logger.error(s"### An exception has occurred while constructing Viper AST: $e")
                 throw e

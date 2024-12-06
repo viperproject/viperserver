@@ -177,7 +177,8 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
       coordinator.stopAllRunningVerifications().map(_ => {
         coordinator.logger.info("start or restart verification")
 
-        val verificationStarted = coordinator.startVerification(data.backend, data.customArgs, data.uri, data.manuallyTriggered)
+        val verificationStarted = coordinator.startVerification(data.backend, data.customArgs, data.uri, data.manuallyTriggered, data.verifyTarget)
+//        val verificationStarted = coordinator.startVerification(data.backend, data.customArgs, data.uri, data.manuallyTriggered, None)
         if (verificationStarted) {
           coordinator.logger.info("Verification Started")
         } else {

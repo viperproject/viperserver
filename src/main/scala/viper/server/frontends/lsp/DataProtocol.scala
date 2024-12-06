@@ -84,6 +84,7 @@ case class VerifyParams (
               manuallyTriggered: Boolean,   // was the verification triggered manually
               workspace: String,            // the path to the open workspace folder
               backend: String,
+              verifyTarget: Option[String],       // A specfic target that should be verified, instead of the whole file.
               customArgs: String)            // contains the path of the file that should be verified
 
 case class SettingsError (errorType: SettingsErrorType, msg: String)

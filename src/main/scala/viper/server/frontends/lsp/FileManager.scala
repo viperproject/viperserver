@@ -104,7 +104,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
     s"$backendClassName $customArgs"
   }
 
-  def startVerification(backendClassName: String, customArgs: String, manuallyTriggered: Boolean): Boolean = {
+  def startVerification(backendClassName: String, customArgs: String, manuallyTriggered: Boolean, verifyTarget: Option[String]): Boolean = {
     prepareVerification()
     this.manuallyTriggered = manuallyTriggered
 
@@ -115,7 +115,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
 
     val command = getVerificationCommand(backendClassName, customArgs)
     coordinator.logger.debug(s"verification command: $command")
-    val handle = coordinator.server.verifyWithCommand(command, Some(coordinator.localLogger))
+    val handle = coordinator.server.verifyWithCommand(command, Some(coordinator.localLogger), verifyTarget)
     jid = handle.id
     if (jid >= 0) {
       coordinator.server.startStreaming(handle, RelayActor.props(this, backendClassName), Some(coordinator.localLogger))
