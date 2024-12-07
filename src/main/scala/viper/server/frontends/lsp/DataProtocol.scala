@@ -179,6 +179,10 @@ case class StopVerificationResponse(success: Boolean)
 
 case class GetLanguageServerUrlResponse(url: String)
 
+case class GetDefinitionsRequest(uri: String)
+
+case class GetDefinitionsResponse(definitions: Array[Definition])
+
 case class RemoveDiagnosticsRequest(uri: String)
 
 case class RemoveDiagnosticsResponse(success: Boolean)

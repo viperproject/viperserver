@@ -20,6 +20,7 @@ object C2S_Commands {
   // final val ShowHeap = "ShowHeap"
   // final val GetExecutionTrace = "GetExecutionTrace"
   final val RemoveDiagnostics = "RemoveDiagnostics"
+  final val GetDefinitions = "GetDefinitions"
   final val GetViperFileEndings = "GetViperFileEndings"
   final val FlushCache = "FlushCache"
   final val GetIdentifier = "GetIdentifier"

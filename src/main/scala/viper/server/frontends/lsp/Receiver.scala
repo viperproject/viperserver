@@ -37,11 +37,13 @@ abstract class StandardReceiver(server: ViperServerService)(implicit executor: V
 
   @JsonNotification("initialized")
   def onInitialized(@unused params: InitializedParams): Unit = {
+    println("initialized");
     coordinator.logger.info("initialized")
   }
 
   @JsonNotification("textDocument/didOpen")
   def onDidOpenDocument(params: DidOpenTextDocumentParams): Unit = {
+    println("opened file");
     val uri: String = params.getTextDocument.getUri
     coordinator.logger.info(s"On opening document $uri")
     try {
@@ -61,6 +63,7 @@ abstract class StandardReceiver(server: ViperServerService)(implicit executor: V
 
   @JsonNotification("textDocument/didChange")
   def onDidChangeDocument(params: DidChangeTextDocumentParams): Unit = {
+    println("on change document!");
     coordinator.logger.info("On changing document")
     coordinator.resetFile(params.getTextDocument.getUri)
   }
@@ -73,6 +76,7 @@ abstract class StandardReceiver(server: ViperServerService)(implicit executor: V
 
   @JsonNotification("textDocument/didSave")
   def onDidSaveDocument(params: DidSaveTextDocumentParams): Unit = {
+    println("on save!");
     coordinator.logger.info("On saving document")
     coordinator.resetFile(params.getTextDocument.getUri)
   }
@@ -162,16 +166,18 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
     CompletableFuture.completedFuture(RemoveDiagnosticsResponse(true))
   }
 
-  @JsonRequest(C2S_Commands.GetLanguageServerUrl)
-  def onGetServerUrl(): CompletionStage[GetLanguageServerUrlResponse] = {
-    coordinator.logger.debug("On getting server URL")
-    CompletableFuture.completedFuture(GetLanguageServerUrlResponse(serverUrl))
+  @JsonRequest(C2S_Commands.GetDefinitions)
+  def onGetDefinitions(request: GetDefinitionsRequest): CompletionStage[GetDefinitionsResponse] = {
+    coordinator.logger.debug("On getting definitions")
+    CompletableFuture.completedFuture(GetDefinitionsResponse(coordinator.getDefinitionsForFile(request.uri).toArray))
   }
 
   @JsonNotification(C2S_Commands.Verify)
   def onVerify(data: VerifyParams): Unit = {
-    coordinator.logger.debug("On verifying")
+    coordinator.logger.debug("On verifying");
+    println("Symbols: " + coordinator.getSymbolsForFile(data.uri).length);
     if (coordinator.canVerificationBeStarted(data.uri, data.manuallyTriggered)) {
+
       // stop all other verifications because the backend crashes if multiple verifications are run in parallel
       coordinator.logger.trace("verification can be started - all running verifications are now going to be stopped")
       coordinator.stopAllRunningVerifications().map(_ => {

@@ -80,7 +80,10 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
 
   def getSymbolsForFile(uri: String): Array[DocumentSymbol]= {
     Option(_files.get(uri))
-      .map(fm => fm.symbolInformation.toArray)
+      .map(fm => {
+        println("getting symbols for " + uri + ", fm " + fm.hashCode());
+        fm.symbolInformation.toArray
+      })
       .getOrElse(Array.empty)
   }
 
