@@ -168,6 +168,17 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
     CompletableFuture.completedFuture(GetLanguageServerUrlResponse(serverUrl))
   }
 
+  // TODO(laurenz): Currently, we are using reformat as a custom command instead of directly as
+  // an LSP command (textDocument/formatting). There is basically only one reason for this:
+  // The reformat command passes a string to a file URI, but the problem is that changes in the
+  // VSCode file are not always saved straight away on disk. Because of this, if someone writes
+  // something and reformats very quickly, the changes will be discarded, because the file
+  // hasn't been updated on disk. To circumvent this, in viper-ide, we register a custom formatting
+  // handler, where we first save the document and only then send the reformat request.
+  //
+  // Once this problem is fixed (it seems like https://github.com/viperproject/viperserver/pull/204
+  // could solve it), it should be possible to implement this as a regular LSP command, and we
+  // can thus remove a lot of the boiler plate.
   @JsonRequest(C2S_Commands.Reformat)
   def onReformat(data: ReformatParams): CompletionStage[Option[String]] = {
     coordinator.logger.info("On reformat")
