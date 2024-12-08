@@ -175,7 +175,6 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
   @JsonNotification(C2S_Commands.Verify)
   def onVerify(data: VerifyParams): Unit = {
     coordinator.logger.debug("On verifying");
-    println("Symbols: " + coordinator.getSymbolsForFile(data.uri).length);
     if (coordinator.canVerificationBeStarted(data.uri, data.manuallyTriggered)) {
 
       // stop all other verifications because the backend crashes if multiple verifications are run in parallel

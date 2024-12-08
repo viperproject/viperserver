@@ -88,14 +88,24 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
             val program_maybe_fut: Future[Option[Program]] = handle.artifact
             program_maybe_fut.map(_.map(p => {
               val updated = verifyTarget match {
-                // Make all methods abstract except for the selected method.
-                case Some(t) => p.copy(methods = p.methods.map(m => {
-                  if (m.name == t) {
-                    m
-                  } else {
-                    m.copy(body = None)(m.pos, m.info, m.errT)
-                  }
-                }))(p.pos, p.info, p.errT)
+                // Make all methods and functions abstract except for the selected method.
+                case Some(t) => {
+                  val methods = p.methods.map(m => {
+                    if (m.name == t) {
+                      m
+                    } else {
+                      m.copy(body = None)(m.pos, m.info, m.errT)
+                    }
+                  });
+                  val functions = p.functions.map(m => {
+                    if (m.name == t) {
+                      m
+                    } else {
+                      m.copy(body = None)(m.pos, m.info, m.errT)
+                    }
+                  })
+                  p.copy(methods = methods, functions = functions)(p.pos, p.info, p.errT)
+                }
                 case None => p
               }
               new VerificationWorker(args, programId, updated, logger, config)(executor)
