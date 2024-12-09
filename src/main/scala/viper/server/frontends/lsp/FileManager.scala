@@ -27,7 +27,6 @@ import scala.concurrent.Future
 
 class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit executor: VerificationExecutionContext) {
   // File information
-  println("creating new file manager for " + file_uri);
   var uri: URI = URI.create(file_uri)
   var path: Path = Paths.get(uri)
   var filename: String = path.getFileName.toString

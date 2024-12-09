@@ -43,7 +43,6 @@ abstract class StandardReceiver(server: ViperServerService)(implicit executor: V
 
   @JsonNotification("textDocument/didOpen")
   def onDidOpenDocument(params: DidOpenTextDocumentParams): Unit = {
-    println("opened file");
     val uri: String = params.getTextDocument.getUri
     coordinator.logger.info(s"On opening document $uri")
     try {
@@ -76,7 +75,6 @@ abstract class StandardReceiver(server: ViperServerService)(implicit executor: V
 
   @JsonNotification("textDocument/didSave")
   def onDidSaveDocument(params: DidSaveTextDocumentParams): Unit = {
-    println("on save!");
     coordinator.logger.info("On saving document")
     coordinator.resetFile(params.getTextDocument.getUri)
   }
@@ -182,8 +180,9 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
       coordinator.stopAllRunningVerifications().map(_ => {
         coordinator.logger.info("start or restart verification")
 
-        val verificationStarted = coordinator.startVerification(data.backend, data.customArgs, data.uri, data.manuallyTriggered, Some("test2"))
-//        val verificationStarted = coordinator.startVerification(data.backend, data.customArgs, data.uri, data.manuallyTriggered, None)
+        val verifyTarget = if(data.verifyTarget == null || data.verifyTarget.isEmpty) None else Some(data.verifyTarget)
+
+        val verificationStarted = coordinator.startVerification(data.backend, data.customArgs, data.uri, data.manuallyTriggered, verifyTarget)
         if (verificationStarted) {
           coordinator.logger.info("Verification Started")
         } else {
