@@ -12,9 +12,10 @@ import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
-import viper.silver.ast.Program
+import viper.silver.ast.{Method, Node, Program, Function}
 import viper.silver.logger.ViperLogger
 
+import scala.collection.immutable.HashSet
 import scala.concurrent.duration._
 import scala.concurrent.Future
 import scala.language.postfixOps
@@ -87,24 +88,31 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
           handle_future.map((handle: AstHandle[Option[Program]]) => {
             val program_maybe_fut: Future[Option[Program]] = handle.artifact
             program_maybe_fut.map(_.map(p => {
-              val updated = verifyTarget match {
-                // Make all methods and functions abstract except for the selected method.
-                case Some(t) => {
-                  val methods = p.methods.map(m => {
-                    if (m.name == t) {
-                      m
-                    } else {
-                      m.copy(body = None)(m.pos, m.info, m.errT)
-                    }
-                  });
-                  val functions = p.functions.map(m => {
-                    if (m.name == t) {
+              val updated = verifyTarget.flatMap(t => {
+                val m: Option[Node] = p.findMethodOptionally(t).orElse(p.findFunctionOptionally(t))
+                if (m.isEmpty) {
+                  logger.warn(s"Tried to verify ${t}, but not method or function with that name exists. Falling back to verifying the whole file instead.")
+                }
+                // TODO: Send some kind of error instead?
+                m
+              }) match {
+                // Make all other methods abstract and remove unused parts of the program.
+                case Some(root) => {
+                  val deps = HashSet() ++ (root match {
+                    case m: Method => p.getMethodDependenciesWithMethods(p, m)
+                    case f: Function => p.getFunctionDependencies(p, f)
+                  })
+                  val functions = p.functions.filter(deps.contains(_))
+                  val predicates = p.predicates.filter(deps.contains(_))
+                  // For methods, we additionally make them abstract if they are not the target method
+                  val methods = p.methods.filter(deps.contains(_)).map(m => {
+                    if (m == root) {
                       m
                     } else {
                       m.copy(body = None)(m.pos, m.info, m.errT)
                     }
                   })
-                  p.copy(methods = methods, functions = functions)(p.pos, p.info, p.errT)
+                  p.copy(methods = methods, functions = functions, predicates = predicates)(p.pos, p.info, p.errT)
                 }
                 case None => p
               }

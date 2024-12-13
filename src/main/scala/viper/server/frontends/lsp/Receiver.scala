@@ -62,7 +62,6 @@ abstract class StandardReceiver(server: ViperServerService)(implicit executor: V
 
   @JsonNotification("textDocument/didChange")
   def onDidChangeDocument(params: DidChangeTextDocumentParams): Unit = {
-    println("on change document!");
     coordinator.logger.info("On changing document")
     coordinator.resetFile(params.getTextDocument.getUri)
   }
