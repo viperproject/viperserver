@@ -91,7 +91,7 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
               val updated = verifyTarget.flatMap(t => {
                 val m: Option[Node] = p.findMethodOptionally(t).orElse(p.findFunctionOptionally(t))
                 if (m.isEmpty) {
-                  logger.warn(s"Tried to verify ${t}, but not method or function with that name exists. Falling back to verifying the whole file instead.")
+                  throw new RuntimeException("Tried to verify ${t}, but not method or function with that name exists.")
                 }
                 // TODO: Send some kind of error instead?
                 m
