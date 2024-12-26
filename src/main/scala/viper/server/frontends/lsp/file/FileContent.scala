@@ -29,6 +29,7 @@ case class FileContent(path: Path) extends DiskLoader {
   val fileContent = new ArrayBuffer[String]
 
   def set(newContent: String): Unit = {
+    if (newContent == null) return
     fileContent.clear()
     fileContent.addAll(newContent.split("\n", -1))
   }
