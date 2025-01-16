@@ -173,6 +173,10 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] EntityFailureMessage")
       markErrorsAsReported(res.errors)
       task.processErrors(backendClassName, res.errors)
+    case BranchFailureMessage(_, _, res, _) =>
+      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] BranchFailureMessage")
+      markErrorsAsReported(res.errors)
+      task.processErrors(backendClassName, res.errors)
     case OverallSuccessMessage(_, verificationTime) =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] OverallSuccessMessage")
       task.state = VerificationReporting
