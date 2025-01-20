@@ -37,6 +37,9 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
   var is_aborting: Boolean = false
   var is_verifying: Boolean = false
   var global_failure: Boolean = false
+  // The range of the function/method we are currently verifying, if we are verifying a specific
+  // target instead of the whole file.
+  var currentTarget: Option[SourcePosition] = None
   var state: VerificationState = Stopped
   var manuallyTriggered: Boolean = _
 
@@ -67,6 +70,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
   def prepareVerification(): Unit = {
     is_verifying = true
     is_aborting = false
+    currentTarget = None
     state = Stopped
     if (partialData.nonEmpty) {
       coordinator.logger.debug(s"Some unparsed output has been detected: $partialData")
@@ -104,7 +108,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
     s"$backendClassName $customArgs"
   }
 
-  def startVerification(backendClassName: String, customArgs: String, manuallyTriggered: Boolean, verifyTarget: Option[String]): Boolean = {
+  def startVerification(backendClassName: String, customArgs: String, manuallyTriggered: Boolean, verifyTarget: Option[HasLineColumn] = None): Boolean = {
     prepareVerification()
     this.manuallyTriggered = manuallyTriggered
 
@@ -219,6 +223,9 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
       case WarningsDuringVerification(warnings) =>
         markErrorsAsReported(warnings)
         processErrors(backendClassName, warnings)
+      case TargetSelectionReport(ts) => {
+        currentTarget = Some(ts)
+      }
       case EntitySuccessMessage(_, concerning, _, _) =>
         if (progress == null) {
           coordinator.logger.debug("The backend must send a VerificationStart message before the ...Verified message.")
@@ -341,6 +348,13 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
       var success = NA
       val mt = if (this.manuallyTriggered) 1 else 0
 
+      val target = currentTarget.map(p => {
+        val start = p.start
+        val end = p.end.getOrElse(p.start)
+
+        new Range(new Position(start.line - 1, start.column - 1), new Position(end.line - 1, end.column - 1))
+      }).getOrElse(null)
+
       val isVerifyingStage = true
 
       // do we need to start a followUp Stage?
@@ -356,7 +370,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         coordinator.sendStateChangeNotification(params, Some(this))
 
         // notify client about outcome of verification
-        params = StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt,
+        params = StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt, currentTarget=target,
           filename = filename, time = timeMs.toDouble / 1000, verificationCompleted = 1, uri = file_uri,
           error = internalErrorMessage, diagnostics = diagnostics.toArray)
         coordinator.sendStateChangeNotification(params, Some(this))
@@ -366,7 +380,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         }
       } else {
         success = if (is_aborting) Aborted else Success
-        params = StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt,
+        params = StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt, currentTarget=target,
           filename = filename, time = timeMs.toDouble / 1000, verificationCompleted = 0, uri = file_uri,
           error = internalErrorMessage, diagnostics = diagnostics.toArray)
         coordinator.sendStateChangeNotification(params, Some(this))

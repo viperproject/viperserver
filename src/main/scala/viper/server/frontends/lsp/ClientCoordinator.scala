@@ -10,6 +10,7 @@ import ch.qos.logback.classic.Logger
 import org.eclipse.lsp4j.DocumentSymbol
 import viper.server.core.VerificationExecutionContext
 import viper.server.frontends.lsp.VerificationState.Ready
+import viper.silver.ast.HasLineColumn
 
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import scala.collection.mutable.ArrayBuffer
@@ -142,7 +143,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   }
 
   /** returns true if verification was started */
-  def startVerification(backendClassName: String, customArgs: String, uri: String, manuallyTriggered: Boolean, verifyTarget: Option[String]): Boolean = {
+  def startVerification(backendClassName: String, customArgs: String, uri: String, manuallyTriggered: Boolean, verifyTarget: Option[HasLineColumn] = None): Boolean = {
     Option(_files.get(uri))
       .exists(fm => fm.startVerification(backendClassName, customArgs, manuallyTriggered, verifyTarget))
   }

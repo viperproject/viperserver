@@ -12,6 +12,7 @@ import org.eclipse.lsp4j.services.{LanguageClient, LanguageClientAware}
 import org.eclipse.lsp4j.{DidChangeConfigurationParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams, InitializeParams, InitializeResult, InitializedParams, ServerCapabilities, TextDocumentSyncKind}
 import viper.server.ViperConfig
 import viper.server.core.VerificationExecutionContext
+import viper.silver.ast.{LineColumnPosition, SourcePosition}
 import viper.viperserver.BuildInfo
 
 import scala.annotation.unused
@@ -179,7 +180,7 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
       coordinator.stopAllRunningVerifications().map(_ => {
         coordinator.logger.info("start or restart verification")
 
-        val verifyTarget = if(data.verifyTarget == null || data.verifyTarget.isEmpty) None else Some(data.verifyTarget)
+        val verifyTarget = if(data.verifyTarget == null) None else Some(LineColumnPosition(data.verifyTarget.getLine + 1, data.verifyTarget.getCharacter + 1))
 
         val verificationStarted = coordinator.startVerification(data.backend, data.customArgs, data.uri, data.manuallyTriggered, verifyTarget)
         if (verificationStarted) {

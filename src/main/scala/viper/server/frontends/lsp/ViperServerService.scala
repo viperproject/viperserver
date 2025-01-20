@@ -16,6 +16,7 @@ import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, Vipe
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
 import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
+import viper.silver.ast.HasLineColumn
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -23,7 +24,7 @@ import scala.concurrent.duration._
 class ViperServerService(config: ViperConfig)(override implicit val executor: VerificationExecutionContext)
   extends ViperCoreServer(config)(executor) with DefaultVerificationServerStart {
 
-  def verifyWithCommand(command: String, localLogger: Option[Logger] = None, verifyTarget: Option[String]): VerJobId = {
+  def verifyWithCommand(command: String, localLogger: Option[Logger] = None, verifyTarget: Option[HasLineColumn] = None): VerJobId = {
     val logger = combineLoggers(localLogger)
     logger.debug("Requesting ViperServer to start new job...")
 
