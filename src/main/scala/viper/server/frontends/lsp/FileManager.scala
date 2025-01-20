@@ -161,6 +161,7 @@ class FileManager(coordinator: ClientCoordinator, file_uri: String)(implicit exe
         coordinator.logger.debug(s"ignoring message because we are aborting: $m")
 
       case ProgramOutlineReport(members) =>
+        symbolInformation = ArrayBuffer()
         members.foreach(m => {
           val member_start = m.pos.asInstanceOf[SourcePosition].start
           val member_end = m.pos.asInstanceOf[SourcePosition].end.getOrElse(member_start)

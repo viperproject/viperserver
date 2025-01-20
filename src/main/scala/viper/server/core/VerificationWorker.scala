@@ -142,7 +142,6 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
   /** Run the backend verification functionality */
   def execute(args: Seq[String]): Unit = {
     initialize(args)
-//    println(_ast.printAll());
 
     /**
       * the architecture is as follows:
@@ -232,6 +231,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     }
 
     val (transformed_prog, cached_results) = ViperCache.applyCache(backendName, programId, input)
+
     // collect and report errors
     val all_cached_errors: collection.mutable.ListBuffer[VerificationError] = ListBuffer()
     cached_results.foreach((result: CacheResult) => {

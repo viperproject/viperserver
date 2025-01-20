@@ -38,7 +38,6 @@ abstract class StandardReceiver(server: ViperServerService)(implicit executor: V
 
   @JsonNotification("initialized")
   def onInitialized(@unused params: InitializedParams): Unit = {
-    println("initialized");
     coordinator.logger.info("initialized")
   }
 
@@ -164,10 +163,10 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
     CompletableFuture.completedFuture(RemoveDiagnosticsResponse(true))
   }
 
-  @JsonRequest(C2S_Commands.GetDefinitions)
-  def onGetDefinitions(request: GetDefinitionsRequest): CompletionStage[GetDefinitionsResponse] = {
-    coordinator.logger.debug("On getting definitions")
-    CompletableFuture.completedFuture(GetDefinitionsResponse(coordinator.getDefinitionsForFile(request.uri).toArray))
+  @JsonRequest(C2S_Commands.GetLanguageServerUrl)
+  def onGetServerUrl(): CompletionStage[GetLanguageServerUrlResponse] = {
+    coordinator.logger.debug("On getting server URL")
+    CompletableFuture.completedFuture(GetLanguageServerUrlResponse(serverUrl))
   }
 
   @JsonNotification(C2S_Commands.Verify)

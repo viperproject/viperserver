@@ -100,7 +100,8 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
               }
 
               val (updated_program, position) = target match {
-                // Make all other methods abstract and remove unused parts of the program.
+                // Remove unused functions, predicates and methods
+                // and make not-targeted methods abstract
                 case Some(root) => {
                   val deps = HashSet() ++ (root._1 match {
                     case m: Method => p.getMethodDependenciesWithMethods(p, m)
