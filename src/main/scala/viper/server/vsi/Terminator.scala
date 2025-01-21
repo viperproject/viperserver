@@ -10,6 +10,7 @@ import akka.actor.{Actor, Props}
 import akka.http.scaladsl.Http
 import viper.server.core.VerificationExecutionContext
 
+import java.util.concurrent.atomic.AtomicInteger
 import scala.concurrent.Future
 
 // --- Actor: Terminator ---
@@ -18,6 +19,14 @@ import scala.concurrent.Future
 object Terminator {
   case object Exit
   case class WatchJobQueue(jid: JobId, handle: JobHandle)
+
+  // Each server start creates a new Terminator actor. Akka does not like non-unique actor names.
+  // Thus, we increment a counter to ensure unique names for our Terminator actors even though at no point
+  // two of them should be active.
+  // Without this counter, the issue of non-unique actor names occurs in testing contexts as, e.g. in Gobra's tests,
+  // we start a new ViperServer instance for each testcase that needs it.
+  private val terminatorCounter = new AtomicInteger(0)
+  def GetNextTerminatorName: String = s"terminator${terminatorCounter.getAndIncrement()}"
 
   def props[R](ast_jobs: JobPool[AstJobId, AstHandle[R]],
                ver_jobs: JobPool[VerJobId, VerHandle],
