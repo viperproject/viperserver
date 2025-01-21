@@ -26,7 +26,7 @@ object Terminator {
   // Without this counter, the issue of non-unique actor names occurs in testing contexts as, e.g. in Gobra's tests,
   // we start a new ViperServer instance for each testcase that needs it.
   private val terminatorCounter = new AtomicInteger(0)
-  val GetNextTerminatorName: String = s"terminator${terminatorCounter.getAndIncrement()}"
+  def GetNextTerminatorName: String = s"terminator${terminatorCounter.getAndIncrement()}"
 
   def props[R](ast_jobs: JobPool[AstJobId, AstHandle[R]],
                ver_jobs: JobPool[VerJobId, VerHandle],
