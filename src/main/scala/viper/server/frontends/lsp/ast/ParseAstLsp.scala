@@ -30,12 +30,21 @@ object HasDocumentSymbol {
 }
 
 object HasHoverHints {
-  def apply(p: PProgram): Seq[HoverHint] = p.deepCollect({
-    case n: PIdnUse => PLspIdnUse.getHoverHints(n)
-    case n: PExp => PLspExp.getHoverHints(n)
-    case n: PDeclaration => PLspDeclaration.getHoverHints(n)
-    case n: PReserved[_] => PLspReserved.getHoverHints(n)
-  }).flatten
+  def apply(p: PProgram): Seq[HoverHint] = {
+    p.deepCollectOpt({
+      case _: PDefine | _: PAnnotatedExp | _: PAnnotatedStmt => false
+      case _ => true
+    }, {
+      case n: PIdnUse => PLspIdnUse.getHoverHints(n)
+      case n: PDeclaration => PLspDeclaration.getHoverHints(n)
+      case n: PReserved[_] => PLspReserved.getHoverHints(n)
+      case n: PAnnotatedStmt if n.annotation.key.str.equals("expandedMacro") =>
+        RangePosition(n).toSeq.map(rp => HoverHint(n.stmt.pretty, None, Option(rp), SelectionBoundScope(rp)))
+      case n: PAnnotatedExp if n.annotation.key.str.equals("expandedMacro") =>
+        RangePosition(n).toSeq.map(rp => HoverHint(n.e.pretty, None, Option(rp), SelectionBoundScope(rp)))
+      case n: PExp => PLspExp.getHoverHints(n)
+    }).flatten
+  }
 }
 
 object HasGotoDefinitions {
@@ -81,21 +90,41 @@ object HasSemanticHighlights {
 }
 
 object HasSignatureHelps {
-  def apply(p: PProgram): Seq[SignatureHelp] = p.deepCollect({
-    case n: PCallable => {
-    val bound = SelectionBoundKeyword(n.idndef.name)
-    // Start
-    val start = SignatureHelpPart(false, s"${n.keyword.pretty}${n.idndef.pretty}${n.args.l.pretty}", None)
-    // Args
-    def faToSigHelpPart(fa: PAnyFormalArgDecl): SignatureHelpPart = SignatureHelpPart(true, fa.pretty, None)
-    val args = n.args.inner.first.map(faToSigHelpPart).toSeq ++ n.args.inner.inner.flatMap {
-      case (c, fa) => Seq(SignatureHelpPart(false, c.pretty, None), faToSigHelpPart(fa))
+  def apply(p: PProgram): Seq[SignatureHelp] = {
+    def argsToSigHelpPart[T <: PNode](args: PDelimited.Comma[PSym.Paren, T]) : Seq[SignatureHelpPart] = {
+      def getSigHelpPart[T <: PNode](arg: T): SignatureHelpPart = SignatureHelpPart(true, arg.pretty, None)
+      args.inner.first.map(getSigHelpPart).toSeq ++ args.inner.inner.flatMap {
+        case (c, arg) => Seq(SignatureHelpPart(false, c.pretty, None), getSigHelpPart(arg))
+      }
     }
-    // Tail
-    val tail = SignatureHelpPart(false, s"${n.args.r.pretty}${n.returnNodes.map(_.pretty).mkString}", None)
-    Seq(SignatureHelp(start +: args :+ tail, PLspDeclaration.documentation(n), bound))
+    p.deepCollect({
+      case n: PCallable => {
+        val bound = SelectionBoundKeyword(n.idndef.name)
+        // Start
+        val start = SignatureHelpPart(false, s"${n.keyword.pretty}${n.idndef.pretty}${n.args.l.pretty}", None)
+        // Args
+        val args = argsToSigHelpPart[PAnyFormalArgDecl](n.args)
+        // Tail
+        val tail = SignatureHelpPart(false, s"${n.args.r.pretty}${n.returnNodes.map(_.pretty).mkString}", None)
+        Seq(SignatureHelp(start +: args :+ tail, PLspDeclaration.documentation(n), bound))
+      }
+      case n: PDefine => {
+        val bound = SelectionBoundKeyword(n.idndef.name)
+        // Start
+        val start = SignatureHelpPart(false, s"define ${n.idndef.pretty}", None)
+        // Args
+        var mappedParams = Seq[SignatureHelpPart]()
+        if (n.parameters.isDefined) {
+          val params = n.parameters.get
+          mappedParams = argsToSigHelpPart[PDefineParam](n.parameters.get)
+          mappedParams = SignatureHelpPart(false, s"${params.l.pretty}", None) +: mappedParams :+ SignatureHelpPart(false, s"${params.r.pretty}", None)
+        }
+        // Tail
+        val tail = SignatureHelpPart(false, s" ${n.body.pretty}", None)
+        Seq(SignatureHelp(start +: mappedParams :+ tail, PLspDeclaration.documentation(n), bound))
+      }
+    }).flatten
   }
-  }).flatten
 }
 
 object HasSuggestionScopeRanges {
