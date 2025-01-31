@@ -323,39 +323,17 @@ jobs:
 
       - name: Create nightly release
         if: env.MATCHING_RELEASE != 'true'
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          # This token is provided by Actions, you do not need to create your own token
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ env.TAG_NAME }}
-          release_name: Nightly Release ${{ env.TAG_NAME }}
+          name: Nightly Release ${{ env.TAG_NAME }}
           body_path: versions.txt
           draft: false
           prerelease: true
-
-      - name: Upload ViperServer skinny jars
-        if: env.MATCHING_RELEASE != 'true'
-        uses: actions/upload-release-asset@v1.0.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: deploy/viperserver-skinny-jars.zip
-          asset_name: viperserver-skinny-jars.zip
-          asset_content_type: application/zip
-
-      - name: Upload ViperServer fat jar artifact
-        if: env.MATCHING_RELEASE != 'true'
-        uses: actions/upload-release-asset@v1.0.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: deploy/viperserver.jar
-          asset_name: viperserver.jar
-          asset_content_type: application/octet-stream
+          files: |
+            deploy/viperserver-skinny-jars.zip
+            deploy/viperserver.jar
 
 
   create-stable-release:
@@ -382,34 +360,14 @@ jobs:
           name: versions.txt
 
       - name: Create stable draft-release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          # This token is provided by Actions, you do not need to create your own token
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.event.inputs.tag_name }}
-          release_name: ${{ github.event.inputs.release_name }}
+          name: ${{ github.event.inputs.release_name }}
           body_path: versions.txt
           draft: true
           prerelease: false
-
-      - name: Upload ViperServer skinny jars
-        uses: actions/upload-release-asset@v1.0.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: deploy/viperserver-skinny-jars.zip
-          asset_name: viperserver-skinny-jars.zip
-          asset_content_type: application/zip
-
-      - name: Upload ViperServer fat jar
-        uses: actions/upload-release-asset@v1.0.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: deploy/viperserver.jar
-          asset_name: viperserver.jar
-          asset_content_type: application/octet-stream
+          files: |
+            deploy/viperserver-skinny-jars.zip
+            deploy/viperserver.jar
