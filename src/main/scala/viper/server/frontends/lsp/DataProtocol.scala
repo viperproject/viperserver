@@ -62,6 +62,8 @@ object BackendOutputType {
 
 case class ProgressParams(data: Progress, logLevel: Int)
 
+case class BranchFailureDetails(errorMessage: String, /*tree string*/ range: Range)
+
 case class Progress (
               domain: String,
               current: Double,
@@ -174,7 +176,8 @@ case class StateChangeParams(
               verificationNeeded: Double = -1,
               uri: String = null,
               stage: String = null,
-              error: String = null)
+              error: String = null,
+              branchFailureDetails: Array[BranchFailureDetails] = null)
 
 case class UnhandledViperServerMessageTypeParams(msgType: String, msg: String, logLevel: Int)
 

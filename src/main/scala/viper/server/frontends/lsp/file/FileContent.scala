@@ -61,14 +61,19 @@ case class FileContent(path: Path) extends DiskLoader {
       }
       None
     } else if (pos.getCharacter > fileContent(pos.getLine).length) {
-      val newPos = new Position(pos.getLine + 1, pos.getCharacter - fileContent(pos.getLine).length - 1)
-      while (newPos.getLine < fileContent.length && newPos.getCharacter <= fileContent(newPos.getLine).length) {
-        newPos.setCharacter(newPos.getCharacter - fileContent(newPos.getLine).length - 1)
+      var prevLineLength = fileContent(pos.getLine).length
+      val newPos = new Position(pos.getLine + 1, pos.getCharacter)
+      while (newPos.getLine < fileContent.length) {
+        newPos.setCharacter(newPos.getCharacter - prevLineLength - 1)
+        if (newPos.getCharacter <= fileContent(newPos.getLine).length) {
+          return Some(newPos)
+        }
+        prevLineLength = fileContent(pos.getLine).length
         newPos.setLine(newPos.getLine + 1)
       }
-      if (newPos.getLine < fileContent.length) Some(newPos) else None
+      None
     } else {
-      return Some(new Position(pos.getLine, pos.getCharacter))
+      Some(new Position(pos.getLine, pos.getCharacter))
     }
   }
   def getCharAt(pos: Position): Char = {

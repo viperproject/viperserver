@@ -13,8 +13,6 @@ import viper.server.frontends.lsp.VerificationSuccess._
 import viper.silver.ast
 import viper.silver.reporter._
 import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
-
-import viper.server.frontends.lsp.file.ProgressCoordinator
 import viper.silver.parser._
 
 trait MessageHandler extends ProjectManager with VerificationManager with QuantifierCodeLens with QuantifierInlayHints with SignatureHelp {
@@ -171,10 +169,6 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       }
     case EntityFailureMessage(_, _, _, res, _) =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] EntityFailureMessage")
-      markErrorsAsReported(res.errors)
-      task.processErrors(backendClassName, res.errors)
-    case BranchFailureMessage(_, _, res, _) =>
-      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] BranchFailureMessage")
       markErrorsAsReported(res.errors)
       task.processErrors(backendClassName, res.errors)
     case OverallSuccessMessage(_, verificationTime) =>
