@@ -32,16 +32,15 @@ object HasDocumentSymbol {
 object HasHoverHints {
   def apply(p: PProgram): Seq[HoverHint] = {
     p.deepCollectOpt({
-      case _: PDefine | _: PAnnotatedExp | _: PAnnotatedStmt => false
+      case _: PDefine | _: PExpandedMacro => false
       case _ => true
     }, {
+      case n: PExpandedMacro => {
+        RangePosition(n).toSeq.map(rp => HoverHint(n.pretty, None, Option(rp), SelectionBoundScope(rp)))
+      }
       case n: PIdnUse => PLspIdnUse.getHoverHints(n)
       case n: PDeclaration => PLspDeclaration.getHoverHints(n)
       case n: PReserved[_] => PLspReserved.getHoverHints(n)
-      case n: PAnnotatedStmt if n.annotation.key.str.equals("expandedMacro") =>
-        RangePosition(n).toSeq.map(rp => HoverHint(n.stmt.pretty, None, Option(rp), SelectionBoundScope(rp)))
-      case n: PAnnotatedExp if n.annotation.key.str.equals("expandedMacro") =>
-        RangePosition(n).toSeq.map(rp => HoverHint(n.e.pretty, None, Option(rp), SelectionBoundScope(rp)))
       case n: PExp => PLspExp.getHoverHints(n)
     }).flatten
   }
