@@ -8,7 +8,7 @@ package viper.silver.parser
 
 import viper.server.frontends.lsp.Common
 import viper.silver.ast.utility.lsp._
-import viper.silver.ast.{AnySetCardinality, LineColumnPosition}
+import viper.silver.ast.{LineColumnPosition}
 import viper.silver.plugin.standard.adt._
 import viper.silver.plugin.standard.termination.PDecreasesKeyword
 
