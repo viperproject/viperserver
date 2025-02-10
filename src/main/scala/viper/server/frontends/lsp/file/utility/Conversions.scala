@@ -210,3 +210,18 @@ case object SuggestionScopeRangeTranslator extends Translates[lsp.SuggestionScop
     Seq(min)
   }
 }
+
+case object CodeActionTranslator extends Translates[lsp.CodeAction, lsp4j.CodeAction, (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)] {
+  override def translate(ca: lsp.CodeAction)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)): lsp4j.CodeAction = ???
+  override def translate(cas: Seq[lsp.CodeAction])(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean))(implicit log: Logger): Seq[lsp4j.CodeAction] = {
+    cas.map(ca => {
+      val codeAction = new lsp4j.CodeAction("Add invariant")
+      val textEdits = Seq(new lsp4j.TextEdit(ca.editRange, ca.edit)).asJava
+      val uri = ca.bound.scope.file.toUri().toString()
+      val edits = Map(uri -> textEdits).asJava
+      val workspaceEdit = new lsp4j.WorkspaceEdit(edits)
+      codeAction.setEdit(workspaceEdit)
+      codeAction
+    })
+  }
+}

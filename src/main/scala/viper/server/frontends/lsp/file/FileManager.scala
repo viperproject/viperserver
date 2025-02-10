@@ -57,6 +57,8 @@ case class FileManager(file: PathInfo, coordinator: lsp.ClientCoordinator, conte
     getInFuture(getInProject(uri).getFoldingRange())
   def getCompletionProposal(uri: String, pos: lsp4j.Position, char: Option[String]): Future[Seq[lsp4j.CompletionItem]] =
     getInFuture(getCompletionProposal(uri, pos, char, ()))
+  def getCodeActions(uri: String, pos: lsp4j.Position): Future[Seq[lsp4j.CodeAction]] =
+    Future.successful(getCodeActionsProject(uri, pos))
 }
 
 object FileManager {

@@ -154,6 +154,13 @@ trait ProjectManager extends FullManager with ProjectAware {
     else super.getCompletionProposal(scope, None, char) ++ getInProject(uri).getCompletionProposal(scope, Some(pos), char)
   }
 
+  override def addCodeAction(first: Boolean)(vs: Seq[lsp.CodeAction]): Unit =
+    addSib(uri => if (uri == file.file_uri) super.addCodeAction(first) else getInProject(uri).addCodeAction(first), vs)
+  def getCodeActionsProject(uri: String, pos: lsp4j.Position): Seq[lsp4j.CodeAction] = {
+    if (uri == file.file_uri) super.getCodeAction(Some(pos))
+    else super.getCodeAction(None) ++ getInProject(uri).getCodeAction(Some(pos))
+  }
+
   def getIdentAtPos(uri: String, pos: lsp4j.Position): Option[(String, Range)] =
     getInProject(uri).content.getIdentAtPos(pos)
 

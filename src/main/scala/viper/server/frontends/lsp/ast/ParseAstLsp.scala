@@ -6,10 +6,11 @@
 
 package viper.silver.parser
 
+import viper.server.frontends.lsp.Common
 import viper.silver.ast.utility.lsp._
 import viper.silver.ast.LineColumnPosition
-import viper.silver.parser.PStringLiteral
 import viper.silver.plugin.standard.adt._
+import viper.silver.plugin.standard.termination.PDecreasesKeyword
 
 object HasCodeLens {
   def apply(p: PProgram): Seq[CodeLens] = p.deepCollect(PartialFunction.empty).flatten
@@ -146,6 +147,93 @@ object HasCompletionProposals {
   }).flatten
 }
 
+object HasCodeActions {
+  private def isIncreasingSelfAssignment(e: PBinExp): Boolean = {
+    e.op.rs match {
+      case PSymOp.Plus | PSymOp.Mul | PKwOp.Union => true
+      case _ => false
+    }
+  }
+  private def oppositeOp(e: PBinExp): PBinaryOp = { // TODO Does this belong somewhere else?
+    e.op.rs match {
+      case PSymOp.Plus => PSymOp.Minus
+      case PSymOp.Minus => PSymOp.Plus
+      case PSymOp.Mul => PSymOp.Div
+      case PSymOp.ArithDiv => PSymOp.Mul // ?
+      case PSymOp.Div => PSymOp.Mul
+      case PKwOp.Intersection => PKwOp.Union
+      case PKwOp.Union => PKwOp.Intersection
+      //case PKwOp.Setminus => PKwOp.Union
+      //case PKwOp. => PKwOp.Union
+      // TODO Stephanie Mod / Subset ... (?)
+      case _ => e.op.rs
+    }
+  }
+  private def containsSetOp(e: PExp) = e.find({case n: PKwOp => n}).nonEmpty // Correct?
+  private def getIdentifierNames(e: PExp) : Set[String] = e.deepCollect({case n: PIdnUseExp => n.name}).toSet
+  private def findSelfAssignment(stmts : PSeqn, idns: Set[String]) : Option[(String, PExp)] = {
+    stmts.find({case p: PAssign if p.rhs.isInstanceOf[PBinExp]=> (
+      idns.intersect(
+        (p.targets.first ++ p.targets.inner.map(_._1)).map(_.deepCollect({case n: PIdnUseExp => n.name}))
+          .flatten.toSet.intersect(getIdentifierNames(p.rhs))).headOption, p.rhs)})
+      .find(t => t._1.isDefined)}.map(t => (t._1.get, t._2))
+  private def findLiteralAssignment(p: PProgram, idn: String): Option[PExp] = {
+    p.find({case n: PAssign if (n.targets.first ++ n.targets.inner.map(_._1)).asInstanceOf[Seq[PExp]] // TODO Stephanie
+      .map(getIdentifierNames(_)).flatten.toSet
+      .contains(idn) && n.rhs.find({case _ : PSimpleLiteral => n}).isDefined => n.rhs}) // TODO Before
+  }
+  private def updateExp(e: PExp, j: Int): PExp = {
+    val newExp = e match {
+      case PIntLit(i) => PIntLit(i + j)(e.pos)
+      case _ => PBinExp(e, PReserved(if (j > 0) PSymOp.Plus else PSymOp.Minus)(e.pos), PIntLit(-j)(e.pos))(e.pos)
+    }
+    newExp
+  }
+  private def getCodeAction(p: PProgram, w: PWhile) : CodeAction = {
+    val cond = w.cond.inner.asInstanceOf[PBinExp]
+    val condOp = cond.op.rs
+    var condBound = cond.right
+    var selfAssignment = findSelfAssignment(w.body, getIdentifierNames(cond.left))
+    if (!selfAssignment.isDefined) {
+      selfAssignment = findSelfAssignment(w.body, getIdentifierNames(cond.right))
+      condBound = cond.left
+    }
+    selfAssignment match {
+      case Some(ass) =>
+        val idn = ass._1
+        val rhs = ass._2.asInstanceOf[PBinExp]
+
+        val editRp = RangePosition(w.body.ss.l).get
+        val editRange = Common.toRange(editRp)
+        editRange.setEnd(editRange.getStart)
+        val rp = RangePosition(w).get // TODO Stephanie
+        val decrIndent = " "*(rp.start.column+1) // TODO obtain indentation differently
+        val braceIndent = " "*(rp.start.column-1)
+
+        val literalAssign = findLiteralAssignment(p, idn)
+        val bound = if (literalAssign.isDefined) literalAssign.get.pretty
+        else if (containsSetOp(cond)) "Set[Int]()" // If contains div rational?
+        else "0" // TODO Stephanie
+
+        val isIncrSelfAssign = isIncreasingSelfAssignment(rhs)
+        val updatedCondBound = if (condOp == PSymOp.Le || condOp == PSymOp.Ge)
+          updateExp(condBound, if (isIncrSelfAssign) 1 else -1) else condBound
+        val lowerBound = if (isIncrSelfAssign) bound else updatedCondBound.pretty
+        val upperBound = if (isIncrSelfAssign) updatedCondBound.pretty else bound
+        val decreasesExp = if (isIncrSelfAssign) upperBound + " " + oppositeOp(rhs).token + " " + idn else idn
+
+        val invariant = "\n"+decrIndent + PKw.Invariant.keyword +" "+ lowerBound + " " + PSymOp.Le.symbol + " " + idn + " " + PSymOp.Le.symbol + " " + upperBound + "\n"
+        val decreases = decrIndent + PDecreasesKeyword.keyword +" "+ decreasesExp + "\n" + braceIndent
+
+        CodeAction(invariant + decreases, editRange, SelectionBoundScope(rp))
+    }
+  }
+
+  def apply(p: PProgram): Seq[CodeAction] = {
+    p.deepCollect({
+      case w: PWhile if w.cond.inner.isInstanceOf[PBinExp] => getCodeAction(p,w)})
+    }
+}
 
 ////
 // Identifiers (uses and definitions)

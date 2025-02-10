@@ -311,8 +311,12 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
   }
 
   override def codeAction(params: CodeActionParams) = {
-    // TODO
-    CompletableFuture.completedFuture(Nil.asJava)
+    coordinator.logger.trace(s"[Req: textDocument/codeAction] ${params.toString()}")
+    val uri = params.getTextDocument.getUri
+    val range = params.getRange
+    val actions = coordinator.getRoot(uri).getCodeActions(uri, range.getStart)
+    val jActions = actions.map(_.asJava.asInstanceOf[java.util.List[Either[Command, CodeAction]]])
+    jActions.asJava.toCompletableFuture
   }
 
   // --- DISABLED, see comment in `initialize` ---
