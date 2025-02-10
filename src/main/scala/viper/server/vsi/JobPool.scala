@@ -10,6 +10,7 @@ import akka.actor.ActorRef
 import akka.stream.scaladsl.SourceQueueWithComplete
 import org.reactivestreams.Publisher
 
+import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.mutable
 import scala.concurrent.{Future, Promise}
 
@@ -56,14 +57,14 @@ class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: 
   private val _jobCache: mutable.Map[S, Future[T]] = mutable.Map()
   def jobHandles: Map[S, Future[T]] = _jobHandles.map{ case (id, hand) => (id, hand.future) }.toMap
 
-  private var _nextJobId: Int = 0
+  private val _nextJobId: AtomicInteger = new AtomicInteger(0)
 
   def newJobsAllowed: Boolean = jobHandles.size < MAX_ACTIVE_JOBS
 
   def bookNewJob(job_executor: S => Future[T]): S = {
     require(newJobsAllowed)
 
-    val new_jid: S = jid_fact(_nextJobId)
+    val new_jid: S = jid_fact(_nextJobId.getAndIncrement())
 
     _jobHandles(new_jid) = Promise()
     _jobExecutors(new_jid) = () => {
@@ -79,7 +80,6 @@ class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: 
         t_fut
       }
     }
-    _nextJobId = _nextJobId + 1
     new_jid
   }
 
