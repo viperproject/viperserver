@@ -178,6 +178,13 @@ trait StandardManager extends Manager {
   containers.addOne(completionProposalContainer)
   def getCompletionProposal(scope: lsp.SuggestionScope, pos: Option[lsp4j.Position], char: Char) = completionProposalContainer.get((scope, pos, char))
   def addCompletionProposal(first: Boolean)(vs: Seq[lsp.CompletionProposal]): Unit = add(completionProposalContainer, first, vs)
+
+  // CodeAction
+  type CodeActionContainer = utility.StageRangeContainer.RangeContainer[lsp.CodeAction, lsp4j.CodeAction]
+  val codeActionContainer: CodeActionContainer = utility.LspContainer(utility.CodeActionTranslator)
+  containers.addOne(codeActionContainer)
+  def getCodeAction(pos: Option[lsp4j.Position]) = codeActionContainer.get((pos,None,true))
+  def addCodeAction(first: Boolean)(vs: Seq[lsp.CodeAction]): Unit = add(codeActionContainer, first, vs)
 }
 
 trait FullManager extends StandardManager with FindReferencesManager

@@ -7,24 +7,25 @@
 package viper.server.frontends.lsp.file
 
 import viper.server.frontends.lsp
+
 import scala.concurrent.Future
 import viper.server.vsi.AstJobId
 import viper.server.vsi.VerJobId
+
 import scala.concurrent.ExecutionContext
 import akka.actor.Props
-
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.server.frontends.lsp.VerificationState._
 import akka.actor.ActorRef
-
 import viper.silver.verifier.AbstractError
-import scala.collection.mutable.HashSet
 import viper.silver.ast.AbstractSourcePosition
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j
+import viper.server.frontends.lsp.BranchFailureDetails
 import viper.silver.ast.utility.lsp.RangePosition
 import viper.silver.ast.HasLineColumn
 import viper.silver.ast.LineColumnPosition
+import viper.silver.verifier.errors.PostconditionViolatedBranch
 import java.nio.file.Path
 
 case class VerificationHandler(server: lsp.ViperServerService) {
@@ -70,7 +71,7 @@ object VerificationPhase {
   }
 }
 
-trait VerificationManager extends Manager {
+trait VerificationManager extends Manager with Branches{
   implicit def ec: ExecutionContext
   def file_uri: String = file.file_uri
   def filename: String = file.filename
@@ -237,7 +238,13 @@ trait VerificationManager extends Manager {
 
   def processErrors(backendClassName: Option[String], errors: Seq[AbstractError], errorMsgPrefix: Option[String] = None): Unit = {
     val errMsgPrefixWithWhitespace = errorMsgPrefix.map(s => s"$s ").getOrElse("")
-    val files = HashSet[String]()
+    val toRangePosition = (err: AbstractError) => {
+      err.pos match {
+        case sp: AbstractSourcePosition => RangePosition(sp.file, sp.start, sp.end.getOrElse(sp.start))
+        case pos: HasLineColumn => RangePosition(path, pos, pos)
+        case _ => RangePosition(path, LineColumnPosition(1, 1), LineColumnPosition(1, 1))
+      }
+    }
 
     val diags = errors.map(err => {
       coordinator.logger.info(s"Handling error ${err.toString()}")
@@ -267,17 +274,11 @@ trait VerificationManager extends Manager {
 
       val range = err.pos match {
         case sp: AbstractSourcePosition => lsp.Common.toRange(sp)
-        case pos => {
+        case pos =>
           val start = lsp.Common.toPosition(pos)
           new Range(start, start)
-        }
       }
-      val rp = err.pos match {
-        case sp: AbstractSourcePosition => RangePosition(sp.file, sp.start, sp.end.getOrElse(sp.start))
-        case pos: HasLineColumn => RangePosition(path, pos, pos)
-        case _ => RangePosition(path, LineColumnPosition(1, 1), LineColumnPosition(1, 1))
-      }
-      files.add(rp.file.toUri().toString())
+      val rp = toRangePosition(err)
 
       val errFullId = if(err.fullId != null) s"[${err.fullId}] " else ""
       val backendString = if (backendClassName.isDefined) s" [${backendClassName.get}]" else ""
@@ -292,6 +293,18 @@ trait VerificationManager extends Manager {
     errorCount += diags.count(_._2.severity == lsp4j.DiagnosticSeverity.Error)
     diags.groupBy(d => d._1).foreach { case (phase, diags) =>
       addDiagnostic(phase.order <= VerificationPhase.TypeckEnd.order)(diags.map(_._2))
+    }
+
+    val branchFailureDetails = errors.collect({case err: PostconditionViolatedBranch =>
+      BranchFailureDetails(err.readableMessage, getBranchRange(this.file_uri, lsp.Common.toPosition(err.pos), err.leftIsFatal, err.rightIsFatal))
+    })
+    if (branchFailureDetails.length > 0) {
+      val params = lsp.StateChangeParams(
+        VerificationRunning.id,
+        uri=this.file_uri,
+        branchFailureDetails = branchFailureDetails.toArray
+      )
+      coordinator.sendStateChangeNotification(params, Some(this))
     }
   }
 }

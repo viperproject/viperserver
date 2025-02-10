@@ -13,7 +13,7 @@ import viper.silver.ast.{AbstractSourcePosition, QuantifiedExp, Trigger}
 trait QuantifierInlayHints extends ProjectAware {
   def handleQuantifierChosenTriggers(quantifier: QuantifiedExp, triggers: Seq[Trigger], oldTriggers: Seq[Trigger]): Unit = {
     if (!quantifier.exp.pos.isInstanceOf[AbstractSourcePosition]) {
-      coordinator.logger.error(s"Got chosen triggers, but quantifier has no position: ${quantifier.toString()}")
+      coordinator.logger.error(s"Got chosen triggers, but quantifier has no position: ${quantifier.toString}")
       return
     }
     val pos = RangePosition(quantifier.exp.pos.asInstanceOf[AbstractSourcePosition])

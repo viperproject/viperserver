@@ -13,8 +13,6 @@ import viper.server.frontends.lsp.VerificationSuccess._
 import viper.silver.ast
 import viper.silver.reporter._
 import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
-
-import viper.server.frontends.lsp.file.ProgressCoordinator
 import viper.silver.parser._
 
 trait MessageHandler extends ProjectManager with VerificationManager with QuantifierCodeLens with QuantifierInlayHints with SignatureHelp {
@@ -141,6 +139,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
         task.addSignatureHelp(true)(HasSignatureHelps(pProgram))
         task.addSuggestionScopeRange(true)(HasSuggestionScopeRanges(pProgram))
         task.addCompletionProposal(true)(HasCompletionProposals(pProgram))
+        task.addCodeAction(true)(HasCodeActions(pProgram))
       }
     case StatisticsReport(m, f, p, _, _) =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] StatisticsReport")
