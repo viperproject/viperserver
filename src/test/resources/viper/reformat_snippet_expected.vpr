@@ -1,0 +1,6 @@
+// We already have integration tests for reformatting in silver, so here
+// we just test whether the integration works.
+method expressions(xs: List[Int]) {
+    var a_bool: Bool
+        := true;
+}

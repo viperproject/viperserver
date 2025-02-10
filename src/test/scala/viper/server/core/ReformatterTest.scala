@@ -19,9 +19,8 @@ import java.nio.file.{NoSuchFileException, Path}
 
 
 class ReformatterTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
-
-  private val expressions = "src/test/resources/viper/reformatter/expressions.vpr"
-  private val expressions_expected = "src/test/resources/viper/reformatter/expressions_expected.vpr"
+  private val snippet = "src/test/resources/viper/reformat_snippet.vpr"
+  private val snippet_expected = "src/test/resources/viper/reformatter/reformat_snippet_expected.vpr"
 
   private val console_logger = ViperStdOutLogger("parsingTest logger", "ALL")
 
@@ -32,55 +31,14 @@ class ReformatterTest extends AnyWordSpec with Matchers with ScalatestRouteTest 
     }
     
     def check_inner(name: String): Unit = {
-      val prefix = "src/test/resources/viper/reformatter/"
-      val input_path = prefix + name + ".vpr"
-      val expected_path = prefix + name + "_expected.vpr"
-
-      val ast = ast_gen.generateViperParseAst(input_path).get
+      val ast = ast_gen.generateViperParseAst(snippet).get
       val reformatted = ReformatPrettyPrinter.reformatProgram(ast);
-      val actual = DiskLoader.loadContent(Path.of(expected_path)).get
+      val actual = DiskLoader.loadContent(Path.of(snippet_expected)).get
       assert(reformatted == actual)
     }
 
-    s"adts" in {
+    s"should be able to reformat a file correctly" in {
       check_inner("adts")
     }
-
-    s"domains" in {
-      check_inner("domains")
-    }
-    
-    s"expressions" in {
-      check_inner("expressions")
-    }
-
-    s"fields" in {
-      check_inner("fields")
-    }
-
-    s"functions" in {
-      check_inner("functions")
-    }
-
-    s"macros" in {
-      check_inner("macros")
-    }
-
-    s"methods" in {
-      check_inner("methods")
-    }
-
-    s"predicates" in {
-      check_inner("predicates")
-    }
-
-    s"trailing_comment" in {
-      check_inner("trailing_comment")
-    }
-
-    s"not_working" in {
-      check_inner("not_working")
-    }
-
   }
 }
