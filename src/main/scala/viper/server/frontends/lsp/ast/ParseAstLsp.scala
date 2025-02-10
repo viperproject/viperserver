@@ -8,7 +8,7 @@ package viper.silver.parser
 
 import viper.server.frontends.lsp.Common
 import viper.silver.ast.utility.lsp._
-import viper.silver.ast.LineColumnPosition
+import viper.silver.ast.{AnySetCardinality, LineColumnPosition}
 import viper.silver.plugin.standard.adt._
 import viper.silver.plugin.standard.termination.PDecreasesKeyword
 
@@ -169,7 +169,7 @@ object HasCodeActions {
       case _ => e.op.rs
     }
   }
-  private def containsSetOp(e: PExp) = e.find({case n: PKwOp => n}).nonEmpty // Correct?
+  private def containsSetOp(e: PExp) = e.find({case PReserved(n) if n.isInstanceOf[PSetToSetOp] => n}).nonEmpty // Correct?
   private def getIdentifierNames(e: PExp) : Set[String] = e.deepCollect({case n: PIdnUseExp => n.name}).toSet
   private def findSelfAssignment(stmts : PSeqn, idns: Set[String]) : Option[(String, PExp)] = {
     stmts.find({case p: PAssign if p.rhs.isInstanceOf[PBinExp]=> (
@@ -192,27 +192,31 @@ object HasCodeActions {
   private def getCodeAction(p: PProgram, w: PWhile) : CodeAction = {
     val cond = w.cond.inner.asInstanceOf[PBinExp]
     val condOp = cond.op.rs
+    val containsSetOpCond = containsSetOp(cond)
     var condBound = cond.right
+    var middle = cond.left
     var selfAssignment = findSelfAssignment(w.body, getIdentifierNames(cond.left))
     if (!selfAssignment.isDefined) {
       selfAssignment = findSelfAssignment(w.body, getIdentifierNames(cond.right))
       condBound = cond.left
+      middle = cond.right
     }
     selfAssignment match {
       case Some(ass) =>
         val idn = ass._1
         val rhs = ass._2.asInstanceOf[PBinExp]
+        val containsSetOpRhs = containsSetOp(rhs)
 
         val editRp = RangePosition(w.body.ss.l).get
         val editRange = Common.toRange(editRp)
         editRange.setEnd(editRange.getStart)
         val rp = RangePosition(w).get // TODO Stephanie
-        val decrIndent = " "*(rp.start.column+1) // TODO obtain indentation differently
+        val decrIndent = " "*rp.start.column // TODO obtain indentation differently
         val braceIndent = " "*(rp.start.column-1)
 
         val literalAssign = findLiteralAssignment(p, idn)
         val bound = if (literalAssign.isDefined) literalAssign.get.pretty
-        else if (containsSetOp(cond)) "Set[Int]()" // If contains div rational?
+        else if (containsSetOpCond && containsSetOpRhs) "Set[Int]()" // If contains div rational?
         else "0" // TODO Stephanie
 
         val isIncrSelfAssign = isIncreasingSelfAssignment(rhs)
@@ -220,10 +224,11 @@ object HasCodeActions {
           updateExp(condBound, if (isIncrSelfAssign) 1 else -1) else condBound
         val lowerBound = if (isIncrSelfAssign) bound else updatedCondBound.pretty
         val upperBound = if (isIncrSelfAssign) updatedCondBound.pretty else bound
-        val decreasesExp = if (isIncrSelfAssign) upperBound + " " + oppositeOp(rhs).token + " " + idn else idn
+        val decreasesOp = if (!containsSetOpCond && containsSetOpRhs) PSymOp.Minus.token else oppositeOp(rhs).token
+        val decreasesExp = if (isIncrSelfAssign) s"$upperBound $decreasesOp ${middle.pretty}" else middle.pretty
 
-        val invariant = "\n"+decrIndent + PKw.Invariant.keyword +" "+ lowerBound + " " + PSymOp.Le.symbol + " " + idn + " " + PSymOp.Le.symbol + " " + upperBound + "\n"
-        val decreases = decrIndent + PDecreasesKeyword.keyword +" "+ decreasesExp + "\n" + braceIndent
+        val invariant = s"\n$decrIndent ${PKw.Invariant.keyword} $lowerBound ${PSymOp.Le.symbol} ${middle.pretty} ${PSymOp.Le.symbol} $upperBound\n"
+        val decreases = s"$decrIndent ${PDecreasesKeyword.keyword} $decreasesExp\n$braceIndent"
 
         CodeAction(invariant + decreases, editRange, SelectionBoundScope(rp))
     }
