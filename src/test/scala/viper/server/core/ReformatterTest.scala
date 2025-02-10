@@ -20,7 +20,7 @@ import java.nio.file.{NoSuchFileException, Path}
 
 class ReformatterTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
   private val snippet = "src/test/resources/viper/reformat_snippet.vpr"
-  private val snippet_expected = "src/test/resources/viper/reformatter/reformat_snippet_expected.vpr"
+  private val snippet_expected = "src/test/resources/viper/reformat_snippet_expected.vpr"
 
   private val console_logger = ViperStdOutLogger("parsingTest logger", "ALL")
 
