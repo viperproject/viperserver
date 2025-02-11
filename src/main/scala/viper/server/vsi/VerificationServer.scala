@@ -280,7 +280,7 @@ trait DefaultVerificationServerStart extends VerificationServer {
   override def start(active_jobs: Int): Future[Done] = {
     ast_jobs = new JobPool("VSI-AST-pool", active_jobs)
     ver_jobs = new JobPool("VSI-Verification-pool", active_jobs)
-    _termActor = system.actorOf(Terminator.props(ast_jobs, ver_jobs), "terminator")
+    _termActor = system.actorOf(Terminator.props(ast_jobs, ver_jobs), Terminator.GetNextTerminatorName)
     isRunning = true
     Future.successful(Done)
   }
