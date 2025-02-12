@@ -110,7 +110,8 @@ class VerificationWorker(private val command: List[String],
   }
 
   override def registerTaskEnd(success: Boolean): Unit = {
-    // We need to enqueue the message here instead of doing it in the constructor
+    // We need to enqueue the message for choosing a specific verification target
+    // in the source code here instead of doing it in the constructor
     // of the verification worker, because at that point the task hasn't been created yet,
     // and thus the message cant be sent.
     target match {

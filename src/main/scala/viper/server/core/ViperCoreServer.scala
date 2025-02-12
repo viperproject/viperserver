@@ -123,9 +123,7 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
                 case None => (p, None)
               }
 
-              val worker = new VerificationWorker(args, programId, updated_program, position, logger, config)(executor)
-
-              worker
+              new VerificationWorker(args, programId, updated_program, position, logger, config)(executor)
             })).recover({
               case e: Throwable =>
                 logger.error(s"### An exception has occurred while constructing Viper AST: $e")
