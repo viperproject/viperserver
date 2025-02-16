@@ -157,8 +157,8 @@ trait ProjectManager extends FullManager with ProjectAware {
   override def addCodeAction(first: Boolean)(vs: Seq[lsp.CodeAction]): Unit =
     addSib(uri => if (uri == file.file_uri) super.addCodeAction(first) else getInProject(uri).addCodeAction(first), vs)
   def getCodeActionsProject(uri: String, pos: lsp4j.Position): Seq[lsp4j.CodeAction] = {
-    if (uri == file.file_uri) super.getCodeAction(Some(pos))
-    else super.getCodeAction(None) ++ getInProject(uri).getCodeAction(Some(pos))
+    if (uri == file.file_uri) super.getCodeAction(Some(pos),None)
+    else getInProject(uri).getCodeAction(Some(pos),None)
   }
 
   def getIdentAtPos(uri: String, pos: lsp4j.Position): Option[(String, Range)] =

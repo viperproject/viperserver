@@ -29,8 +29,8 @@ case object CodeLensTranslator extends Translates[lsp.CodeLens, lsp4j.CodeLens, 
   }
 }
 
-case object DiagnosticTranslator extends Translates[Diagnostic, lsp4j.Diagnostic, Unit] {
-  override def translate(diag: Diagnostic)(i: Unit): lsp4j.Diagnostic = {
+case object DiagnosticTranslator extends Translates[Diagnostic, lsp4j.Diagnostic, (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)] {
+  override def translate(diag: Diagnostic)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)): lsp4j.Diagnostic = {
     val range = Common.toRange(diag.position)
     new lsp4j.Diagnostic(range, diag.message, diag.severity, "viper")
   }
@@ -215,12 +215,14 @@ case object CodeActionTranslator extends Translates[lsp.CodeAction, lsp4j.CodeAc
   override def translate(ca: lsp.CodeAction)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)): lsp4j.CodeAction = ???
   override def translate(cas: Seq[lsp.CodeAction])(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean))(implicit log: Logger): Seq[lsp4j.CodeAction] = {
     cas.map(ca => {
-      val codeAction = new lsp4j.CodeAction("Add invariant")
+      val codeAction = new lsp4j.CodeAction(ca.title)
       val textEdits = Seq(new lsp4j.TextEdit(ca.editRange, ca.edit)).asJava
       val uri = ca.bound.scope.file.toUri().toString()
       val edits = Map(uri -> textEdits).asJava
       val workspaceEdit = new lsp4j.WorkspaceEdit(edits)
       codeAction.setEdit(workspaceEdit)
+      codeAction.setDiagnostics(ca.resolvedDiags.asJava)
+      codeAction.setKind(ca.kind)
       codeAction
     })
   }

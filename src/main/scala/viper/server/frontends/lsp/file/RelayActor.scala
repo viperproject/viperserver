@@ -117,6 +117,8 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
 
     case PProgramReport(typeckSuccess, pProgram) =>
       // New project
+      println("TEST TEST TEST TEST TEST pProgram")
+      println(pProgram)
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] got new pProgram for ${task.filename}")
       val files = pProgram.imports.flatMap(_.resolved).map(_.toUri().toString()).toSet
       task.setupProject(files)
@@ -139,6 +141,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
         task.addSignatureHelp(true)(HasSignatureHelps(pProgram))
         task.addSuggestionScopeRange(true)(HasSuggestionScopeRanges(pProgram))
         task.addCompletionProposal(true)(HasCompletionProposals(pProgram))
+        // Only for code actions not associated to a diagnostic, others are added in processErrors
         task.addCodeAction(true)(HasCodeActions(pProgram))
       }
     case StatisticsReport(m, f, p, _, _) =>

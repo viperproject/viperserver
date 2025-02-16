@@ -12,15 +12,15 @@ import viper.server.frontends.lsp.ClientCoordinator
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
-import viper.server.frontends.lsp.file.FileContent
 import viper.server.frontends.lsp.Lsp4jSemanticHighlight
 import VerificationPhase._
-
 import org.eclipse.lsp4j
 import viper.silver.ast.utility.lsp
 import viper.server.frontends.lsp.Common
+import viper.silver.ast.utility.lsp.{SelectableInBound, SelectionBoundScope, SelectionBoundTrait}
 
-case class Diagnostic(backendClassName: Option[String], position: lsp.RangePosition, message: String, severity: lsp4j.DiagnosticSeverity, cached: Boolean, errorMsgPrefix: Option[String]) extends lsp.HasRangePositions with lsp.BelongsToFile {
+case class Diagnostic(backendClassName: Option[String], position: lsp.RangePosition, message: String, severity: lsp4j.DiagnosticSeverity, cached: Boolean, errorMsgPrefix: Option[String]) extends SelectableInBound with lsp.HasRangePositions with lsp.BelongsToFile {
+  override val bound: SelectionBoundTrait = SelectionBoundScope(position)
   override def rangePositions: Seq[lsp.RangePosition] = Seq(position)
   override def file: Path = position.file
 }
@@ -39,6 +39,7 @@ trait Manager {
   def addCodeLens(first: Boolean)(vs: Seq[lsp.CodeLens]): Unit
 
   def getDiagnostic(): Seq[lsp4j.Diagnostic]
+  def getDiagnosticBy(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]) : Seq[lsp4j.Diagnostic]
   def addDiagnostic(first: Boolean)(vs: Seq[Diagnostic]): Unit
   def resetDiagnostics(first: Boolean): Unit
 
@@ -70,6 +71,9 @@ trait Manager {
 
   def getCompletionProposal(scope: lsp.SuggestionScope, pos: Option[lsp4j.Position], char: Char): Seq[lsp4j.CompletionItem]
   def addCompletionProposal(first: Boolean)(vs: Seq[lsp.CompletionProposal]): Unit
+
+  def getCodeAction(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]): Seq[lsp4j.CodeAction]
+  def addCodeAction(first: Boolean)(vs: Seq[lsp.CodeAction]): Unit
 }
 
 trait StandardManager extends Manager {
@@ -98,14 +102,15 @@ trait StandardManager extends Manager {
   def addCodeLens(first: Boolean)(vs: Seq[lsp.CodeLens]): Unit = add(codeLensContainer, first, vs)
 
   // Diagnostic
-  type DiagnosticContainer = utility.StageArrayContainer.ArrayContainer[Diagnostic, lsp4j.Diagnostic]
+  type DiagnosticContainer = utility.StageRangeContainer.RangeContainer[Diagnostic, lsp4j.Diagnostic]
   val diagnosticContainer: DiagnosticContainer = utility.LspContainer(utility.DiagnosticTranslator, publishDiags)
   private def publishDiags(): Unit = {
     val diagnosticParams = new PublishDiagnosticsParams(file.file_uri, getDiagnostic().asJava)
     coordinator.client.publishDiagnostics(diagnosticParams)
   }
   // containers.addOne(diagnosticContainer)
-  def getDiagnostic() = diagnosticContainer.get(())
+  def getDiagnostic() = diagnosticContainer.all(_=>true).map(d => utility.DiagnosticTranslator.translate(d)(None,None,true))
+  def getDiagnosticBy(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]) = diagnosticContainer.get((pos,keyword,true))
   def addDiagnostic(first: Boolean)(vs: Seq[Diagnostic]): Unit = add(diagnosticContainer, first, vs)
   def removeDiagnostics() = diagnosticContainer.resetAll()
   def resetDiagnostics(first: Boolean): Unit = diagnosticContainer.reset(first)
@@ -183,7 +188,7 @@ trait StandardManager extends Manager {
   type CodeActionContainer = utility.StageRangeContainer.RangeContainer[lsp.CodeAction, lsp4j.CodeAction]
   val codeActionContainer: CodeActionContainer = utility.LspContainer(utility.CodeActionTranslator)
   containers.addOne(codeActionContainer)
-  def getCodeAction(pos: Option[lsp4j.Position]) = codeActionContainer.get((pos,None,true))
+  def getCodeAction(pos: Option[lsp4j.Position], keyword: Option[(String, lsp4j.Range)]) = codeActionContainer.get((pos,None,true))
   def addCodeAction(first: Boolean)(vs: Seq[lsp.CodeAction]): Unit = add(codeActionContainer, first, vs)
 }
 

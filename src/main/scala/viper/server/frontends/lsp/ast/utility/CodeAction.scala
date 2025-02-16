@@ -13,9 +13,12 @@ trait HasCodeActions {
 }
 
 case class CodeAction(
-  edit: String, /* Workspace edit */
-  editRange: lsp4j.Range,
-  bound: SelectionBoundScopeTrait,
+                       title: String,
+                       edit: String, /* Workspace edit */
+                       editRange: lsp4j.Range,
+                       bound: SelectionBoundScopeTrait,
+                       kind: String,
+                       resolvedDiags: Seq[lsp4j.Diagnostic] = Seq.empty
 ) extends SelectableInBound with HasRangePositions {
   override def rangePositions: Seq[RangePosition] = bound.rangePositions
 }
