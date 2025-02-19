@@ -333,7 +333,8 @@ trait VerificationManager extends Manager with Branches {
     .map(_ match {
         // Support for red beams indicating branch failure
         case (ErrorType.branchFailureInfo, errs : Seq[PostconditionViolatedBranch]) =>
-          val branchFailureDetails = errs.map(err => BranchFailureDetails(err.readableMessage,
+          val branchFailureDetails = errs.map(err =>
+            BranchFailureDetails(err.readableMessage,
               getBranchRange(this.file_uri,
                 lsp.Common.toPosition(err.pos),
                 err.leftIsFatal,
