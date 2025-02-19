@@ -253,9 +253,10 @@ trait VerificationManager extends Manager with Branches {
     }
   }
 
-  private case object CodeActionType {
-    val undeclaredField : Int = 0
-    val fieldPermError : Int = 1
+  private case object ErrorType {
+    val branchFailureInfo : Int = 0
+    val undeclaredField : Int = 1
+    val fieldPermError : Int = 2
   }
 
   private val startOfFileRange =  new lsp4j.Range(new lsp4j.Position(0, 0), new lsp4j.Position(0, 0))
@@ -320,24 +321,37 @@ trait VerificationManager extends Manager with Branches {
     }).toSeq
   }
 
-  private def addCodeActions(errors : Seq[AbstractError]) = {
+  private def processByType(errors : Seq[AbstractError]) = {
     errors.groupBy({
+      case _: PostconditionViolatedBranch => ErrorType.branchFailureInfo
       case e: TypecheckerError if e.node.isDefined
-        && e.node.get.isInstanceOf[PFieldAccess] => CodeActionType.undeclaredField
+        && e.node.get.isInstanceOf[PFieldAccess] => ErrorType.undeclaredField
       case e : VerificationError if e.reason.isInstanceOf[InsufficientPermission]
-        && e.reason.offendingNode.isInstanceOf[FieldAccess] => CodeActionType.fieldPermError
+        && e.reason.offendingNode.isInstanceOf[FieldAccess] => ErrorType.fieldPermError
       case _ => -1
     }).filter(t => t._1 >= 0)
-    .map(e => {
-      val (caType, filteredErrors) = e
-      caType match {
-        case CodeActionType.undeclaredField =>
-          val filteredErrors_ = filteredErrors.asInstanceOf[Seq[TypecheckerError]]
-          this.addCodeAction(first = true)(getCodeActionsForUndeclaredFields(filteredErrors_))
-        case CodeActionType.fieldPermError =>
-          val filteredErrors_ = filteredErrors.asInstanceOf[Seq[VerificationError]]
-          this.addCodeAction(first = false)(getCodeActionsForFieldPermissionError(filteredErrors_))
-      }
+    .map(_ match {
+        // Support for red beams indicating branch failure
+        case (ErrorType.branchFailureInfo, errs : Seq[PostconditionViolatedBranch]) =>
+          val branchFailureDetails = errs.map(err => BranchFailureDetails(err.readableMessage,
+              getBranchRange(this.file_uri,
+                lsp.Common.toPosition(err.pos),
+                err.leftIsFatal,
+                err.rightIsFatal)
+            ))
+            if (branchFailureDetails.nonEmpty) {
+              val params = lsp.StateChangeParams(
+                VerificationRunning.id,
+                uri=this.file_uri,
+                branchFailureDetails = branchFailureDetails.toArray
+              )
+              coordinator.sendStateChangeNotification(params, Some(this))
+            }
+        // Code actions
+        case (ErrorType.undeclaredField, errs : Seq[TypecheckerError]) =>
+          this.addCodeAction(first = true)(getCodeActionsForUndeclaredFields(errs))
+        case (ErrorType.fieldPermError, errs : Seq[VerificationError]) =>
+          this.addCodeAction(first = false)(getCodeActionsForFieldPermissionError(errs))
     })
   }
 
@@ -413,24 +427,7 @@ trait VerificationManager extends Manager with Branches {
       addDiagnostic(phase.order <= VerificationPhase.TypeckEnd.order)(diags.map(_._2))
     }
 
-    // Add code actions
-    addCodeActions(errors)
-
-    // Support for red beams indicating branch failure
-    val branchFailureDetails = errors.collect({case err: PostconditionViolatedBranch =>
-      BranchFailureDetails(err.readableMessage,
-        getBranchRange(this.file_uri,
-          lsp.Common.toPosition(err.pos),
-          err.leftIsFatal,
-          err.rightIsFatal)
-      )})
-    if (branchFailureDetails.nonEmpty) {
-      val params = lsp.StateChangeParams(
-        VerificationRunning.id,
-        uri=this.file_uri,
-        branchFailureDetails = branchFailureDetails.toArray
-      )
-      coordinator.sendStateChangeNotification(params, Some(this))
-    }
+    // Right now: Add red beams and code actions
+    processByType(errors)
   }
 }
