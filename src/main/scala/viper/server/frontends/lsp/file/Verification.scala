@@ -286,7 +286,7 @@ trait VerificationManager extends Manager with Branches {
       })
       faErrors.flatMap(err => {
         val f = err.reason.offendingNode
-        val seqn = f.getAncestor[Seqn] // TODO Stephanie check
+        val seqn = f.getAncestor[Seqn]
         var parentWithSpec : Option[MemberWithSpec] = None
         if (seqn.isDefined) {
           parentWithSpec = seqn.get.getAncestor[MemberWithSpec]
@@ -341,6 +341,32 @@ trait VerificationManager extends Manager with Branches {
     })
   }
 
+  def getMethodIdentifier(error: PostconditionViolatedBranch): Option[(String, lsp4j.Range)] = {
+    val content = getInProject(this.file_uri).content
+    error.offendingNode.getAncestor[Method].map(m =>
+      content.iterForward(Common.toPosition(m.pos))
+              .dropWhile(c => c._1.isLetter)
+              .find({ case (c, _) => Common.isIdentChar(c) })
+              .map(t => content.getIdentAtPos(t._2))
+              .getOrElse(None)
+    ).getOrElse(None)
+  }
+
+  private def getErrorRangeAndPos(error: AbstractError) : (lsp4j.Range, RangePosition) = {
+    val range = toRange(error.pos)
+    val rp = toRangePosition(error.pos)
+    error match {
+      case e : PostconditionViolatedBranch =>
+      getMethodIdentifier(e).map(i => {
+        val (_, identRange) = i
+        (identRange, new RangePosition(path,
+        LineColumnPosition(identRange.getStart.getLine+1, identRange.getStart.getCharacter+1),
+        LineColumnPosition(identRange.getEnd.getLine+1, identRange.getEnd.getCharacter+1)))
+      }).getOrElse((range,rp))
+      case _ => (range,rp)
+    }
+  }
+
   def processErrors(backendClassName: Option[String], errors: Seq[AbstractError], errorMsgPrefix: Option[String] = None): Unit = {
     // Add diagnostics
     val errMsgPrefixWithWhitespace = errorMsgPrefix.map(s => s"$s ").getOrElse("")
@@ -370,8 +396,7 @@ trait VerificationManager extends Manager with Branches {
         errorType = "Verification error"
       }
 
-      val range = toRange(err.pos)
-      val rp = toRangePosition(err.pos)
+      val (range,rp) = getErrorRangeAndPos(err)
 
       val errFullId = if(err.fullId != null) s"[${err.fullId}] " else ""
       val backendString = if (backendClassName.isDefined) s" [${backendClassName.get}]" else ""
@@ -393,8 +418,12 @@ trait VerificationManager extends Manager with Branches {
 
     // Support for red beams indicating branch failure
     val branchFailureDetails = errors.collect({case err: PostconditionViolatedBranch =>
-      BranchFailureDetails(err.readableMessage, getBranchRange(this.file_uri, lsp.Common.toPosition(err.pos), err.leftIsFatal, err.rightIsFatal))
-    })
+      BranchFailureDetails(err.readableMessage,
+        getBranchRange(this.file_uri,
+          lsp.Common.toPosition(err.pos),
+          err.leftIsFatal,
+          err.rightIsFatal)
+      )})
     if (branchFailureDetails.nonEmpty) {
       val params = lsp.StateChangeParams(
         VerificationRunning.id,
