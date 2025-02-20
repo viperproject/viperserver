@@ -151,17 +151,26 @@ object HasCompletionProposals {
 object HasCodeActions {
   private def isIncreasingSelfAssignment(e: PBinExp): Boolean = {
     e.op.rs match {
-      case PSymOp.Plus | PSymOp.Mul | PKwOp.Union => true
+      case PSymOp.Plus | PSymOp.Mul | PKwOp.Union | PSymOp.Append => true
       case _ => false
     }
   }
-  private def getIdentifierNames(e: PExp) : Set[String] = e.deepCollect({case n: PIdnUseExp => n.name}).toSet
+  private def getIdentifierNames(e: PExp) : Set[String] = e.deepCollect(
+    { case n: PLookup => getIdentifierNames(n.base)
+      case n: PIdnUseExp => Set(n.name)}
+  ).reduceOption((s,e) => s union e)
+   .getOrElse(Set.empty)
   private def findSelfAssignment(stmts : PSeqn, idns: Set[String]) : Option[(String, PExp)] = {
-    stmts.find({case p: PAssign if p.rhs.isInstanceOf[PBinExp]=> (
-      idns.intersect(
-        (p.targets.first ++ p.targets.inner.map(_._1)).map(_.deepCollect({case n: PIdnUseExp => n.name}))
-          .flatten.toSet.intersect(getIdentifierNames(p.rhs))).headOption, p.rhs)})
-      .find(t => t._1.isDefined)}.map(t => (t._1.get, t._2))
+    stmts.deepCollect({case p: PAssign if p.rhs.isInstanceOf[PBinExp]=> (
+      idns.intersect((p.targets.first ++ p.targets.inner.map(_._1))
+        .collect({
+          case i: PLookup => getIdentifierNames(i)
+          case i: PIdnUseExp => Set(i.name)}
+        ).reduceOption((s,e) => s union e)
+      .getOrElse(Set.empty)
+      .intersect(getIdentifierNames(p.rhs))).headOption, p.rhs)})
+      .find(t => t._1.isDefined)}
+      .map(t => (t._1.get, t._2))
   private def containsIdn(ass: PAssign, idn: String): Boolean = {
     (ass.targets.first ++ ass.targets.inner.map(_._1)).asInstanceOf[Seq[PExp]]
       .map(getIdentifierNames(_)).flatten.toSet
@@ -185,17 +194,14 @@ object HasCodeActions {
       None
     }
   }
-  private def updateExp(e: PExp, j: Int): PExp = {
-    val newExp = e match {
-      case PIntLit(i) => PIntLit(i + j)(e.pos)
-      case _ => PBinExp(e, PReserved(if (j > 0) PSymOp.Plus else PSymOp.Minus)(e.pos), PIntLit(-j)(e.pos))(e.pos)
-    }
-    newExp
+  private def updateExp(e: PExp, j: Int): PExp = e match {
+    case PIntLit(i) => PIntLit(i + j)(e.pos)
+    case _ => PBinExp(e, PReserved(if (j > 0) PSymOp.Plus else PSymOp.Minus)(e.pos), PIntLit(-j)(e.pos))(e.pos)
   }
   private def getEditRange(n: PNode): Option[Range] = RangePosition(n)
     .map(Common.toRange(_)).map(r => {r.setEnd(r.getStart); r})
     .headOption
-  private def getCodeActionAddingInvariant(w: PWhile) : CodeAction = {
+  private def getCodeActionsLoopInvariants(w: PWhile) : Seq[CodeAction] = {
     val cond = w.cond.inner.asInstanceOf[PBinExp]
     var condBound = cond.right
     var middle = cond.left
@@ -205,33 +211,39 @@ object HasCodeActions {
       condBound = cond.left
       middle = cond.right
     }
-    val rp = RangePosition(w)
+    val whileRp = RangePosition(w)
     val editRange = getEditRange(w.body.ss.l)
-    (rp, editRange, selfAssignment) match {
-      case (Some(rp), Some(er), Some(sa)) =>
-        val (idn, saRhs) = sa
-        val la = findClosestLiteralAssignment(w, idn)
+    Seq((whileRp, selfAssignment, editRange)).collect({
+        case (Some(wRp), Some(sa), Some(er)) =>
+          val (idn, saRhs) = sa
+          val la = findClosestLiteralAssignment(w, idn)
 
-        val bound = if (la.isDefined) la.get.pretty else "0"
-        val isIncrSelfAssign = isIncreasingSelfAssignment(saRhs.asInstanceOf[PBinExp])
-        val updatedCondBound = if (cond.op.rs == PSymOp.Le || cond.op.rs == PSymOp.Ge)
-          updateExp(condBound, if (isIncrSelfAssign) 1 else -1) else condBound
-        val lowerBound = if (isIncrSelfAssign) bound else updatedCondBound.pretty
-        val upperBound = if (isIncrSelfAssign) updatedCondBound.pretty else bound
-        val decreasesExp = if (isIncrSelfAssign) s"$upperBound ${PSymOp.Minus.token} ${middle.pretty}" else middle.pretty
+          val bound = if (la.isDefined) la.get.pretty else "0"
+          val isIncrSelfAssign = isIncreasingSelfAssignment(saRhs.asInstanceOf[PBinExp])
+          val updatedCondBound = if (cond.op.rs == PSymOp.Le || cond.op.rs == PSymOp.Ge)
+            updateExp(condBound, if (isIncrSelfAssign) 1 else -1) else condBound
+          val lowerBound = if (isIncrSelfAssign) bound else updatedCondBound.pretty
+          val upperBound = if (isIncrSelfAssign) updatedCondBound.pretty else bound
+          val decreasesExp = if (isIncrSelfAssign) s"$upperBound ${PSymOp.Minus.token} ${middle.pretty}" else middle.pretty
 
-        val indent = " "*(rp.start.column-1)
-        val beforeInvKeyword = if (rp.start.line == er.getStart.getLine) "" else s"\n$indent"
-        val invariant = s"$beforeInvKeyword  ${PKw.Invariant.keyword} $lowerBound ${PSymOp.Le.symbol} ${middle.pretty} ${PSymOp.Le.symbol} $upperBound\n"
-        val decreases = s"$indent  ${PDecreasesKeyword.keyword} $decreasesExp\n$indent"
+          val indent = " "*(wRp.start.column-1)
+          val invs = w.invs.first ++ w.invs.inner.map(_._2)
+          val prevLinePos = if (invs.nonEmpty) RangePosition(invs.last).getOrElse(wRp) else wRp
+          val optNewLine = if (prevLinePos.line == er.getStart.getLine+1) s"\n$indent" else ""
+          val invariant = s"$optNewLine  ${PKw.Invariant.keyword} $lowerBound ${PSymOp.Le.symbol} ${middle.pretty} ${PSymOp.Le.symbol} $upperBound\n$indent"
+          val decreases = s"$optNewLine  ${PDecreasesKeyword.keyword} $decreasesExp\n$indent"
 
-        CodeAction("Add loop invariant", invariant + decreases, er, SelectionBoundScope(rp), CodeActionKind.Empty, Seq.empty)
-    }
+          Seq(
+            CodeAction("Add invariant", invariant , er, SelectionBoundScope(wRp), CodeActionKind.Empty, Seq.empty),
+            CodeAction("Add decreases", decreases, er, SelectionBoundScope(wRp), CodeActionKind.Empty, Seq.empty)
+          )
+      }).flatten
   }
 
   def apply(p: PProgram): Seq[CodeAction] = {
     p.deepCollect({ case w: PWhile if w.cond.inner.isInstanceOf[PBinExp] => w})
-      .collect(getCodeActionAddingInvariant(_))
+      .collect(getCodeActionsLoopInvariants(_))
+      .flatten
   }
 }
 
