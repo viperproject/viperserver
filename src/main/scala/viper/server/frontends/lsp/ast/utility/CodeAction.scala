@@ -12,10 +12,13 @@ trait HasCodeActions {
   def getCodeActions: Seq[CodeAction]
 }
 
+trait CaAction
+case class CaEdit(edit : String, range : lsp4j.Range) extends CaAction
+case class CaCommand(cmd : String, args : Seq[AnyRef]) extends CaAction
+
 case class CodeAction(
                        title: String,
-                       edit: String, /* Workspace edit */
-                       editRange: lsp4j.Range,
+                       action: CaAction,
                        bound: SelectionBoundScopeTrait,
                        kind: String,
                        resolvedDiags: Seq[lsp4j.Diagnostic] = Seq.empty

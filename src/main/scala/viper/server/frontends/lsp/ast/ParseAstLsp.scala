@@ -234,8 +234,8 @@ object HasCodeActions {
           val decreases = s"$optNewLine  ${PDecreasesKeyword.keyword} $decreasesExp\n$indent"
 
           Seq(
-            CodeAction("Add invariant", invariant , er, SelectionBoundScope(wRp), CodeActionKind.Empty, Seq.empty),
-            CodeAction("Add decreases", decreases, er, SelectionBoundScope(wRp), CodeActionKind.Empty, Seq.empty)
+            CodeAction("Add invariant", CaEdit(invariant , er), SelectionBoundScope(wRp), CodeActionKind.Empty, Seq.empty),
+            CodeAction("Add decreases", CaEdit(decreases, er), SelectionBoundScope(wRp), CodeActionKind.Empty, Seq.empty)
           )
       }).flatten
   }

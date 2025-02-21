@@ -22,7 +22,7 @@ import viper.silver.parser.{PFieldAccess, PKw}
 import viper.silver.ast.{AbstractSourcePosition, FieldAccess, HasLineColumn, Label, LineColumnPosition, MemberWithSpec, Method, Position, Seqn, While}
 import org.eclipse.lsp4j
 import viper.server.frontends.lsp.{BranchFailureDetails, Common}
-import viper.silver.ast.utility.lsp.{CodeAction, RangePosition, SelectionBoundScope}
+import viper.silver.ast.utility.lsp.{CaCommand, CaEdit, CodeAction, RangePosition, SelectionBoundScope}
 import viper.silver.verifier.errors.PostconditionViolatedBranch
 import viper.silver.verifier.reasons.InsufficientPermission
 
@@ -253,13 +253,10 @@ trait VerificationManager extends Manager with Branches {
     }
   }
 
-  private case object ErrorType {
-    val branchFailureInfo : Int = 0
-    val undeclaredField : Int = 1
-    val fieldPermError : Int = 2
+  private object ErrorType extends Enumeration(1) {
+    val branchFailureInfo, undeclaredField, fieldPermError = Value
   }
 
-  private val startOfFileRange =  new lsp4j.Range(new lsp4j.Position(0, 0), new lsp4j.Position(0, 0))
   private def getCodeActionsForUndeclaredFields(errors: Seq[TypecheckerError]) : Seq[CodeAction] = {
     errors.groupBy(_.node.get)
       .flatMap(fa => {
@@ -270,8 +267,8 @@ trait VerificationManager extends Manager with Branches {
           getDiagnosticBy(Some(pos), None)
         })
         faErrors.map(err => {
-          CodeAction("Add field declaration", s"field ${fieldAccess.idnref.pretty} : [your type]\n",
-            startOfFileRange,
+          CodeAction("Add field declaration",
+            CaCommand("viper.addFieldDeclaration", Seq(fieldAccess.idnref.pretty)),
             SelectionBoundScope(toRangePosition(err.pos)),
             lsp4j.CodeActionKind.QuickFix,
             faDiags)
@@ -311,8 +308,8 @@ trait VerificationManager extends Manager with Branches {
           val parentRangePosition = toRangePosition(parent.pos)
           val indent = " "*(parentRangePosition.start.column-1)
           val beforeKeyword = if (closingBracketInSameLine) s"\n$indent  " else "  "
-          CodeAction("Add access precondition", s"$beforeKeyword$keyword acc($faStr)\n$indent",
-            new lsp4j.Range(editPos, editPos),
+          CodeAction("Add access precondition",
+            CaEdit(s"$beforeKeyword$keyword acc($faStr)\n$indent", new lsp4j.Range(editPos, editPos)),
             SelectionBoundScope(toRangePosition(err.pos)),
             lsp4j.CodeActionKind.QuickFix,
             faDiags)
@@ -329,8 +326,7 @@ trait VerificationManager extends Manager with Branches {
       case e : VerificationError if e.reason.isInstanceOf[InsufficientPermission]
         && e.reason.offendingNode.isInstanceOf[FieldAccess] => ErrorType.fieldPermError
       case _ => -1
-    }).filter(t => t._1 >= 0)
-    .map(_ match {
+    }).map(_ match {
         // Support for red beams indicating branch failure
         case (ErrorType.branchFailureInfo, errs : Seq[PostconditionViolatedBranch]) =>
           val branchFailureDetails = errs.map(err =>
@@ -353,6 +349,7 @@ trait VerificationManager extends Manager with Branches {
           this.addCodeAction(first = true)(getCodeActionsForUndeclaredFields(errs))
         case (ErrorType.fieldPermError, errs : Seq[VerificationError]) =>
           this.addCodeAction(first = false)(getCodeActionsForFieldPermissionError(errs))
+        case _ =>
     })
   }
 
