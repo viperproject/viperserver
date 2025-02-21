@@ -267,7 +267,7 @@ trait VerificationManager extends Manager with Branches {
           getDiagnosticBy(Some(pos), None)
         })
         faErrors.map(err => {
-          CodeAction("Add field declaration",
+          CodeAction("Declare field",
             CaCommand("viper.addFieldDeclaration", Seq(fieldAccess.idnref.pretty)),
             SelectionBoundScope(toRangePosition(err.pos)),
             lsp4j.CodeActionKind.QuickFix,
