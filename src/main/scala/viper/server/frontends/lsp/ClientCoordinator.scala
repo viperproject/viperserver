@@ -79,7 +79,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     if (server.isRunning) {
       logger.trace("server is running")
       // This should only be necessary if one wants to verify a closed file for some reason
-      val fm = getFileManager(uri, Some(content))
+      val fm = getFileManager(uri, Option(content))
       // This will be the new project root
       makeEmptyRoot(fm)
       true
@@ -212,7 +212,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     fm
   }
   def ensureFmExists(uri: String, content: String): FileManager = {
-    getFileManager(uri, Some(content))
+    getFileManager(uri, Option(content))
   }
   def getRoot(uri: String): FileManager = {
     val fm = getFileManager(uri)
