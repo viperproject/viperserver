@@ -111,7 +111,7 @@ object HasSignatureHelps {
       case n: PDefine => {
         val bound = SelectionBoundKeyword(n.idndef.name)
         // Start
-        val start = SignatureHelpPart(false, s"define ${n.idndef.pretty}", None)
+        val start = SignatureHelpPart(false, s"${n.define.pretty} ${n.idndef.pretty}", None)
         // Args
         var mappedParams = Seq[SignatureHelpPart]()
         if (n.parameters.isDefined) {
