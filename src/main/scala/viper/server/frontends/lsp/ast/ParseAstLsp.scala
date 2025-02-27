@@ -93,19 +93,20 @@ object HasSignatureHelps {
   def apply(p: PProgram): Seq[SignatureHelp] = {
     def argsToSigHelpPart[T <: PNode](args: PDelimited.Comma[PSym.Paren, T]) : Seq[SignatureHelpPart] = {
       def getSigHelpPart[T <: PNode](arg: T): SignatureHelpPart = SignatureHelpPart(true, arg.pretty, None)
-      args.inner.first.map(getSigHelpPart).toSeq ++ args.inner.inner.flatMap {
+      SignatureHelpPart(false, s"${args.l.pretty}", None) +:
+        (args.inner.first.map(getSigHelpPart).toSeq ++ args.inner.inner.flatMap {
         case (c, arg) => Seq(SignatureHelpPart(false, c.pretty, None), getSigHelpPart(arg))
-      }
+      }) :+ SignatureHelpPart(false, s"${args.r.pretty}", None)
     }
     p.deepCollect({
       case n: PCallable => {
         val bound = SelectionBoundKeyword(n.idndef.name)
         // Start
-        val start = SignatureHelpPart(false, s"${n.keyword.pretty}${n.idndef.pretty}${n.args.l.pretty}", None)
+        val start = SignatureHelpPart(false, s"${n.keyword.pretty}${n.idndef.pretty}", None)
         // Args
         val args = argsToSigHelpPart[PAnyFormalArgDecl](n.args)
         // Tail
-        val tail = SignatureHelpPart(false, s"${n.args.r.pretty}${n.returnNodes.map(_.pretty).mkString}", None)
+        val tail = SignatureHelpPart(false, s"${n.returnNodes.map(_.pretty).mkString}", None)
         Seq(SignatureHelp(start +: args :+ tail, PLspDeclaration.documentation(n), bound))
       }
       case n: PDefine => {
@@ -113,11 +114,9 @@ object HasSignatureHelps {
         // Start
         val start = SignatureHelpPart(false, s"${n.define.pretty} ${n.idndef.pretty}", None)
         // Args
-        var mappedParams = Seq[SignatureHelpPart]()
-        if (n.parameters.isDefined) {
-          val params = n.parameters.get
-          mappedParams = argsToSigHelpPart[PDefineParam](n.parameters.get)
-          mappedParams = SignatureHelpPart(false, s"${params.l.pretty}", None) +: mappedParams :+ SignatureHelpPart(false, s"${params.r.pretty}", None)
+        val mappedParams = n.parameters match {
+          case Some(params) => argsToSigHelpPart[PDefineParam](params)
+          case _ => Seq.empty
         }
         // Tail
         val tail = SignatureHelpPart(false, s" ${n.body.pretty}", None)
