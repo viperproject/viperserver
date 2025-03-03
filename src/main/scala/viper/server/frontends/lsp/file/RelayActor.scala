@@ -7,7 +7,10 @@
 package viper.server.frontends.lsp.file
 
 import akka.actor.{Actor, Props, Status}
+import org.eclipse.lsp4j
+import org.eclipse.lsp4j.Position
 import viper.server.frontends.lsp
+import viper.server.frontends.lsp.{BranchFailureDetails, Common}
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.silver.ast
@@ -139,8 +142,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
         task.addSignatureHelp(true)(HasSignatureHelps(pProgram))
         task.addSuggestionScopeRange(true)(HasSuggestionScopeRanges(pProgram))
         task.addCompletionProposal(true)(HasCompletionProposals(pProgram))
-        // Only for code actions not associated to a diagnostic, others are added in processErrors
-        task.addCodeAction(true)(HasCodeActions(pProgram))
+        task.addCodeAction(true)(HasCodeActions(pProgram,(pos:Position)=>task.getDiagnosticBy(Some(pos),None)))
       }
     case StatisticsReport(m, f, p, _, _) =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] StatisticsReport")
@@ -158,6 +160,25 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] InvalidArgumentsReport")
       markErrorsAsReported(errors)
       task.processErrors(backendClassName, errors, Some(s"Invalid arguments have been passed to the backend $backendClassName:"))
+    case BranchTreeReport(method,tree,beams) =>
+      task.addDiagnostic(false)(
+        Seq(Diagnostic(
+          backendClassName=backendClassName,
+          position=task.content.getMethodIdentifierRangePosition(method),
+          message=tree,
+          severity=lsp4j.DiagnosticSeverity.Error,
+          cached = false,
+          errorMsgPrefix=None
+        )))
+      val details = beams.map(b =>
+        task.getBranchRange(task.file_uri,
+          Common.toPosition(b.e.pos),
+          b.isLeftFatal,
+          b.isRightFatal)
+      ).toArray
+      if (details.nonEmpty) coordinator.sendBranchFailureDetails(
+                              BranchFailureDetails(task.file_uri,details)
+                            )
     case EntitySuccessMessage(_, concerning, _, _) =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] EntitySuccessMessage")
       if (task.progress == null) {

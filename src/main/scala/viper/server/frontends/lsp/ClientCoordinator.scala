@@ -173,6 +173,15 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     }
   }
 
+  /** Notifies the client about details of branch failure for displaying red beams */
+  def sendBranchFailureDetails(details: BranchFailureDetails): Unit = {
+    try {
+      client.sendBranchFailureDetails(details)
+    } catch {
+      case e: Throwable => logger.debug(s"Error while sending branch failure details: $e")
+    }
+  }
+
   def refreshEndings(): Future[Array[String]] = {
     client.requestVprFileEndings().asScala.map(response => {
       _vprFileEndings = Some(response.fileEndings)

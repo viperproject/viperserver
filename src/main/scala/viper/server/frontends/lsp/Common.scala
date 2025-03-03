@@ -9,10 +9,10 @@ package viper.server.frontends.lsp
 import java.net.URI
 import java.nio.file.{Path, Paths}
 
-import org.eclipse.lsp4j.{Position, Range}
+import org.eclipse.lsp4j.{Position, Range, Location}
 import scala.collection.mutable.ArrayBuffer
 import viper.silver.ast
-import org.eclipse.lsp4j.Location
+import viper.silver.ast.utility.lsp
 
 object Common {
 
@@ -26,6 +26,14 @@ object Common {
 
   def filenameFromUri(uri: String): String = {
     Paths.get(uri).getFileName.toString
+  }
+
+  def toRangePosition(path: Path, pos: ast.Position) : lsp.RangePosition = {
+    pos match {
+      case sp: ast.AbstractSourcePosition => lsp.RangePosition(sp.file, sp.start, sp.end.getOrElse(sp.start))
+      case pos: ast.HasLineColumn => lsp.RangePosition(path, pos, pos)
+      case _ => lsp.RangePosition(path, ast.LineColumnPosition(1, 1), ast.LineColumnPosition(1, 1))
+    }
   }
 
   def toPosition(pos: ast.Position): Position = pos match {

@@ -36,4 +36,5 @@ object S2C_Commands {
   // final val StepsAsDecorationOptions = "StepsAsDecorationOptions"
   // final val HeapGraph = "HeapGraph"
   final val UnhandledViperServerMessageType = "UnhandledViperServerMessageType"
+  final val BranchFailureDetails = "BranchFailureDetails"
 }

@@ -6,7 +6,7 @@
 
 package viper.silver.parser
 
-import org.eclipse.lsp4j.{CodeActionKind, Range}
+import org.eclipse.lsp4j.{CodeActionKind, Diagnostic, Position, Range}
 import viper.server.frontends.lsp.Common
 import viper.silver.ast.utility.lsp._
 import viper.silver.ast.LineColumnPosition
@@ -239,9 +239,48 @@ object HasCodeActions {
       }).flatten
   }
 
-  def apply(p: PProgram): Seq[CodeAction] = {
-    p.deepCollect({ case w: PWhile if w.cond.inner.isInstanceOf[PBinExp] => w})
-      .collect(getCodeActionsLoopInvariants(_))
+  private def getCodeActionsForUndeclaredFields(fas: Seq[PFieldAccess], getDiagnostic : Function[Position, Seq[Diagnostic]]) : Seq[CodeAction] = {
+    fas.map(f => (f,RangePosition(f))).collect {
+      case (f, Some(fRp)) =>
+      CodeAction("Declare field",
+        CaCommand("viper.declareField", Seq(f.idnref.pretty)),
+        SelectionBoundScope(fRp),
+        CodeActionKind.QuickFix,
+        getDiagnostic(Common.toPosition(f.pos._1)))
+    }
+  }
+
+  private def getCodeActionsFieldAccess(fas : Seq[PFieldAccess], getDiagnostic : Function[Position, Seq[Diagnostic]]): Seq[CodeAction] = {
+    fas.flatMap(f => {
+      val seqn = f.getAncestor[PSeqn]
+      var parentWithSpec : Option[PMemberWithSpec] = None
+      if (seqn.isDefined) {
+        parentWithSpec = seqn.get.getAncestor[PMemberWithSpec]
+      }
+      parentWithSpec.collect({
+        case w : PWhile => (RangePosition(f), RangePosition(w),PKw.Invariant.keyword,RangePosition(w.body.ss.l))
+        case m : PMethod => (RangePosition(f), RangePosition(m),PKw.Requires.keyword,RangePosition(m.body.get.ss.l))
+      }).collect( {
+        case (Some(fRp), Some(parentRp), keyword, Some(openingBracketRp)) =>
+          val openingBracketInSameLine = openingBracketRp.line == parentRp.line
+          val editPos = if (openingBracketInSameLine) Common.toPosition(openingBracketRp.start) else
+          {val p = Common.toPosition(parentRp.start);p.setLine(p.getLine+1);p}
+          val indent = " "*(parentRp.start.column-1)
+          val beforeKeyword = if (openingBracketInSameLine) s"\n$indent  " else "  "
+          CodeAction("Add access precondition",
+            CaEdit(s"$beforeKeyword$keyword acc(${f.pretty})\n$indent", new Range(editPos, editPos)),
+            SelectionBoundScope(fRp),
+            CodeActionKind.QuickFix,
+            getDiagnostic(Common.toPosition(f.pos._1)))
+      }).toSeq
+    })
+  }
+
+  def apply(p: PProgram, getDiagnostic : Function[Position, Seq[Diagnostic]]): Seq[CodeAction] = {
+    p.deepCollect({
+        case w: PWhile if w.cond.inner.isInstanceOf[PBinExp] => getCodeActionsLoopInvariants(w)
+        case f: PFieldAccess => getCodeActionsForUndeclaredFields(Seq(f),getDiagnostic) ++ getCodeActionsFieldAccess(Seq(f),getDiagnostic)
+      })
       .flatten
   }
 }

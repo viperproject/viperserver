@@ -6,13 +6,18 @@
 
 package viper.server.frontends.lsp.file
 
+import org.eclipse.lsp4j
+
 import scala.util.{Success, Try}
 import scala.collection.mutable.ArrayBuffer
 import org.eclipse.lsp4j.Range
 import viper.silver.ast.utility.DiskLoader
+
 import java.nio.file.Path
 import org.eclipse.lsp4j.Position
 import viper.server.frontends.lsp.Common
+import viper.silver.ast.utility.lsp.RangePosition
+import viper.silver.ast.{LineColumnPosition, Method}
 
 case class FileContent(path: Path) extends DiskLoader {
   case class FileContentIter(fc: FileContent, delta: Int, var currPos: Option[Position]) extends Iterator[(Char, Position)] {
@@ -92,6 +97,20 @@ case class FileContent(path: Path) extends DiskLoader {
         Some((ident, new Range(startPos, endPos)))
       }
     })
+  }
+  def getMethodIdentifierRangePosition(method: Method) : RangePosition = {
+    val methodIdentifier = iterForward(Common.toPosition(method.pos))
+      .dropWhile(c => c._1.isLetter)
+      .find({ case (c, _) => Common.isIdentChar(c) })
+      .map(t => getIdentAtPos(t._2))
+      .getOrElse(None)
+
+    methodIdentifier.map(i => {
+      val (_, identRange) = i
+      new RangePosition(path,
+        LineColumnPosition(identRange.getStart.getLine+1, identRange.getStart.getCharacter+1),
+        LineColumnPosition(identRange.getEnd.getLine+1, identRange.getEnd.getCharacter+1))
+    }).getOrElse(Common.toRangePosition(path, method.pos))
   }
   def inComment(pos: Position): Boolean = {
     normalize(pos).map(nPos => {

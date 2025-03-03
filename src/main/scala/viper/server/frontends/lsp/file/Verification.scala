@@ -17,14 +17,10 @@ import akka.actor.Props
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.server.frontends.lsp.VerificationState._
 import akka.actor.ActorRef
-import viper.silver.verifier.{AbstractError, TypecheckerError, VerificationError}
-import viper.silver.parser.{PFieldAccess, PKw}
-import viper.silver.ast.{AbstractSourcePosition, FieldAccess, HasLineColumn, Label, LineColumnPosition, MemberWithSpec, Method, Position, Seqn, While}
+import viper.silver.verifier.AbstractError
+import viper.silver.ast.{AbstractSourcePosition, Position}
 import org.eclipse.lsp4j
-import viper.server.frontends.lsp.{BranchFailureDetails, Common}
-import viper.silver.ast.utility.lsp.{CaCommand, CaEdit, CodeAction, RangePosition, SelectionBoundScope}
-import viper.silver.verifier.errors.PostconditionViolatedBranch
-import viper.silver.verifier.reasons.InsufficientPermission
+import viper.server.frontends.lsp.Common
 
 import java.nio.file.Path
 
@@ -245,140 +241,6 @@ trait VerificationManager extends Manager with Branches {
     }
   }
 
-  private def toRangePosition(pos: Position) : RangePosition = {
-    pos match {
-      case sp: AbstractSourcePosition => RangePosition(sp.file, sp.start, sp.end.getOrElse(sp.start))
-      case pos: HasLineColumn => RangePosition(path, pos, pos)
-      case _ => RangePosition(path, LineColumnPosition(1, 1), LineColumnPosition(1, 1))
-    }
-  }
-
-  private object ErrorType extends Enumeration(1) {
-    val branchFailureInfo, undeclaredField, fieldPermError = Value
-  }
-
-  private def getCodeActionsForUndeclaredFields(errors: Seq[TypecheckerError]) : Seq[CodeAction] = {
-    errors.groupBy(_.node.get)
-      .flatMap(fa => {
-        val (faNode, faErrors) = fa
-        val fieldAccess = faNode.asInstanceOf[PFieldAccess]
-        val faDiags = faErrors.flatMap(e => {
-          val pos = Common.toPosition(e.pos)
-          getDiagnosticBy(Some(pos), None)
-        })
-        faErrors.map(err => {
-          CodeAction("Declare field",
-            CaCommand("viper.declareField", Seq(fieldAccess.idnref.pretty)),
-            SelectionBoundScope(toRangePosition(err.pos)),
-            lsp4j.CodeActionKind.QuickFix,
-            faDiags)
-        })
-      }).toSeq
-  }
-  private def getCodeActionsForFieldPermissionError(errors: Seq[VerificationError]) : Seq[CodeAction] = {
-    errors.groupBy(_.reason.offendingNode.toString()).flatMap(fa => {
-      val (faStr, faErrors) = fa
-      val faDiags = faErrors.flatMap(err => {
-        val pos = Common.toPosition(err.pos)
-        getDiagnosticBy(Some(pos), None)
-      })
-      faErrors.flatMap(err => {
-        val f = err.reason.offendingNode
-        val seqn = f.getAncestor[Seqn]
-        var parentWithSpec : Option[MemberWithSpec] = None
-        if (seqn.isDefined) {
-          parentWithSpec = seqn.get.getAncestor[MemberWithSpec]
-        }
-        parentWithSpec.collect({
-          case l : Label => (l,PKw.Invariant.keyword)
-          case w : While => (w,PKw.Invariant.keyword)
-          case m : Method => (m,PKw.Requires.keyword)
-        }).map( t => {
-          val (parent, keyword) = t
-          val parentPosFile = Common.toPosition(parent.pos)
-          val m = getInProject(this.file_uri).content
-          val closingBracketPos = m.iterForward(parentPosFile)
-            .find { case (c, _) => c == '{'}
-            .map(t => {val p = t._2; p.setCharacter(p.getCharacter-1); p})
-          val closingBracketInSameLine = closingBracketPos
-            .map(p => p.getLine == parentPosFile.getLine)
-            .getOrElse(false)
-          val editPos = if (closingBracketInSameLine) closingBracketPos.get else
-              {val p = Common.toPosition(parent.pos);p.setLine(p.getLine+1);p}
-          val parentRangePosition = toRangePosition(parent.pos)
-          val indent = " "*(parentRangePosition.start.column-1)
-          val beforeKeyword = if (closingBracketInSameLine) s"\n$indent  " else "  "
-          CodeAction("Add access precondition",
-            CaEdit(s"$beforeKeyword$keyword acc($faStr)\n$indent", new lsp4j.Range(editPos, editPos)),
-            SelectionBoundScope(toRangePosition(err.pos)),
-            lsp4j.CodeActionKind.QuickFix,
-            faDiags)
-        }).toSeq
-      })
-    }).toSeq
-  }
-
-  private def processByType(errors : Seq[AbstractError]) = {
-    errors.groupBy({
-      case _: PostconditionViolatedBranch => ErrorType.branchFailureInfo
-      case e: TypecheckerError if e.node.isDefined
-        && e.node.get.isInstanceOf[PFieldAccess] => ErrorType.undeclaredField
-      case e : VerificationError if e.reason.isInstanceOf[InsufficientPermission]
-        && e.reason.offendingNode.isInstanceOf[FieldAccess] => ErrorType.fieldPermError
-      case _ => -1
-    }).map(_ match {
-        // Support for red beams indicating branch failure
-        case (ErrorType.branchFailureInfo, errs : Seq[PostconditionViolatedBranch]) =>
-          val branchFailureDetails = errs.map(err =>
-            BranchFailureDetails(err.readableMessage,
-              getBranchRange(this.file_uri,
-                lsp.Common.toPosition(err.pos),
-                err.leftIsFatal,
-                err.rightIsFatal)
-            ))
-            if (branchFailureDetails.nonEmpty) {
-              val params = lsp.StateChangeParams(
-                VerificationRunning.id,
-                uri=this.file_uri,
-                branchFailureDetails = branchFailureDetails.toArray
-              )
-              coordinator.sendStateChangeNotification(params, Some(this))
-            }
-        // Code actions
-        case (ErrorType.undeclaredField, errs : Seq[TypecheckerError]) =>
-          this.addCodeAction(first = true)(getCodeActionsForUndeclaredFields(errs))
-        case (ErrorType.fieldPermError, errs : Seq[VerificationError]) =>
-          this.addCodeAction(first = false)(getCodeActionsForFieldPermissionError(errs))
-        case _ =>
-    })
-  }
-
-  def getMethodIdentifier(error: PostconditionViolatedBranch): Option[(String, lsp4j.Range)] = {
-    val content = getInProject(this.file_uri).content
-    error.offendingNode.getAncestor[Method].map(m =>
-      content.iterForward(Common.toPosition(m.pos))
-              .dropWhile(c => c._1.isLetter)
-              .find({ case (c, _) => Common.isIdentChar(c) })
-              .map(t => content.getIdentAtPos(t._2))
-              .getOrElse(None)
-    ).getOrElse(None)
-  }
-
-  private def getErrorRangeAndPos(error: AbstractError) : (lsp4j.Range, RangePosition) = {
-    val range = toRange(error.pos)
-    val rp = toRangePosition(error.pos)
-    error match {
-      case e : PostconditionViolatedBranch =>
-      getMethodIdentifier(e).map(i => {
-        val (_, identRange) = i
-        (identRange, new RangePosition(path,
-        LineColumnPosition(identRange.getStart.getLine+1, identRange.getStart.getCharacter+1),
-        LineColumnPosition(identRange.getEnd.getLine+1, identRange.getEnd.getCharacter+1)))
-      }).getOrElse((range,rp))
-      case _ => (range,rp)
-    }
-  }
-
   def processErrors(backendClassName: Option[String], errors: Seq[AbstractError], errorMsgPrefix: Option[String] = None): Unit = {
     // Add diagnostics
     val errMsgPrefixWithWhitespace = errorMsgPrefix.map(s => s"$s ").getOrElse("")
@@ -408,7 +270,8 @@ trait VerificationManager extends Manager with Branches {
         errorType = "Verification error"
       }
 
-      val (range,rp) = getErrorRangeAndPos(err)
+      val range = toRange(err.pos)
+      val rp = Common.toRangePosition(path,err.pos)
 
       val errFullId = if(err.fullId != null) s"[${err.fullId}] " else ""
       val backendString = if (backendClassName.isDefined) s" [${backendClassName.get}]" else ""
@@ -424,8 +287,5 @@ trait VerificationManager extends Manager with Branches {
     diags.groupBy(d => d._1).foreach { case (phase, diags) =>
       addDiagnostic(phase.order <= VerificationPhase.TypeckEnd.order)(diags.map(_._2))
     }
-
-    // Right now: Add red beams and code actions
-    processByType(errors)
   }
 }
