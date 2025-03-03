@@ -89,7 +89,7 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
       }
       isLSP
     } else true,
-    default = Some(true),
+    default = Some(false),
     noshort = true
   )
 
