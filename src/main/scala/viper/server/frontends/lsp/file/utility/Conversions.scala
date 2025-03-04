@@ -217,6 +217,7 @@ case object CodeActionTranslator extends Translates[lsp.CodeAction, lsp4j.CodeAc
   override def translate(ca: lsp.CodeAction)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)): lsp4j.CodeAction = ???
   override def translate(cas: Seq[lsp.CodeAction])(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean))(implicit log: Logger): Seq[lsp4j.CodeAction] = {
     cas.map(ca => {
+      if (ca.branchTree.isDefined) ca.branchTree.get.toDotFile() // TODO
       val codeAction = new lsp4j.CodeAction(ca.title)
       ca.action match {
         case CaCommand(cmd, args) =>

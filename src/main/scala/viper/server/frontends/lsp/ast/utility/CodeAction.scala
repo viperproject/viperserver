@@ -21,7 +21,8 @@ case class CodeAction(
                        action: CaAction,
                        bound: SelectionBoundScopeTrait,
                        kind: String,
-                       resolvedDiags: Seq[lsp4j.Diagnostic] = Seq.empty
+                       resolvedDiags: Seq[lsp4j.Diagnostic] = Seq.empty,
+                       branchTree : Option[viper.silver.reporter.BranchTree] = None
 ) extends SelectableInBound with HasRangePositions {
   override def rangePositions: Seq[RangePosition] = bound.rangePositions
 }

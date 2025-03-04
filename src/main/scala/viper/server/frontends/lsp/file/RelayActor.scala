@@ -8,12 +8,13 @@ package viper.server.frontends.lsp.file
 
 import akka.actor.{Actor, Props, Status}
 import org.eclipse.lsp4j
-import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.{CodeActionKind, Position}
 import viper.server.frontends.lsp
 import viper.server.frontends.lsp.{BranchFailureDetails, Common}
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.silver.ast
+import viper.silver.ast.utility.lsp.{CaCommand, CodeAction, SelectionBoundScope}
 import viper.silver.reporter._
 import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
 import viper.silver.parser._
@@ -161,15 +162,23 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       markErrorsAsReported(errors)
       task.processErrors(backendClassName, errors, Some(s"Invalid arguments have been passed to the backend $backendClassName:"))
     case BranchTreeReport(method,tree,beams) =>
+      val mRp = task.content.getMethodIdentifierRangePosition(method)
       task.addDiagnostic(false)(
         Seq(Diagnostic(
           backendClassName=backendClassName,
-          position=task.content.getMethodIdentifierRangePosition(method),
-          message=tree,
+          position=mRp,
+          message=s"BranchFails.\n${tree.prettyPrint()}",
           severity=lsp4j.DiagnosticSeverity.Error,
           cached = false,
           errorMsgPrefix=None
         )))
+      task.addCodeAction(false)(Seq(
+        CodeAction("Display explored branches",
+          CaCommand("viper.displayExploredBranches", Seq("/home/stephanie/viperserver/tmp/BranchTree.dot")),
+          SelectionBoundScope(mRp),
+          CodeActionKind.QuickFix,
+          branchTree=Some(tree))
+      ))
       val details = beams.map(b =>
         task.getBranchRange(task.file_uri,
           Common.toPosition(b.e.pos),
