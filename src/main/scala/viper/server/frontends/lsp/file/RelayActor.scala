@@ -13,6 +13,7 @@ import viper.server.frontends.lsp
 import viper.server.frontends.lsp.{BranchFailureDetails, Common}
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
+import viper.silicon.state.Tree
 import viper.silver.ast
 import viper.silver.ast.utility.lsp.{CaCommand, CodeAction, SelectionBoundScope}
 import viper.silver.reporter._
@@ -174,7 +175,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
         )))
       task.addCodeAction(false)(Seq(
         CodeAction("Display explored branches",
-          CaCommand("viper.displayExploredBranches", Seq("/home/stephanie/viperserver/tmp/BranchTree.dot")),
+          CaCommand("viper.displayExploredBranches", Seq(method.name, Tree.DotFilePath)),
           SelectionBoundScope(mRp),
           CodeActionKind.QuickFix,
           branchTree=Some(tree))
