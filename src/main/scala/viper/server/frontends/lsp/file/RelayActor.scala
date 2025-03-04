@@ -167,7 +167,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
         Seq(Diagnostic(
           backendClassName=backendClassName,
           position=mRp,
-          message=s"BranchFails.\n${tree.prettyPrint()}",
+          message=s"Branch fails.\n${tree.prettyPrint()}",
           severity=lsp4j.DiagnosticSeverity.Error,
           cached = false,
           errorMsgPrefix=None
