@@ -6,8 +6,6 @@
 
 package viper.server.frontends.lsp.file
 
-import org.eclipse.lsp4j
-
 import scala.util.{Success, Try}
 import scala.collection.mutable.ArrayBuffer
 import org.eclipse.lsp4j.Range
@@ -98,7 +96,7 @@ case class FileContent(path: Path) extends DiskLoader {
       }
     })
   }
-  def getMethodIdentifierRangePosition(method: Method) : RangePosition = {
+  def methodIdentToRangePosition(method: Method) : RangePosition = {
     val methodIdentifier = iterForward(Common.toPosition(method.pos))
       .dropWhile(c => c._1.isLetter)
       .find({ case (c, _) => Common.isIdentChar(c) })

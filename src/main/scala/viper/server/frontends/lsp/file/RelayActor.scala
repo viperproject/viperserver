@@ -162,7 +162,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       markErrorsAsReported(errors)
       task.processErrors(backendClassName, errors, Some(s"Invalid arguments have been passed to the backend $backendClassName:"))
     case BranchTreeReport(method,tree,beams) =>
-      val mRp = task.content.getMethodIdentifierRangePosition(method)
+      val mRp = task.content.methodIdentToRangePosition(method)
       task.addDiagnostic(false)(
         Seq(Diagnostic(
           backendClassName=backendClassName,
