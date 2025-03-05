@@ -79,7 +79,7 @@ trait MessageHandler extends ProjectManager with VerificationManager with Quanti
       timeMs = 0
     } catch {
       case e: Throwable =>
-        coordinator.client.notifyVerificationNotStarted(lsp.VerificationNotStartedParams(file_uri))
+        coordinator.client.map{_.notifyVerificationNotStarted(lsp.VerificationNotStartedParams(file_uri))}
         coordinator.logger.debug(s"Error handling verification completion: $e")
     }
   }
@@ -207,7 +207,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       task.handleQuantifierInstantiations(quantifier, instantiations, magGen, maxCost)
     case m: Message =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] Message")
-      coordinator.client.notifyUnhandledViperServerMessage(lsp.UnhandledViperServerMessageTypeParams(m.name, m.toString, lsp.LogLevel.Info.id))
+      coordinator.client.map{_.notifyUnhandledViperServerMessage(lsp.UnhandledViperServerMessageTypeParams(m.name, m.toString, lsp.LogLevel.Info.id))}
     case Status.Success =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] Status.Success")
       // Success is sent when the stream is completed

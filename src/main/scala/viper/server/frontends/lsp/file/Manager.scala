@@ -90,9 +90,10 @@ trait StandardManager extends Manager {
     c.onUpdate()
   }
 
+
   // CodeLens
   type CodeLensContainer = utility.StageArrayContainer.ArrayContainer[lsp.CodeLens, lsp4j.CodeLens]
-  val codeLensContainer: CodeLensContainer = utility.LspContainer(utility.CodeLensTranslator, coordinator.client.refreshCodeLenses)
+  val codeLensContainer: CodeLensContainer = utility.LspContainer(utility.CodeLensTranslator, if (coordinator.client.isDefined) coordinator.client.get.refreshCodeLenses else () => {})
   containers.addOne(codeLensContainer)
   def getCodeLens() = codeLensContainer.get(())
   def addCodeLens(first: Boolean)(vs: Seq[lsp.CodeLens]): Unit = add(codeLensContainer, first, vs)
@@ -102,7 +103,7 @@ trait StandardManager extends Manager {
   val diagnosticContainer: DiagnosticContainer = utility.LspContainer(utility.DiagnosticTranslator, publishDiags)
   private def publishDiags(): Unit = {
     val diagnosticParams = new PublishDiagnosticsParams(file.file_uri, getDiagnostic().asJava)
-    coordinator.client.publishDiagnostics(diagnosticParams)
+    coordinator.client.map{_.publishDiagnostics(diagnosticParams)}
   }
   // containers.addOne(diagnosticContainer)
   def getDiagnostic() = diagnosticContainer.get(())
@@ -145,14 +146,14 @@ trait StandardManager extends Manager {
 
   // InlayHint
   type InlayHintContainer = utility.StageArrayContainer.ArrayContainer[lsp.InlayHint, lsp4j.InlayHint]
-  val inlayHintContainer: InlayHintContainer = utility.LspContainer(utility.InlayHintTranslator, coordinator.client.refreshInlayHints)
+  val inlayHintContainer: InlayHintContainer = utility.LspContainer(utility.InlayHintTranslator, if(coordinator.client.isDefined) coordinator.client.get.refreshInlayHints else () => {})
   containers.addOne(inlayHintContainer)
   def getInlayHint() = inlayHintContainer.get(())
   def addInlayHint(first: Boolean)(vs: Seq[lsp.InlayHint]): Unit = add(inlayHintContainer, first, vs)
 
   // SemanticHighlight
   type SemanticHighlightContainer = utility.StageArrayContainer.ArrayContainer[lsp.SemanticHighlight, Lsp4jSemanticHighlight]
-  val semanticHighlightContainer: SemanticHighlightContainer = utility.LspContainer(utility.SemanticHighlightTranslator, coordinator.client.refreshSemanticTokens)
+  val semanticHighlightContainer: SemanticHighlightContainer = utility.LspContainer(utility.SemanticHighlightTranslator, if(coordinator.client.isDefined) coordinator.client.get.refreshSemanticTokens else () => {})
   containers.addOne(semanticHighlightContainer)
   def getSemanticHighlight() = semanticHighlightContainer.get(())
   def addSemanticHighlight(first: Boolean)(vs: Seq[lsp.SemanticHighlight]): Unit = add(semanticHighlightContainer, first, vs)

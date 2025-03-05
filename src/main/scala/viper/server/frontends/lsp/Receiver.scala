@@ -405,16 +405,16 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
           if (verificationStarted) {
             coordinator.logger.info("Verification Started")
           } else {
-            coordinator.client.notifyVerificationNotStarted(VerificationNotStartedParams(data.uri))
+            coordinator.client.map{_.notifyVerificationNotStarted(VerificationNotStartedParams(data.uri))}
           }
         })
       }).recover(e => {
         coordinator.logger.debug(s"Error handling verify request: $e")
-        coordinator.client.notifyVerificationNotStarted(VerificationNotStartedParams(data.uri))
+        coordinator.client.map{_.notifyVerificationNotStarted(VerificationNotStartedParams(data.uri))}
       })
     } else {
       coordinator.logger.info("The verification cannot be started.")
-      coordinator.client.notifyVerificationNotStarted(VerificationNotStartedParams(data.uri))
+      coordinator.client.map{_.notifyVerificationNotStarted(VerificationNotStartedParams(data.uri))}
     }
   }
 

@@ -172,7 +172,7 @@ trait ProjectManager extends FullManager with ProjectAware {
     this.project = Left(newProject.map(uri => uri -> getLeafManager(uri)).toMap)
 
     val setupProject = SetupProjectParams(file.file_uri, newProject.toArray)
-    coordinator.client.requestSetupProject(setupProject)
+    coordinator.client.map{_.requestSetupProject(setupProject)}
   }
 
   def handleChangeInLeaf(leaf: String, range: Range, text: String): Unit = {

@@ -25,10 +25,9 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   private var _client: Option[IdeLanguageClient] = None
   private val _files: ConcurrentMap[String, FileManager] = new ConcurrentHashMap() // each file is managed individually.
   private var _vprFileEndings: Option[Array[String]] = None
-  private var _exited: Boolean = false
 
-  def client: IdeLanguageClient = {
-    _client.getOrElse({assert(false, "getting client failed - client has not been set yet"); ???})
+  def client: Option[IdeLanguageClient] = {
+    _client
   }
 
   def setClient(c: IdeLanguageClient): Unit = {
@@ -38,13 +37,8 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
 
   /** called when client disconnects; the server should however remain running */
   def exit(): Unit = {
-    _exited = true
     _client = None
     _files.clear()
-  }
-
-  def isAlive: Boolean = {
-    !_exited
   }
 
   def closeFile(uri: String): Unit = {
@@ -167,17 +161,17 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     // update file manager's state:
     task.foreach(vm => vm.state = VerificationState(params.newState))
     try {
-      client.notifyStateChanged(params)
+      client.get.notifyStateChanged(params)
     } catch {
       case e: Throwable => logger.debug(s"Error while changing state: $e")
     }
   }
 
   def refreshEndings(): Future[Array[String]] = {
-    client.requestVprFileEndings().asScala.map(response => {
+    client.map{_.requestVprFileEndings().asScala.map(response => {
       _vprFileEndings = Some(response.fileEndings)
       response.fileEndings
-    })
+    })}.getOrElse(Future(Array()))
   }
 
   def isViperSourceFile(uri: String): Future[Boolean] = {
@@ -191,8 +185,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   }
 
   def hint(message: String, showSettingsButton: Boolean = false, showViperToolsUpdateButton: Boolean = false): Unit = {
-    if (!isAlive) return
-    client.notifyHint(HintMessage(message, showSettingsButton, showViperToolsUpdateButton ))
+    client.map{_.notifyHint(HintMessage(message, showSettingsButton, showViperToolsUpdateButton ))}
   }
 
   private def getFileManager(uri: String, content: Option[String] = None): FileManager = {

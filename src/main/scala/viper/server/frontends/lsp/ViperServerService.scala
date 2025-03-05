@@ -115,13 +115,19 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
   }
 
   private def stopOnlyVerification(handle: VerHandle, combinedLogger: Logger): Future[Boolean] = {
-    implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-    val interrupt: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
-    handle.job_actor ! PoisonPill // the actor played its part.
-    interrupt.map(msg => {
-      combinedLogger.info(msg)
-      true
-    })
+    handle match {
+      // If AST construction failed, a verification handle will be returned where the actor field is null.
+      case VerHandle(null, _, _, _) => Future.successful(false)
+      case _ => {
+        implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
+        val interrupt: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
+        handle.job_actor ! PoisonPill // the actor played its part.
+        interrupt.map(msg => {
+          combinedLogger.info(msg)
+          true
+        })
+      }
+    }
   }
 
   def stopAstConstruction(jid: AstJobId, localLogger: Option[Logger] = None): Future[Boolean] = {
