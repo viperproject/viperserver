@@ -7,6 +7,7 @@
 package viper.silver.ast.utility.lsp
 
 import org.eclipse.lsp4j
+import viper.silver.verifier.errors.BranchTree
 
 trait HasCodeActions {
   def getCodeActions: Seq[CodeAction]
@@ -22,7 +23,7 @@ case class CodeAction(
                        bound: SelectionBoundScopeTrait,
                        kind: String,
                        resolvedDiags: Seq[lsp4j.Diagnostic] = Seq.empty,
-                       branchTree : Option[viper.silver.reporter.BranchTree] = None
+                       branchTree : Option[BranchTree] = None
 ) extends SelectableInBound with HasRangePositions {
   override def rangePositions: Seq[RangePosition] = bound.rangePositions
 }

@@ -20,7 +20,12 @@ import akka.actor.ActorRef
 import viper.silver.verifier.AbstractError
 import viper.silver.ast.{AbstractSourcePosition, Position}
 import org.eclipse.lsp4j
-import viper.server.frontends.lsp.Common
+import org.eclipse.lsp4j.CodeActionKind
+import viper.server.frontends.lsp.{BranchFailureDetails, Common}
+import viper.silicon.state.Tree
+import viper.silver.ast.utility.lsp.{CaCommand, CodeAction, SelectionBoundScope}
+import viper.silver.verifier.errors.BranchFailed
+import viper.silver.verifier.reasons.BranchFails
 
 import java.nio.file.Path
 
@@ -271,7 +276,29 @@ trait VerificationManager extends Manager with Branches {
       }
 
       val range = toRange(err.pos)
-      val rp = Common.toRangePosition(path,err.pos)
+      var rp = Common.toRangePosition(path,err.pos)
+
+      err match {
+        case BranchFailed(_, BranchFails(method, tree, beamInfos), _) =>
+          rp = content.methodIdentToRangePosition(method)
+          addCodeAction(false)(Seq(
+            CodeAction("Display explored branches",
+              CaCommand("viper.displayExploredBranches", Seq(method.name, Tree.DotFilePath)),
+              SelectionBoundScope(rp),
+              CodeActionKind.QuickFix,
+              branchTree=Some(tree))
+          ))
+          val details = beamInfos.map(b =>
+            getBranchRange(this.file_uri,
+              Common.toPosition(b.e.pos),
+              b.isLeftFatal,
+              b.isRightFatal)
+          ).toArray
+          if (details.nonEmpty) coordinator.sendBranchFailureDetails(
+            BranchFailureDetails(this.file_uri,details)
+          )
+        case _ =>
+      }
 
       val errFullId = if(err.fullId != null) s"[${err.fullId}] " else ""
       val backendString = if (backendClassName.isDefined) s" [${backendClassName.get}]" else ""
