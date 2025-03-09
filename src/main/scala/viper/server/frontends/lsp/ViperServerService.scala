@@ -66,7 +66,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     val ast_generator = new ReformatterAstGenerator(logger);
     val parse_ast = ast_generator.generateViperParseAst(file);
     parse_ast match {
-      case Some(p) => Some(ReformatPrettyPrinter.reformatProgram(p))
+      case Some(p) => Some(ReformatPrettyPrinter.showProgram(p))
       case _ => {
         logger.error("Failed to generate parse AST for reformatting the program.")
         None
