@@ -13,6 +13,8 @@ import viper.silver.ast.LineColumnPosition
 import viper.silver.plugin.standard.adt._
 import viper.silver.plugin.standard.termination.PDecreasesKeyword
 
+import scala.annotation.tailrec
+
 object HasCodeLens {
   def apply(p: PProgram): Seq[CodeLens] = p.deepCollect(PartialFunction.empty).flatten
 }
@@ -92,36 +94,34 @@ object HasSemanticHighlights {
 object HasSignatureHelps {
   def apply(p: PProgram): Seq[SignatureHelp] = {
     def argsToSigHelpPart[T <: PNode](args: PDelimited.Comma[PSym.Paren, T]) : Seq[SignatureHelpPart] = {
-      def getSigHelpPart[T <: PNode](arg: T): SignatureHelpPart = SignatureHelpPart(true, arg.pretty, None)
-      SignatureHelpPart(false, s"${args.l.pretty}", None) +:
+      def getSigHelpPart[T <: PNode](arg: T): SignatureHelpPart = SignatureHelpPart(isArgument = true, arg.pretty, None)
+      SignatureHelpPart(isArgument = false, s"${args.l.pretty}", None) +:
         (args.inner.first.map(getSigHelpPart).toSeq ++ args.inner.inner.flatMap {
-        case (c, arg) => Seq(SignatureHelpPart(false, c.pretty, None), getSigHelpPart(arg))
-      }) :+ SignatureHelpPart(false, s"${args.r.pretty}", None)
+        case (c, arg) => Seq(SignatureHelpPart(isArgument = false, c.pretty, None), getSigHelpPart(arg))
+      }) :+ SignatureHelpPart(isArgument = false, s"${args.r.pretty}", None)
     }
     p.deepCollect({
-      case n: PCallable => {
+      case n: PCallable =>
         val bound = SelectionBoundKeyword(n.idndef.name)
         // Start
-        val start = SignatureHelpPart(false, s"${n.keyword.pretty}${n.idndef.pretty}", None)
+        val start = SignatureHelpPart(isArgument = false, s"${n.keyword.pretty}${n.idndef.pretty}", None)
         // Args
         val args = argsToSigHelpPart[PAnyFormalArgDecl](n.args)
         // Tail
-        val tail = SignatureHelpPart(false, s"${n.returnNodes.map(_.pretty).mkString}", None)
+        val tail = SignatureHelpPart(isArgument = false, s"${n.returnNodes.map(_.pretty).mkString}", None)
         Seq(SignatureHelp(start +: args :+ tail, PLspDeclaration.documentation(n), bound))
-      }
-      case n: PDefine => {
+      case n: PDefine =>
         val bound = SelectionBoundKeyword(n.idndef.name)
         // Start
-        val start = SignatureHelpPart(false, s"${n.define.pretty} ${n.idndef.pretty}", None)
+        val start = SignatureHelpPart(isArgument = false, s"${n.define.pretty} ${n.idndef.pretty}", None)
         // Args
         val mappedParams = n.parameters match {
           case Some(params) => argsToSigHelpPart[PDefineParam](params)
           case _ => Seq.empty
         }
         // Tail
-        val tail = SignatureHelpPart(false, s" ${n.body.pretty}", None)
+        val tail = SignatureHelpPart(isArgument = false, s" ${n.body.pretty}", None)
         Seq(SignatureHelp(start +: mappedParams :+ tail, PLspDeclaration.documentation(n), bound))
-      }
     }).flatten
   }
 }
@@ -171,14 +171,14 @@ object HasCodeActions {
       .find(t => t._1.isDefined)}
       .map(t => (t._1.get, t._2))
   private def containsIdn(ass: PAssign, idn: String): Boolean = {
-    (ass.targets.first ++ ass.targets.inner.map(_._1)).asInstanceOf[Seq[PExp]]
-      .map(getIdentifierNames(_)).flatten.toSet
+    (ass.targets.first ++ ass.targets.inner.map(_._1)).asInstanceOf[Seq[PExp]].flatMap(getIdentifierNames).toSet
       .contains(idn) && ass.rhs.find({case _ : PSimpleLiteral => ass}).isDefined
   }
+  @tailrec
   private def findClosestLiteralAssignment(n: PNode, idn: String): Option[PExp] = {
     var curr: Option[PNode] = Some(n)
     var result: Option[PExp] = None
-    while (curr.isDefined && !result.isDefined) {
+    while (curr.isDefined && result.isEmpty) {
       curr.get match {
         case pa : PAssign if containsIdn(pa, idn) => result = Some(pa.rhs)
         case _ =>
@@ -198,14 +198,15 @@ object HasCodeActions {
     case _ => PBinExp(e, PReserved(if (j > 0) PSymOp.Plus else PSymOp.Minus)(e.pos), PIntLit(-j)(e.pos))(e.pos)
   }
   private def getEditRange(n: PNode): Option[Range] = RangePosition(n)
-    .map(Common.toRange(_)).map(r => {r.setEnd(r.getStart); r})
-    .headOption
+    .map(Common.toRange(_)).map(r => {
+      r.setEnd(r.getStart); r
+    })
   private def getCodeActionsLoopInvariants(w: PWhile) : Seq[CodeAction] = {
     val cond = w.cond.inner.asInstanceOf[PBinExp]
     var condBound = cond.right
     var middle = cond.left
     var selfAssignment = findSelfAssignment(w.body, getIdentifierNames(cond.left))
-    if (!selfAssignment.isDefined) {
+    if (selfAssignment.isEmpty) {
       selfAssignment = findSelfAssignment(w.body, getIdentifierNames(cond.right))
       condBound = cond.left
       middle = cond.right
