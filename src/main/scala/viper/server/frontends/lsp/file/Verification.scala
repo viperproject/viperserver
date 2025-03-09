@@ -22,7 +22,7 @@ import viper.silver.ast.{AbstractSourcePosition, Position}
 import org.eclipse.lsp4j
 import org.eclipse.lsp4j.CodeActionKind
 import viper.server.frontends.lsp.{BranchFailureDetails, Common}
-import viper.silicon.state.Tree
+import viper.silicon.state.branchTree.BranchTree
 import viper.silver.ast.utility.lsp.{CaCommand, CodeAction, SelectionBoundScope}
 import viper.silver.verifier.errors.BranchFailed
 import viper.silver.verifier.reasons.BranchFails
@@ -283,7 +283,7 @@ trait VerificationManager extends Manager with Branches {
           rp = content.methodIdentToRangePosition(method)
           addCodeAction(false)(Seq(
             CodeAction("Display explored branches",
-              CaCommand("viper.displayExploredBranches", Seq(method.name, Tree.DotFilePath)),
+              CaCommand("viper.displayExploredBranches", Seq(method.name, BranchTree.DotFilePath)),
               SelectionBoundScope(rp),
               CodeActionKind.QuickFix,
               branchTree=Some(tree))
