@@ -17,12 +17,12 @@ import akka.actor.Props
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.server.frontends.lsp.VerificationState._
 import akka.actor.ActorRef
+import viper.silicon.branchTree.BranchTree
 import viper.silver.verifier.AbstractError
 import viper.silver.ast.{AbstractSourcePosition, Position}
 import org.eclipse.lsp4j
 import org.eclipse.lsp4j.CodeActionKind
 import viper.server.frontends.lsp.{BranchFailureDetails, Common}
-import viper.silicon.state.branchTree.BranchTree
 import viper.silver.ast.utility.lsp.{CaCommand, CodeAction, SelectionBoundScope}
 import viper.silver.verifier.errors.BranchFailed
 import viper.silver.verifier.reasons.BranchFails
