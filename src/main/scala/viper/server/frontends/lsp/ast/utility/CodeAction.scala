@@ -7,7 +7,7 @@
 package viper.silver.ast.utility.lsp
 
 import org.eclipse.lsp4j
-import viper.silver.verifier.errors.BranchTree
+import viper.silver.reporter.BranchTree
 
 trait HasCodeActions {
   def getCodeActions: Seq[CodeAction]

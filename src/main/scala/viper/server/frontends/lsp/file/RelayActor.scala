@@ -7,11 +7,13 @@
 package viper.server.frontends.lsp.file
 
 import akka.actor.{Actor, Props, Status}
-import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.{CodeActionKind, DiagnosticSeverity, Position}
 import viper.server.frontends.lsp
+import viper.server.frontends.lsp.{BranchFailureDetails, Common}
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.silver.ast
+import viper.silver.ast.utility.lsp.{CaCommand, CodeAction, RangePosition, SelectionBoundScope}
 import viper.silver.reporter._
 import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
 import viper.silver.parser._
@@ -99,6 +101,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
     * at different position just get dropped.
     */
   var reportedErrors: Set[(AbstractError, Option[ast.Position])] = Set.empty
+  var reportedBranchTrees: Set[RangePosition] = Set.empty
   /** helper function to add an error to `reportedErrors` */
   private def markErrorAsReported(err: AbstractError): Unit = err match {
     case err: ErrorMessage => reportedErrors = reportedErrors + ((err, Some(err.offendingNode.pos)))
@@ -110,6 +113,41 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
   private def hasAlreadyBeenReported(err: AbstractError): Boolean = err match {
     case err: ErrorMessage => reportedErrors.contains((err, Some(err.offendingNode.pos)))
     case _ => reportedErrors.contains((err, None))
+  }
+
+  private def handleBranchTree(tree: BranchTree): Unit = {
+    val method = tree.getMethod()
+    val beams = tree.getBeams()
+    val mRp = task.content.methodIdentToRangePosition(method)
+    if (!reportedBranchTrees.contains(mRp)){
+      val cacheFlag = if (tree.cached) "(cached)" else ""
+      task.addDiagnostic(false)(
+        Seq(Diagnostic(
+          backendClassName=backendClassName,
+          position=mRp,
+          message=s"Branch fails. ${{cacheFlag}} \n${tree.prettyPrint()}",
+          severity=DiagnosticSeverity.Error,
+          cached = false,
+          errorMsgPrefix=None
+        )))
+      task.addCodeAction(false)(Seq(
+        CodeAction("Display explored branches",
+          CaCommand("viper.displayExploredBranches", Seq(method.name, tree.DotFilePath)),
+          SelectionBoundScope(mRp),
+          CodeActionKind.QuickFix,
+          branchTree=Some(tree))
+      ))
+      val details = beams.map(b =>
+        task.getBranchRange(task.file_uri,
+          Common.toPosition(b.e.pos),
+          b.isLeftFatal,
+          b.isRightFatal)
+      ).toArray
+      if (details.nonEmpty) coordinator.sendBranchFailureDetails(
+        BranchFailureDetails(task.file_uri,details)
+      )
+      reportedBranchTrees += mRp
+    }
   }
 
   override def receive: PartialFunction[Any, Unit] = {
@@ -178,6 +216,8 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       task.state = VerificationReporting
       task.timeMs = verificationTime
       // the completion handler is not yet invoked (but as part of Status.Success)
+    case BranchTreeReport(tree) =>
+      handleBranchTree(tree)
     case OverallFailureMessage(_, verificationTime, failure) =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] OverallFailureMessage")
       task.state = VerificationReporting
@@ -188,6 +228,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       // ViperServer produces EntitySuccessMessage and EntityFailureMessages)
       val newErrors = failure.errors.filterNot(hasAlreadyBeenReported)
       markErrorsAsReported(newErrors)
+      if (failure.branchTree.nonEmpty) handleBranchTree(failure.branchTree.get)
       task.processErrors(backendClassName, newErrors)
     case WarningsDuringParsing(warnings) =>
       markErrorsAsReported(warnings)

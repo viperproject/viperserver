@@ -254,7 +254,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
   implicit val verificationResult_writer: RootJsonFormat[VerificationResult] = lift(new RootJsonWriter[VerificationResult] {
     override def write(obj: VerificationResult): JsValue = obj match {
       case Success => JsObject("type" -> JsString("success"))
-      case f@ Failure(_) => f.toJson
+      case f@ Failure(_,_) => f.toJson
     }
   })
 

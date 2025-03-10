@@ -15,6 +15,7 @@ import viper.silver.ast._
 import viper.silver.frontend.SilFrontend
 import viper.silver.reporter.{Reporter, _}
 import viper.silver.utility.ViperProgramSubmitter
+import viper.silver.reporter.BranchTree
 import viper.silver.verifier.{AbstractVerificationError, VerificationResult, _}
 
 import scala.collection.mutable.ListBuffer
@@ -207,12 +208,12 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     }
   }
 
-  case class CachingResult(transformedProgram: Program, cachedErrors: Seq[VerificationError])
+  case class CachingResult(transformedProgram: Program, cachedErrors: Seq[VerificationError], branchTree: Option[BranchTree])
 
   private def caching(input: Program): CachingResult = {
     if (_frontend.config.disableCaching()) {
       // NOP
-      return CachingResult(input, Seq.empty)
+      return CachingResult(input, Seq.empty, None)
     }
 
     val (transformed_prog, cached_results) = ViperCache.applyCache(backendName, programId, input)
@@ -227,7 +228,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       } else {
         all_cached_errors ++= cached_errors
         _frontend.reporter report
-          CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(cached_errors))
+          CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(cached_errors, result.branchTree))
       }
     })
 
@@ -239,7 +240,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
         s" methodsToVerify: ${methodsToVerify.map(_.name)}.")
     _frontend.logger.trace(s"The cached program is equivalent to: \n${transformed_prog.toString()}")
 
-    CachingResult(transformed_prog, all_cached_errors.toSeq)
+    CachingResult(transformed_prog, all_cached_errors.toSeq, None)
   }
 
   private def beforeVerify(input: Program): Either[Seq[AbstractError], Program] = {
@@ -271,11 +272,13 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     val astAfterApplyingCache = cachingResult.transformedProgram
     val methodsToVerify: Seq[Method] = astAfterApplyingCache.methods.filter(_.body.isDefined)
 
-    val meth_to_err_map: Seq[(Method, Option[List[AbstractVerificationError]])] = methodsToVerify.map((m: Method) => {
+    val meth_to_err_map: Seq[(Method, Option[List[AbstractVerificationError]],Option[BranchTree])] = methodsToVerify.map((m: Method) => {
       // Results come back irrespective of program Member.
+      var branchTree : Option[BranchTree] = None
       val cacheable_errors: Option[List[AbstractVerificationError]] = for {
         cache_errs <- verificationResult match {
-          case Failure(errs) =>
+          case Failure(errs,bt) =>
+            branchTree = if (bt.nonEmpty) bt else branchTree
             val r = getMethodSpecificErrors(m, errs)
             _frontend.logger.debug(s"getMethodSpecificErrors returned $r")
             r
@@ -284,7 +287,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
         }
       } yield cache_errs
 
-      (m, cacheable_errors)
+      (m, cacheable_errors, branchTree)
     })
 
     // Check that the mapping from errors to methods is not messed up
@@ -294,7 +297,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       verificationResult match {
         case Success =>
           all_errors_in_file.isEmpty
-        case Failure(errors) =>
+        case Failure(errors,_) =>
           // FIXME find a better sorting criterion
           errors.sortBy(ae => ae.hashCode()) == all_errors_in_file.sortBy(ae => ae.hashCode())
       }
@@ -302,11 +305,11 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
 
     if (update_cache_criterion) {
       // update cache
-      meth_to_err_map.foreach { case (m: Method, cacheable_errors: Option[List[AbstractVerificationError]]) =>
+      meth_to_err_map.foreach { case (m: Method, cacheable_errors: Option[List[AbstractVerificationError]],branchTree:Option[BranchTree]) =>
         _frontend.logger.debug(s"Obtained cacheable errors: $cacheable_errors")
 
         if (cacheable_errors.isDefined) {
-          ViperCache.update(backendName, programId, m, astAfterApplyingCache, cacheable_errors.get) match {
+          ViperCache.update(backendName, programId, m, astAfterApplyingCache, cacheable_errors.get, branchTree) match {
             case e :: es =>
               _frontend.logger.trace(s"Storing new entry in cache for method '${m.name}' and backend '$backendName': $e. Other entries for this method: ($es)")
             case Nil =>
@@ -326,10 +329,10 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       verificationResult // verificationResult remains unchanged as the cached errors (which are none) do not change the outcome
     } else {
       verificationResult match {
-        case Failure(errorList) =>
-          Failure(errorList ++ cachingResult.cachedErrors)
+        case Failure(errorList,branchTree) =>
+          Failure(errorList ++ cachingResult.cachedErrors, branchTree)
         case Success =>
-          Failure(cachingResult.cachedErrors)
+          Failure(cachingResult.cachedErrors, None)
       }
     }
   }
