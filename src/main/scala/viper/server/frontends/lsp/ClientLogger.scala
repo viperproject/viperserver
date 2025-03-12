@@ -41,15 +41,16 @@ class ClientAppender(coordinator: ClientCoordinator) extends UnsynchronizedAppen
     def getParams(logLevel: LogLevel): LogParams =
       LogParams(event.getMessage, logLevel.id)
 
-    if (!coordinator.isAlive) return
+    if (coordinator.client.isEmpty) return
+    val client = coordinator.client.get
     event.getLevel match {
       case Level.OFF =>
-      case Level.ERROR => coordinator.client.notifyLog(getParams(LogLevel.Info))
-      case Level.WARN => coordinator.client.notifyLog(getParams(LogLevel.Info))
-      case Level.INFO => coordinator.client.notifyLog(getParams(LogLevel.Info))
-      case Level.DEBUG => coordinator.client.notifyLog(getParams(LogLevel.Debug))
-      case Level.TRACE => coordinator.client.notifyLog(getParams(LogLevel.LowLevelDebug))
-      case Level.ALL => coordinator.client.notifyLog(getParams(LogLevel.LowLevelDebug))
+      case Level.ERROR => client.notifyLog(getParams(LogLevel.Info))
+      case Level.WARN => client.notifyLog(getParams(LogLevel.Info))
+      case Level.INFO => client.notifyLog(getParams(LogLevel.Info))
+      case Level.DEBUG => client.notifyLog(getParams(LogLevel.Debug))
+      case Level.TRACE => client.notifyLog(getParams(LogLevel.LowLevelDebug))
+      case Level.ALL => client.notifyLog(getParams(LogLevel.LowLevelDebug))
     }
   }
 }
