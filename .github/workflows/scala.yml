@@ -273,6 +273,8 @@ jobs:
 
   publish-to-registry:
     needs: test
+    # only run this job if a commit got pushed:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     container: viperproject/viperserver:v4_z3_4.8.7
     steps:
