@@ -1,3 +1,5 @@
+import sbt.Keys.{publishMavenStyle, versionScheme}
+
 import scala.sys.process.Process
 import scala.util.Try
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -18,8 +20,6 @@ lazy val server = (project in file("."))
         // General settings
         name := "ViperServer",
         organization := "viperproject",
-        version := "2.0.0", // has to be a proper semver
-        versionScheme := Some("semver-spec"),
         homepage := Some(url("https://github.com/viperproject/viperserver")),
 
         // Fork test to a different JVM than SBT's, avoiding SBT's classpath interfering with
@@ -55,16 +55,6 @@ lazy val server = (project in file("."))
                 fallbackStrategy(x)
         },
 
-        // Publishing settings:
-        publishMavenStyle := true,
-        publishTo := Some("GitHub viperproject Apache Maven Packages" at "https://maven.pkg.github.com/viperproject/viperserver"),
-        credentials += Credentials(
-            "GitHub Package Registry",
-            "maven.pkg.github.com",
-            "viperproject",
-            System.getenv("GITHUB_TOKEN")
-        ),
-
         // Test settings
         // [2020-10-12 MS]
         //   When assembling a fat test JAR (test:assembly), the files under
@@ -83,13 +73,13 @@ lazy val server = (project in file("."))
           case x =>
             val fallbackStrategy = (assembly / assemblyMergeStrategy).value
             fallbackStrategy(x)
-        }
+        },
     )
   .enablePlugins(BuildInfoPlugin)
   .settings(
     buildInfoKeys := Seq[BuildInfoKey](
       "projectName" -> name.value,
-      "projectVersion" -> version.value,
+      "projectVersion" -> versionCore,
       scalaVersion,
       sbtVersion,
       "gitRevision" -> gitInfo.value._1,
@@ -97,8 +87,25 @@ lazy val server = (project in file("."))
       // combine version with branch name (if not 'master') and the git revision:
       "projectVersionExtended" -> s"${version.value} (${gitInfo.value._1}${if (gitInfo.value._2 == "master") "" else s"@${gitInfo.value._2}"})"
     ),
-    buildInfoPackage := "viper.viperserver"
+    buildInfoPackage := "viper.viperserver",
+
+    // Publishing settings:
+    versionScheme := Some("semver-spec"),
+    version := {
+      val buildInfos = Seq(gitInfo.value._1) // git revision
+      s"$versionCore+${buildInfos.mkString(".")}" // has to be a valid SemVer (see https://semver.org)
+    },
+    publishMavenStyle := true,
+    publishTo := Some("GitHub viperproject Apache Maven Packages" at "https://maven.pkg.github.com/viperproject/viperserver"),
+    credentials += Credentials(
+      "GitHub Package Registry",
+      "maven.pkg.github.com",
+      "viperproject",
+      System.getenv("GITHUB_TOKEN")
+    ),
   )
+
+lazy val versionCore = "2.0.0"
 
 // Pair of git revision and branch information
 lazy val gitInfo: Def.Initialize[(String, String)] = Def.setting {
