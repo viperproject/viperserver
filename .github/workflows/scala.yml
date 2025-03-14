@@ -271,6 +271,40 @@ jobs:
           path: viperserver/logs
 
 
+  publish-to-registry:
+    needs: test
+    runs-on: ubuntu-latest
+    container: viperproject/viperserver:v4_z3_4.8.7
+    steps:
+      - name: Checkout ViperServer
+        uses: actions/checkout@v4
+        with:
+          path: viperserver
+          submodules: recursive
+
+      - name: Set sbt cache variables
+        run: echo "SBT_OPTS=-Dsbt.global.base=sbt-cache/.sbtboot -Dsbt.boot.directory=sbt-cache/.boot -Dsbt.ivy.home=sbt-cache/.ivy" >> $GITHUB_ENV
+        # note that the cache path is relative to the directory in which sbt is invoked.
+
+      - name: Cache SBT
+        uses: actions/cache@v4
+        with:
+          path: |
+            viperserver/sbt-cache/.sbtboot
+            viperserver/sbt-cache/.boot
+            viperserver/sbt-cache/.ivy/cache
+          # <x>/project/target and <x>/target, where <x> is e.g. 'viperserver', are intentionally not
+          # included as several occurrences of NoSuchMethodError exceptions have been observed during CI runs. It seems
+          # like sbt is unable to correctly compute source files that require a recompilation. Therefore, we have
+          # disabled caching of compiled source files altogether
+          key: ${{ runner.os }}-sbt-no-precompiled-sources-${{ hashFiles('**/build.sbt') }}
+
+      - name: Publish package
+        run: sbt publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
   create-nightly-release:
     needs: test
     # this job creates a new nightly pre-release, set viperserver.jar as artifacts, and deletes old releases

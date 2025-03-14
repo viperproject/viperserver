@@ -17,8 +17,10 @@ lazy val server = (project in file("."))
     .settings(
         // General settings
         name := "ViperServer",
-        organization := "viper",
+        organization := "viperproject",
         version := "2.0.0", // has to be a proper semver
+        versionScheme := Some("semver-spec"),
+        homepage := Some(url("https://github.com/viperproject/viperserver")),
 
         // Fork test to a different JVM than SBT's, avoiding SBT's classpath interfering with
         // classpath used by Scala's reflection.
@@ -52,6 +54,16 @@ lazy val server = (project in file("."))
                 val fallbackStrategy = (assembly / assemblyMergeStrategy).value
                 fallbackStrategy(x)
         },
+
+        // Publishing settings:
+        publishMavenStyle := true,
+        publishTo := Some("GitHub viperproject Apache Maven Packages" at "https://maven.pkg.github.com/viperproject/viperserver"),
+        credentials += Credentials(
+            "GitHub Package Registry",
+            "maven.pkg.github.com",
+            "viperproject",
+            System.getenv("GITHUB_TOKEN")
+        ),
 
         // Test settings
         // [2020-10-12 MS]
