@@ -103,6 +103,8 @@ lazy val server = (project in file("."))
       "viperproject",
       System.getenv("GITHUB_TOKEN")
     ),
+    // allow pushing the same version to the registry:
+    isSnapshot := true
   )
 
 lazy val versionCore = "2.0.0"
