@@ -301,6 +301,7 @@ jobs:
 
       - name: Publish package
         run: sbt publish
+        working-directory: viperserver
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
