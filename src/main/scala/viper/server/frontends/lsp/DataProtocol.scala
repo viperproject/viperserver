@@ -176,7 +176,15 @@ case class StateChangeParams(
               stage: String = null,
               error: String = null)
 
-case class BranchFailureDetails(uri: String, /*errorMessage: String, tree string*/ ranges: Array[Range])
+case class BranchCondition(condition: String, negated: Boolean)
+case class BranchFailurePath(conditions: Array[BranchCondition], isResultFatal: Boolean)
+case class BranchClauseRange(ifLine: Int, elseLine: Int, methodEndLine: Int)
+case class BranchFailureDetails(uri: String,
+                                methodName : String,
+                                methodIdentifierRange : Range,
+                                paths: Array[BranchFailurePath],
+                                clauseRange: BranchClauseRange,
+                                cached : Boolean)
 
 case class UnhandledViperServerMessageTypeParams(msgType: String, msg: String, logLevel: Int)
 

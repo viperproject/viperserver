@@ -6,39 +6,36 @@
 
 package viper.server.frontends.lsp.file
 
-import org.eclipse.lsp4j
+import viper.server.frontends.lsp.Common
+import viper.silver.ast.Method
+import viper.silver.parser.PKw
 
 trait Branches extends ProjectAware {
-    def getBranchRange(uri: String, pos: lsp4j.Position, leftIsFatal: Boolean, rightIsFatal: Boolean): lsp4j.Range = {
-        var start = new lsp4j.Position(pos.getLine, 0)
-        var end = new lsp4j.Position(pos.getLine, 0)
+    def getFirstBranchClauseLines(uri: String, method: Method): (Int,Int,Int) = {
+        var start = Common.toPosition(method.pos)
         val m = getInProject(uri)
-        var currPos = m.content.iterForward(start).drop(1).find { case (c, _) => c == '{' }
-        if (!currPos.isDefined) return new lsp4j.Range(start, end)
+        var currPos = m.content.iterForward(start)
+          .drop(1).find { case (c, _) => c == '{' }
+        if (currPos.isDefined) start = currPos.get._2
+        currPos = m.content.iterForward(currPos.get._2)
+          .drop(1).find { case (c, _) => c == '{' }
+        if (currPos.isDefined) start = currPos.get._2
+        var middleLn = start.getLine
+        var endLn = start.getLine
         var openBraceCount = 0
-        var movedStart = false
         do {
-            val (c, p) = currPos.get
+            val (c,p) = currPos.get
             c match {
                 case '}' =>
                     openBraceCount -= 1
                     if (openBraceCount == 0) {
-                        end = new lsp4j.Position(p.getLine, 0)
-                        if (leftIsFatal && !movedStart) {
-                            val nextBracePos = m.content.iterForward(p).drop(1).find { case (c, _) => c == '{' }
-                            if (nextBracePos.isDefined) {
-                                currPos = nextBracePos
-                            }
-                            // move start
-                            if (!rightIsFatal) {
-                                if (nextBracePos.isDefined) { // no else clause
-                                    start = new lsp4j.Position(currPos.get._2.getLine, 0)
-                                } else if (p.getLine + 1 < m.content.fileContent.length) { // else clause
-                                    start = new lsp4j.Position(p.getLine + 1, 0)
-                                }
-                            }
-                            openBraceCount = 1
-                            movedStart = true
+                        val ln = if (!m.content.fileContent(p.getLine).contains(PKw.Else.keyword)) p.getLine+1
+                                 else p.getLine
+                        if (start.getLine == middleLn) {
+                            middleLn = ln
+                            openBraceCount += 1
+                        } else {
+                            endLn = ln
                         }
                     }
                 case '{' =>
@@ -47,6 +44,6 @@ trait Branches extends ProjectAware {
             }
             currPos = m.content.iterForward(currPos.get._2).drop(1).find { case (c, _) => c == '{' || c == '}' }
         } while (currPos.isDefined && openBraceCount > 0)
-        new lsp4j.Range(start, end)
+        (start.getLine, middleLn, endLn)
     }
 }

@@ -176,7 +176,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   /** Notifies the client about details of branch failure for displaying red beams */
   def sendBranchFailureDetails(details: BranchFailureDetails): Unit = {
     try {
-      client.sendBranchFailureDetails(details)
+      client.sendBranchFailureInfo(details)
     } catch {
       case e: Throwable => logger.debug(s"Error while sending branch failure details: $e")
     }

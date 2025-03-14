@@ -7,23 +7,18 @@
 package viper.silver.ast.utility.lsp
 
 import org.eclipse.lsp4j
-import viper.silver.reporter.BranchTree
 
 trait HasCodeActions {
   def getCodeActions: Seq[CodeAction]
 }
 
-trait CaAction
-case class CaEdit(edit : String, range : lsp4j.Range) extends CaAction
-case class CaCommand(cmd : String, args : Seq[AnyRef]) extends CaAction
-
 case class CodeAction(
                        title: String,
-                       action: CaAction,
+                       edit: Option[(String, lsp4j.Range)],
+                       cmd: Option[(String, Seq[AnyRef])],
                        bound: SelectionBoundScopeTrait,
                        kind: String,
-                       resolvedDiags: Seq[lsp4j.Diagnostic] = Seq.empty,
-                       branchTree : Option[BranchTree] = None
-) extends SelectableInBound with HasRangePositions {
+                       resolvedDiags: Seq[lsp4j.Diagnostic] = Seq.empty
+                     ) extends SelectableInBound with HasRangePositions {
   override def rangePositions: Seq[RangePosition] = bound.rangePositions
 }

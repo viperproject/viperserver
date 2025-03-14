@@ -13,7 +13,6 @@ import viper.server.frontends.lsp.{Common, Lsp4jSemanticHighlight}
 import viper.server.frontends.lsp.file.{Diagnostic, FindReferences}
 import ch.qos.logback.classic.Logger
 import org.eclipse.lsp4j.Command
-import viper.silver.ast.utility.lsp.{CaCommand, CaEdit}
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
@@ -217,19 +216,19 @@ case object CodeActionTranslator extends Translates[lsp.CodeAction, lsp4j.CodeAc
   override def translate(ca: lsp.CodeAction)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)): lsp4j.CodeAction = ???
   override def translate(cas: Seq[lsp.CodeAction])(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean))(implicit log: Logger): Seq[lsp4j.CodeAction] = {
     cas.map(ca => {
-      if (ca.branchTree.isDefined) ca.branchTree.get.toDotFile() // TODO
       val codeAction = new lsp4j.CodeAction(ca.title)
-      ca.action match {
-        case CaCommand(cmd, args) =>
-          codeAction.setCommand(new Command(ca.title, cmd, args.asJava))
-        case CaEdit(edit, range) =>
-          val textEdits = Seq(new lsp4j.TextEdit(range, edit)).asJava
-          val uri = ca.bound.scope.file.toUri().toString()
-          val edits = Map(uri -> textEdits).asJava
-          val workspaceEdit = new lsp4j.WorkspaceEdit(edits)
-          codeAction.setEdit(workspaceEdit)
-        case _=>
-      }
+      ca.cmd.map(c => {
+        val (cmd,args) = c
+        codeAction.setCommand(new Command(ca.title, cmd, args.asJava))
+      })
+      ca.edit.map(e => {
+        val (edit, range) = e
+        val textEdits = Seq(new lsp4j.TextEdit(range, edit)).asJava
+        val uri = ca.bound.scope.file.toUri().toString()
+        val edits = Map(uri -> textEdits).asJava
+        val workspaceEdit = new lsp4j.WorkspaceEdit(edits)
+        codeAction.setEdit(workspaceEdit)
+      })
       codeAction.setDiagnostics(ca.resolvedDiags.asJava)
       codeAction.setKind(ca.kind)
       codeAction

@@ -431,7 +431,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       override def notifyUnhandledViperServerMessage(params: UnhandledViperServerMessageTypeParams): Unit = {}
       override def notifyVerificationNotStarted(params: VerificationNotStartedParams): Unit = {}
       override def notifyStateChanged(params: StateChangeParams): Unit = {}
-      override def sendBranchFailureDetails(params: BranchFailureDetails): Unit = {}
+      override def sendBranchFailureInfo(params: BranchFailureDetails): Unit = {}
       override def telemetryEvent(`object`: Any): Unit = {}
       override def publishDiagnostics(diagnostics: PublishDiagnosticsParams): Unit = {}
       override def showMessage(messageParams: MessageParams): Unit = {}

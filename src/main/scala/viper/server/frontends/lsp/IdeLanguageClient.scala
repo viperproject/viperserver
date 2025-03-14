@@ -43,5 +43,5 @@ trait IdeLanguageClient extends LanguageClient {
   def notifyStateChanged(params: StateChangeParams): Unit
 
   @JsonNotification(S2C_Commands.BranchFailureDetails)
-  def sendBranchFailureDetails(params: BranchFailureDetails): Unit
+  def sendBranchFailureInfo(params: BranchFailureDetails): Unit
 }

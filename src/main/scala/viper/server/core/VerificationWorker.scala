@@ -15,7 +15,7 @@ import viper.silver.ast._
 import viper.silver.frontend.SilFrontend
 import viper.silver.reporter.{Reporter, _}
 import viper.silver.utility.ViperProgramSubmitter
-import viper.silver.reporter.BranchTree
+import viper.silver.reporter.ExploredBranches
 import viper.silver.verifier.{AbstractVerificationError, VerificationResult, _}
 
 import scala.collection.mutable.ListBuffer
@@ -208,7 +208,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     }
   }
 
-  case class CachingResult(transformedProgram: Program, cachedErrors: Seq[VerificationError], branchTree: Option[BranchTree])
+  case class CachingResult(transformedProgram: Program, cachedErrors: Seq[VerificationError], exploredBranches: Option[ExploredBranches])
 
   private def caching(input: Program): CachingResult = {
     if (_frontend.config.disableCaching()) {
@@ -228,7 +228,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       } else {
         all_cached_errors ++= cached_errors
         _frontend.reporter report
-          CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(cached_errors, result.branchTree))
+          CachedEntityMessage(_frontend.getVerifierName, result.method, Failure(cached_errors, result.exploredBranches))
       }
     })
 
@@ -272,13 +272,13 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     val astAfterApplyingCache = cachingResult.transformedProgram
     val methodsToVerify: Seq[Method] = astAfterApplyingCache.methods.filter(_.body.isDefined)
 
-    val meth_to_err_map: Seq[(Method, Option[List[AbstractVerificationError]],Option[BranchTree])] = methodsToVerify.map((m: Method) => {
+    val meth_to_err_map: Seq[(Method, Option[List[AbstractVerificationError]],Option[ExploredBranches])] = methodsToVerify.map((m: Method) => {
       // Results come back irrespective of program Member.
-      var branchTree : Option[BranchTree] = None
+      var exploredBranches : Option[ExploredBranches] = None
       val cacheable_errors: Option[List[AbstractVerificationError]] = for {
         cache_errs <- verificationResult match {
-          case Failure(errs,bt) =>
-            branchTree = if (bt.nonEmpty) bt else branchTree
+          case Failure(errs,eb) =>
+            exploredBranches = if (eb.nonEmpty) eb else exploredBranches
             val r = getMethodSpecificErrors(m, errs)
             _frontend.logger.debug(s"getMethodSpecificErrors returned $r")
             r
@@ -287,7 +287,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
         }
       } yield cache_errs
 
-      (m, cacheable_errors, branchTree)
+      (m, cacheable_errors, exploredBranches)
     })
 
     // Check that the mapping from errors to methods is not messed up
@@ -305,11 +305,11 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
 
     if (update_cache_criterion) {
       // update cache
-      meth_to_err_map.foreach { case (m: Method, cacheable_errors: Option[List[AbstractVerificationError]],branchTree:Option[BranchTree]) =>
+      meth_to_err_map.foreach { case (m: Method, cacheable_errors: Option[List[AbstractVerificationError]],exploredBranches:Option[ExploredBranches]) =>
         _frontend.logger.debug(s"Obtained cacheable errors: $cacheable_errors")
 
         if (cacheable_errors.isDefined) {
-          ViperCache.update(backendName, programId, m, astAfterApplyingCache, cacheable_errors.get, branchTree) match {
+          ViperCache.update(backendName, programId, m, astAfterApplyingCache, cacheable_errors.get, exploredBranches) match {
             case e :: es =>
               _frontend.logger.trace(s"Storing new entry in cache for method '${m.name}' and backend '$backendName': $e. Other entries for this method: ($es)")
             case Nil =>
@@ -329,8 +329,12 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       verificationResult // verificationResult remains unchanged as the cached errors (which are none) do not change the outcome
     } else {
       verificationResult match {
-        case Failure(errorList,branchTree) =>
-          Failure(errorList ++ cachingResult.cachedErrors, branchTree)
+        case Failure(errorList,exploredBranches) =>
+          val combinedExploredBranches = (exploredBranches, cachingResult.exploredBranches) match {
+            case (Some(eb),Some(ebC)) => Some(ExploredBranches(eb.method, ebC.paths ++ eb.paths, ebC.cached))
+            case _=> exploredBranches
+          }
+          Failure(errorList ++ cachingResult.cachedErrors, combinedExploredBranches)
         case Success =>
           Failure(cachingResult.cachedErrors, None)
       }

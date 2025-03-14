@@ -19,7 +19,7 @@ import viper.silver.verifier.errors.{ApplyFailed, CallFailed, ContractNotWellfor
 import viper.silver.verifier.{AbstractVerificationError, VerificationError, errors}
 import net.liftweb.json.Serialization.{read, write}
 import net.liftweb.json.{DefaultFormats, Formats, JArray, JField, JInt, JString, MappingException, ShortTypeHints}
-import viper.silver.reporter.BranchTree
+import viper.silver.reporter.ExploredBranches
 import viper.silver.verifier.reasons.{AssertionFalse, DivisionByZero, EpsilonAsParam, FeatureUnsupported, InsufficientPermission, InternalReason, InvalidPermMultiplication, LabelledStateNotReached, MagicWandChunkNotFound, MapKeyNotContained, NegativePermission, QPAssertionNotInjective, ReceiverNull, SeqIndexExceedsLength, SeqIndexNegative, UnexpectedNode}
 
 import java.nio.charset.StandardCharsets
@@ -85,8 +85,8 @@ object ViperCache extends Cache {
           logger.trace(s"Got a cache hit for method ${concerning_method.name} and backend $backendName")
           // set cached flag:
           val cachedErrors = content.errors.map(setCached)
-          content.branchTree.foreach(bt => bt.cached=true)
-          CacheResult(concerning_method, cachedErrors, content.branchTree)
+          content.exploredBranches.foreach(eb => eb.cached=true)
+          CacheResult(concerning_method, cachedErrors, content.exploredBranches)
         } catch {
           case e: Throwable =>
             // In case parsing of the cache entry fails, abort caching & evict cache entries for this file, since hey might come from an unsupported version
@@ -265,11 +265,11 @@ object ViperCache extends Cache {
         method: Method,
         program: Program,
         errors: List[AbstractVerificationError],
-        branchTree: Option[BranchTree]): List[CacheEntry] = {
+        exploredBranches: Option[ExploredBranches]): List[CacheEntry] = {
 
     val viperMethod = ViperMethod(method)
     val deps: List[Member] = viperMethod.getDependencies(ViperAst(program))
-    val content = createCacheContent(backendName, file, program, errors, branchTree)
+    val content = createCacheContent(backendName, file, program, errors, exploredBranches)
     val file_key = getKey(file = file, backendName = backendName)
     super.update(file_key, ViperMethod(method), deps, content)
   }
@@ -306,12 +306,12 @@ object ViperCache extends Cache {
         backendName: String, file: String,
         p: Program,
         errors: List[AbstractVerificationError],
-        branchTree: Option[BranchTree]): SerializedViperCacheContent = {
+        exploredBranches: Option[ExploredBranches]): SerializedViperCacheContent = {
 
     val key: String = getKey(file = file, backendName = backendName)
 
     implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.errorNodeHints(p, key))
-    SerializedViperCacheContent(write(ViperCacheContent(errors,branchTree)))
+    SerializedViperCacheContent(write(ViperCacheContent(errors,exploredBranches)))
   }
 }
 
@@ -560,7 +560,7 @@ case class SerializedViperCacheContent(content: String) extends CacheContent
 /** Class containing the verification results of a viper verification run
   *
   */
-case class ViperCacheContent(errors: List[AbstractVerificationError], branchTree: Option[BranchTree])
+case class ViperCacheContent(errors: List[AbstractVerificationError], exploredBranches: Option[ExploredBranches])
 
 /** An access path holds a List of Numbers
   *
@@ -593,7 +593,7 @@ case class ViperAst(p: Program) extends Ast {
   }
 }
 
-case class CacheResult(method: Method, verification_errors: List[VerificationError], branchTree: Option[BranchTree])
+case class CacheResult(method: Method, verification_errors: List[VerificationError], exploredBranches: Option[ExploredBranches])
 
 case class ViperMember(h: Hashable) extends Member {
 

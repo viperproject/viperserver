@@ -234,8 +234,8 @@ object HasCodeActions {
           val decreases = s"$optNewLine  ${PDecreasesKeyword.keyword} $decreasesExp\n$indent"
 
           Seq(
-            CodeAction("Add invariant", CaEdit(invariant , er), SelectionBoundScope(wRp), CodeActionKind.Empty, Seq.empty),
-            CodeAction("Add decreases", CaEdit(decreases, er), SelectionBoundScope(wRp), CodeActionKind.Empty, Seq.empty)
+            CodeAction("Add invariant", Some((invariant , er)), None, SelectionBoundScope(wRp), CodeActionKind.Empty, Seq.empty),
+            CodeAction("Add decreases", Some((decreases, er)), None, SelectionBoundScope(wRp), CodeActionKind.Empty, Seq.empty)
           )
       }).flatten
   }
@@ -244,7 +244,8 @@ object HasCodeActions {
     fas.map(f => (f,RangePosition(f))).collect {
       case (f, Some(fRp)) =>
       CodeAction("Declare field",
-        CaCommand("viper.declareField", Seq(f.idnref.pretty)),
+        None,
+        Some(("viper.declareField", Seq(f.idnref.pretty))),
         SelectionBoundScope(fRp),
         CodeActionKind.QuickFix,
         getDiagnostic(Common.toPosition(f.pos._1)))
@@ -269,7 +270,8 @@ object HasCodeActions {
           val indent = " "*(parentRp.start.column-1)
           val beforeKeyword = if (openingBracketInSameLine) s"\n$indent  " else "  "
           CodeAction("Add access precondition",
-            CaEdit(s"$beforeKeyword$keyword acc(${f.pretty})\n$indent", new Range(editPos, editPos)),
+            Some((s"$beforeKeyword$keyword acc(${f.pretty})\n$indent", new Range(editPos, editPos))),
+            None,
             SelectionBoundScope(fRp),
             CodeActionKind.QuickFix,
             getDiagnostic(Common.toPosition(f.pos._1)))
