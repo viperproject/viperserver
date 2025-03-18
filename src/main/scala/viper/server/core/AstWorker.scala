@@ -63,10 +63,5 @@ class AstWorker(val arg_list: List[String],
     ast_option
   }
 
-  override def mapEntityVerificationResult(entity: Entity, result: VerificationResult): VerificationResult = {
-    logger.error(s"unexpected operation: AstWorker received an entity success or entity failure message, which should not occur while constructing a Viper AST")
-    ???
-  }
-
   override def call(): Option[Program] = constructAst(arg_list)
 }

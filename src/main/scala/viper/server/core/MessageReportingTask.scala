@@ -24,13 +24,9 @@ trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
     super.registerTaskEnd(success, logger)
   }
 
-  /** implementations of this functions should let plugins map verification results for each entity */
-  def mapEntityVerificationResult(entity: Entity, result: VerificationResult): VerificationResult
-
   private def processEntityResultMessage(verifier: String, entity: Entity,
                                          verificationTime: Time, result: VerificationResult, cached: Boolean): Unit = {
-    val mappedResult = mapEntityVerificationResult(entity, result)
-    enqueueMessage(VerificationResultMessage(verifier, entity, verificationTime, mappedResult, cached))
+    enqueueMessage(VerificationResultMessage(verifier, entity, verificationTime, result, cached))
   }
 
   // Implementation of the Reporter interface used by the backend.
