@@ -11,8 +11,7 @@ import viper.server.ViperConfig
 import viper.server.utility.AstGenerator
 import viper.server.vsi.AstConstructionException
 import viper.silver.ast.Program
-import viper.silver.reporter.{Entity, ExceptionReport}
-import viper.silver.verifier.VerificationResult
+import viper.silver.reporter.ExceptionReport
 
 
 object ViperFileNotFoundException extends AstConstructionException

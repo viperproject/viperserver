@@ -24,11 +24,6 @@ trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
     super.registerTaskEnd(success, logger)
   }
 
-  private def processEntityResultMessage(verifier: String, entity: Entity,
-                                         verificationTime: Time, result: VerificationResult, cached: Boolean): Unit = {
-    enqueueMessage(VerificationResultMessage(verifier, entity, verificationTime, result, cached))
-  }
-
   // Implementation of the Reporter interface used by the backend.
   class ActorReporter(tag: String) extends PluginAwareReporter {
     val name = s"ViperServer_$tag"
@@ -40,13 +35,6 @@ trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
         case m: EntitySuccessMessage if m.concerning.info.isCached =>
           // Do not re-send messages about AST nodes that have been cached;
           // the information about these nodes is going to be reported anyway.
-
-        // to properly support streaming of (partial) verification results, we must invoke
-        // the plugins to do the post-processing and enqueue the resulting message:
-        case EntitySuccessMessage(verifier, entity, verificationTime, cached) =>
-          processEntityResultMessage(verifier, entity, verificationTime, Success, cached)
-        case EntityFailureMessage(verifier, entity, verificationTime, failure, cached) =>
-          processEntityResultMessage(verifier, entity, verificationTime, failure, cached)
 
         case m =>
           enqueueMessage(m)
