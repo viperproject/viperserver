@@ -8,7 +8,7 @@ package viper.server.core
 
 import ch.qos.logback.classic.Logger
 import viper.server.vsi.MessageStreamingTask
-import viper.silver.reporter.{Entity, EntityFailureMessage, EntitySuccessMessage, Message, Reporter, Time, VerificationResultMessage}
+import viper.silver.reporter.{Entity, EntityFailureMessage, EntitySuccessMessage, Message, PluginAwareReporter, Time, VerificationResultMessage}
 import viper.silver.verifier.{Success, VerificationResult}
 
 trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
@@ -34,10 +34,10 @@ trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
   }
 
   // Implementation of the Reporter interface used by the backend.
-  class ActorReporter(tag: String) extends Reporter {
+  class ActorReporter(tag: String) extends PluginAwareReporter {
     val name = s"ViperServer_$tag"
 
-    def report(msg: Message): Unit = {
+    def doReport(msg: Message): Unit = {
       logger.trace(s"ActorReport received msg $msg")
       msg match {
         case m: EntityFailureMessage if m.concerning.info.isCached =>
