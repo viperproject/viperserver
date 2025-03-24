@@ -133,12 +133,11 @@ class BranchTree {
     while (currTree != Leaf) {
       currTree match {
         case b@Branch(e, l, r, lc, rc) =>
-          val expStr = e.toString
-          val halfExpStrLen = expStr.length / 2
+          val halfExpStrLen = e.length / 2
           val (pathTaken, pathNotTaken) = if (b.isRightFatal) ("T", "F") else ("F","T")
 
           val boxTop = "┌─" + ("─" * halfExpStrLen) + "┴" + ("─" * halfExpStrLen) + s"─┐ $pathNotTaken "
-          val boxMiddle = "│ " + expStr + (if (even(expStr.length)) " " else "") + " ├──"
+          val boxMiddle = "│ " + e + (if (even(e.length)) " " else "") + " ├──"
           val boxBottom = "└─" + "─" * halfExpStrLen + "┬" + "─" * halfExpStrLen + "─┘   "
           val conDown = " " * (halfExpStrLen+2) + s"│$pathTaken " + " " * halfExpStrLen
           var box = Vector(boxTop, boxMiddle, boxBottom, conDown)

@@ -9,9 +9,11 @@ package viper.server.frontends.lsp.file
 import viper.server.frontends.lsp.Common
 import viper.silver.ast.Method
 import viper.silver.parser.PKw
+import org.eclipse.lsp4j
+import org.eclipse.lsp4j.Position
 
 trait Branches extends ProjectAware {
-    def getFirstBranchClauseLines(uri: String, method: Method): (Int,Int,Int) = {
+    def getBeamRange(uri: String, method: Method, failsInElse: Boolean): lsp4j.Range = {
         var start = Common.toPosition(method.pos)
         val m = getInProject(uri)
         var currPos = m.content.iterForward(start)
@@ -29,7 +31,9 @@ trait Branches extends ProjectAware {
                 case '}' =>
                     openBraceCount -= 1
                     if (openBraceCount == 0) {
-                        val ln = if (!m.content.fileContent(p.getLine).contains(PKw.Else.keyword)) p.getLine+1
+                        val ln = if (!m.content.fileContent(p.getLine)
+                                        .contains(PKw.Else.keyword))
+                                 p.getLine+1
                                  else p.getLine
                         if (start.getLine == middleLn) {
                             middleLn = ln
@@ -44,6 +48,9 @@ trait Branches extends ProjectAware {
             }
             currPos = m.content.iterForward(currPos.get._2).drop(1).find { case (c, _) => c == '{' || c == '}' }
         } while (currPos.isDefined && openBraceCount > 0)
-        (start.getLine, middleLn, endLn)
+        new lsp4j.Range(
+            new Position(if (failsInElse) middleLn else start.getLine,0),
+            new Position(endLn,0)
+        )
     }
 }

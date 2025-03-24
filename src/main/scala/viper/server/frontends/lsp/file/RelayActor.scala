@@ -9,9 +9,10 @@ package viper.server.frontends.lsp.file
 import akka.actor.{Actor, Props, Status}
 import org.eclipse.lsp4j.{CodeActionKind, DiagnosticSeverity, Position}
 import viper.server.frontends.lsp
+import viper.server.frontends.lsp.BranchFailureDetails
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
-import viper.server.frontends.lsp.file.branchTree.BranchTree
+import viper.server.frontends.lsp.file.branchTree.{Branch, BranchTree}
 import viper.silver.ast
 import viper.silver.ast.utility.lsp.{CodeAction, RangePosition, SelectionBoundScope}
 import viper.silver.reporter._
@@ -128,17 +129,19 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
               Seq(Diagnostic(
                 backendClassName = backendClassName,
                 position = mRp,
-                message = s"Branch fails. ${cacheFlag} \n${tree.prettyPrint()}",
+                message = s"Branch fails. $cacheFlag \n${tree.prettyPrint()}",
                 severity = DiagnosticSeverity.Error,
                 cached = eb.cached,
                 errorMsgPrefix = None
               )))
 
-            //val idnRange = Common.toRange(mRp)
-            //val (ifLn, elseLn, methodEndLn) = task.getBranchRange(task.file_uri, eb.method, tree.)
-            /*if (details.nonEmpty) coordinator.sendBranchFailureDetails(
-              BranchFailureDetails(task.file_uri,Array())
-            )*/
+            val failsInElse = if (tree.isInstanceOf[Branch])
+                                tree.asInstanceOf[Branch].isLeftFatal
+                              else false
+            val beamRange = task.getBeamRange(task.file_uri, eb.method, failsInElse)
+            coordinator.sendBranchFailureDetails(
+              BranchFailureDetails(task.file_uri,Array(beamRange))
+            )
           })
 
           task.addCodeAction(false)(Seq(
