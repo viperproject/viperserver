@@ -10,13 +10,12 @@ import java.nio.file.Paths
 import akka.actor.{Actor, Props, Status}
 import akka.pattern.ask
 import akka.util.Timeout
-import org.eclipse.lsp4j.{MessageActionItem, MessageParams, Position, PublishDiagnosticsParams, Range, ShowMessageRequestParams}
 import org.scalatest.exceptions.TestFailedException
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.{Assertion, Outcome, Succeeded}
 import org.scalatest.wordspec.AnyWordSpec
 import viper.server.ViperConfig
-import viper.server.frontends.lsp.{BranchFailureDetails, ClientCoordinator, GetIdentifierResponse, GetRangeResponse, GetViperFileEndingsResponse, HintMessage, IdeLanguageClient, LogParams, SetupProjectParams, StateChangeParams, UnhandledViperServerMessageTypeParams, VerificationNotStartedParams, ViperServerService}
+import viper.server.frontends.lsp.{ClientCoordinator, ViperServerService}
 import viper.server.frontends.lsp.file.FileManager
 import viper.server.utility.AstGenerator
 import viper.server.vsi.{DefaultVerificationServerStart, JobNotFoundException, VerJobId}
@@ -26,7 +25,6 @@ import viper.silver.logger.SilentLogger
 import viper.silver.reporter.{EntityFailureMessage, EntitySuccessMessage, Message, OverallFailureMessage, OverallSuccessMessage}
 import viper.silver.verifier.{AbstractError, VerificationResult, Failure => VerifierFailure, Success => VerifierSuccess}
 
-import java.util.concurrent.CompletableFuture
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future, Promise}
 import scala.util.{Failure, Success}
@@ -340,14 +338,14 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       implicit val ctx: VerificationExecutionContext = context
       val siliconJid = verifySiliconWithoutCaching(core, ver_error_file)
       val siliconVerification = ViperCoreServerUtils.getResultsFuture(core, siliconJid).map {
-        case VerifierFailure(Seq(err)) => assert(!err.cached, "first verification should not be cached")
+        case VerifierFailure(Seq(err),_) => assert(!err.cached, "first verification should not be cached")
         case res => fail(s"expected a single entity failure from Silicon but got $res")
       }
       siliconVerification
         .map(_ => verifyCarbonWithCaching(core, ver_error_file))
         .flatMap(carbonJid => ViperCoreServerUtils.getResultsFuture(core, carbonJid))
         .map {
-          case VerifierFailure(Seq(err)) => assert(!err.cached, "verification should not reuse cache from other backend")
+          case VerifierFailure(Seq(err),_) => assert(!err.cached, "verification should not reuse cache from other backend")
           case res => fail(s"expected a single entity failure from Carbon but got $res")
         }
     })
@@ -421,24 +419,6 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       })
     })(viperServerServiceFactory)
 
-    class MockClient extends IdeLanguageClient {
-      override def requestIdentifier(pos: Position): CompletableFuture[GetIdentifierResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
-      override def requestRange(range: Range): CompletableFuture[GetRangeResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
-      override def requestVprFileEndings(): CompletableFuture[GetViperFileEndingsResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
-      override def requestSetupProject(param: SetupProjectParams): CompletableFuture[Unit] = CompletableFuture.failedFuture(new UnsupportedOperationException())
-      override def notifyLog(param: LogParams): Unit = {}
-      override def notifyHint(param: HintMessage): Unit = {}
-      override def notifyUnhandledViperServerMessage(params: UnhandledViperServerMessageTypeParams): Unit = {}
-      override def notifyVerificationNotStarted(params: VerificationNotStartedParams): Unit = {}
-      override def notifyStateChanged(params: StateChangeParams): Unit = {}
-      override def sendBranchFailureInfo(params: BranchFailureDetails): Unit = {}
-      override def telemetryEvent(`object`: Any): Unit = {}
-      override def publishDiagnostics(diagnostics: PublishDiagnosticsParams): Unit = {}
-      override def showMessage(messageParams: MessageParams): Unit = {}
-      override def showMessageRequest(requestParams: ShowMessageRequestParams): CompletableFuture[MessageActionItem] = CompletableFuture.failedFuture(new UnsupportedOperationException())
-      override def logMessage(message: MessageParams): Unit = {}
-    }
-
     s"verifyMultipleFiles behalves as expected" in withServer[ViperCoreServer]({ (core, context) =>
       // this unit tests makes sure that verifying two identical files using `verifyMultipleFiles` actually
       // triggers the cache
@@ -447,7 +427,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       val file2 = "src/test/resources/viper/identical-versions/version2.vpr"
 
       def handleResult(file: String, res: VerificationResult): Assertion = res match {
-        case VerifierFailure(errors) =>
+        case VerifierFailure(errors,_) =>
           assert(errors.size == 1)
           assert(errors.head.cached == (file == file2))
         case _ => fail(s"unexpected verification result for file $file")
@@ -462,7 +442,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
 
       def handleResult(file: String, res: VerificationResult): Assertion = res match {
         case VerifierSuccess => assert(file == fileBeforeModification)
-        case VerifierFailure(errors) =>
+        case VerifierFailure(errors,_) =>
           assert(file == fileAfterModification)
           assert(errors.size == 1)
       }
@@ -491,7 +471,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       val fileAfterReordering = "src/test/resources/viper/reordered-domains/version2.vpr"
 
       def handleResult(file: String, res: VerificationResult): Assertion = (res: @unchecked) match {
-        case VerifierFailure(errors) =>
+        case VerifierFailure(errors,_) =>
           assert(errors.size == 1)
           val err = errors.head
           if (err.cached) {
@@ -510,7 +490,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       val fileAfterReorderingDomainAxioms = "src/test/resources/viper/reordered-axioms/version3.vpr"
 
       def handleResult(file: String, res: VerificationResult): Assertion = (res: @unchecked) match {
-        case VerifierFailure(errors) =>
+        case VerifierFailure(errors,_) =>
           assert(errors.size == 1)
           val err = errors.head
           if (err.cached) {
@@ -684,7 +664,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       var errPosBeforeReordering: Option[ast.Position] = None
       var errPosAfterReordering: Option[ast.Position] = None
       def handleResult(file: String, res: VerificationResult): Assertion = (res: @unchecked) match {
-        case VerifierFailure(errors) =>
+        case VerifierFailure(errors,_) =>
           assert(errors.size == 1)
           val err = errors.head
           if (file == fileBeforeReordering) {

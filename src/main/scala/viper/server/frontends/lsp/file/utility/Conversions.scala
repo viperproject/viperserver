@@ -229,6 +229,7 @@ case object CodeActionTranslator extends Translates[lsp.CodeAction, lsp4j.CodeAc
         val workspaceEdit = new lsp4j.WorkspaceEdit(edits)
         codeAction.setEdit(workspaceEdit)
       })
+      ca.branchTree.foreach(bt => bt.toDotFile())
       codeAction.setDiagnostics(ca.resolvedDiags.asJava)
       codeAction.setKind(ca.kind)
       codeAction

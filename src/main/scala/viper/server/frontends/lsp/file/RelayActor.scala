@@ -7,11 +7,11 @@
 package viper.server.frontends.lsp.file
 
 import akka.actor.{Actor, Props, Status}
-import org.eclipse.lsp4j.{CodeActionKind, Position}
+import org.eclipse.lsp4j.{CodeActionKind, DiagnosticSeverity, Position}
 import viper.server.frontends.lsp
-import viper.server.frontends.lsp.{BranchClauseRange, BranchCondition, BranchFailureDetails, BranchFailurePath, Common}
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
+import viper.server.frontends.lsp.file.branchTree.BranchTree
 import viper.silver.ast
 import viper.silver.ast.utility.lsp.{CodeAction, RangePosition, SelectionBoundScope}
 import viper.silver.reporter._
@@ -117,39 +117,40 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
 
   private def handleExploredBranches(eb: ExploredBranches): Unit = {
       if (eb.paths.nonEmpty) {
+        val branchTree = BranchTree.generate(eb.paths)
+
         val mRp = task.content.methodIdentToRangePosition(eb.method)
         if (!reportedExploredBranches.contains(mRp)) {
+
+          val cacheFlag = if (eb.cached) "(cached)" else ""
+          branchTree.map(tree => {
+            task.addDiagnostic(false)(
+              Seq(Diagnostic(
+                backendClassName = backendClassName,
+                position = mRp,
+                message = s"Branch fails. ${cacheFlag} \n${tree.prettyPrint()}",
+                severity = DiagnosticSeverity.Error,
+                cached = eb.cached,
+                errorMsgPrefix = None
+              )))
+
+            //val idnRange = Common.toRange(mRp)
+            //val (ifLn, elseLn, methodEndLn) = task.getBranchRange(task.file_uri, eb.method, tree.)
+            /*if (details.nonEmpty) coordinator.sendBranchFailureDetails(
+              BranchFailureDetails(task.file_uri,Array())
+            )*/
+          })
+
           task.addCodeAction(false)(Seq(
             CodeAction("Display explored branches",
               None,
               Some("viper.displayExploredBranches", Seq(task.file_uri, eb.method.name)),
               SelectionBoundScope(mRp),
               CodeActionKind.QuickFix,
+              branchTree=branchTree
             )))
 
-          val paths = eb.paths.map(e => {
-            val (conds, isResultFatal) = e
-            val transformedConds = conds.map(c => {
-              val (cond, negated) = c
-              BranchCondition(cond, negated)
-            }).toArray
-            BranchFailurePath(transformedConds, isResultFatal)
-          }).toArray
-
           reportedExploredBranches += mRp
-
-          val idnRange = Common.toRange(mRp)
-          val (ifLn, elseLn, methodEndLn) = task.getFirstBranchClauseLines(task.file_uri, eb.method)
-          coordinator.sendBranchFailureDetails(
-            BranchFailureDetails(task.file_uri,
-              eb.method.name,
-              idnRange,
-              paths,
-              BranchClauseRange(ifLn,
-                elseLn,
-                methodEndLn),
-              eb.cached)
-          )
         }
       }
   }
