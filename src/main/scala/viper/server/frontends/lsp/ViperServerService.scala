@@ -20,7 +20,6 @@ import viper.silver.ast.utility.FileLoader
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
-import akka.actor.ActorRef
 
 class ViperServerService(config: ViperConfig)(override implicit val executor: VerificationExecutionContext)
   extends ViperCoreServer(config)(executor) with DefaultVerificationServerStart {
@@ -76,11 +75,11 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     val relay_actor = system.actorOf(relayActor_props)
     streamMessages(jid, relay_actor, true).map(_.map(_ => ()))
   }
-  def startStreamingAst(jid: AstJobId, relayActor_props: Props, localLogger: Option[Logger] = None): (Option[Future[Unit]], ActorRef) = {
+  def startStreamingAst(jid: AstJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
     val logger = combineLoggers(localLogger)
     val relay_actor = system.actorOf(relayActor_props)
     logger.debug(s"Sending ast construct request to ViperServer... (${relay_actor.toString()})")
-    (streamMessages(jid, relay_actor).map(_.map(_ => ())), relay_actor)
+    streamMessages(jid, relay_actor).map(_.map(_ => ()))
   }
   def startStreamingVer(jid: VerJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
     val logger = combineLoggers(localLogger)

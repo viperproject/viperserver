@@ -165,11 +165,10 @@ trait VerificationServer extends Post {
     }
   }
 
-  protected def discardAstOnCompletion(jid: AstJobId, jobActor: ActorRef) = {
-    ast_jobs.lookupJob(jid).map(_.map(_.queue.watchCompletion().onComplete(_ => {
+  protected def discardAstOnCompletion(jid: AstJobId) = {
+    ast_jobs.lookupJob(jid).map(_.map(astHandle => astHandle.queue.watchCompletion().onComplete(_ => {
       ast_jobs.discardJob(jid)
-      // Killing the jobActor here is too early, messages still arrive.
-      //jobActor ! PoisonPill
+      astHandle.job_actor ! PoisonPill
     })))
   }
 

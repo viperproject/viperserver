@@ -15,7 +15,6 @@ import akka.actor.Props
 
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.server.frontends.lsp.VerificationState._
-import akka.actor.ActorRef
 
 import viper.silver.verifier.AbstractError
 import scala.collection.mutable.HashSet
@@ -28,16 +27,16 @@ import viper.silver.ast.LineColumnPosition
 import java.nio.file.Path
 
 case class VerificationHandler(server: lsp.ViperServerService) {
-  private var waitingOn: Option[Either[(AstJobId, ActorRef), VerJobId]] = None
+  private var waitingOn: Option[Either[AstJobId, VerJobId]] = None
 
   def clearWaitingOn(): Unit = {
     waitingOn match {
-      case Some(Left((jid, actor))) => server.discardAstJobOnCompletion(jid, actor)
-      case _ => {}
+      case Some(Left(jid)) => server.discardAstJobOnCompletion(jid)
+      case _ =>
     }
     waitingOn = None
   }
-  def waitOn(ast: (AstJobId, ActorRef)): Unit = {
+  def waitOn(ast: AstJobId): Unit = {
     clearWaitingOn()
     waitingOn = Some(Left(ast))
   }
@@ -46,9 +45,9 @@ case class VerificationHandler(server: lsp.ViperServerService) {
     waitingOn = Some(Right(ver))
   }
 
-  def isVerifying: Boolean = waitingOn.map(_.isRight).getOrElse(false)
-  def isAstConstructing: Boolean = waitingOn.map(_.isLeft).getOrElse(false)
-  def astHandle: Option[(AstJobId, ActorRef)] = waitingOn.flatMap(_.left.toOption)
+  def isVerifying: Boolean = waitingOn.exists(_.isRight)
+  def isAstConstructing: Boolean = waitingOn.exists(_.isLeft)
+  def astHandle: Option[AstJobId] = waitingOn.flatMap(_.left.toOption)
   def verHandle: Option[VerJobId] = waitingOn.flatMap(_.toOption)
 }
 
@@ -80,9 +79,9 @@ trait VerificationManager extends Manager {
   private var futureCancel: Option[Future[Unit]] = None
   private var futureVer: Option[Future[Unit]] = None
   private def anyFutureRunning: Boolean =
-    futureAst.map(!_.isCompleted).getOrElse(false) ||
-    futureCancel.map(!_.isCompleted).getOrElse(false) ||
-    futureVer.map(!_.isCompleted).getOrElse(false)
+    futureAst.exists(!_.isCompleted) ||
+      futureCancel.exists(!_.isCompleted) ||
+      futureVer.exists(!_.isCompleted)
 
   var handler: VerificationHandler = VerificationHandler(coordinator.server)
   def getInFuture[T](f: => T): Future[T] = {
@@ -132,7 +131,7 @@ trait VerificationManager extends Manager {
     handler.verHandle match {
       case None => {
         coordinator.logger.trace(s"verification of $file_uri did not have to be stopped because there is no ongoing verification")
-        return Future.unit
+        Future.unit
       }
       case Some(verJob) => {
         coordinator.logger.info("Aborting running verification.")
@@ -176,7 +175,7 @@ trait VerificationManager extends Manager {
     if (handler.isVerifying) stop()
     futureCancel.getOrElse(Future.unit).map(_ => {
       lastPhase = None
-      val (astJob, _) = handler.astHandle match {
+      val astJob = handler.astHandle match {
         case None => startConstructAst(loader, mt) match {
           case None => return Future.successful(false)
           case Some(ast) => ast
@@ -212,7 +211,7 @@ trait VerificationManager extends Manager {
     s"$backendClassName $customArgs"
   }
 
-  private def startConstructAst(loader: FileContent, mt: Boolean): Option[(AstJobId, ActorRef)] = {
+  private def startConstructAst(loader: FileContent, mt: Boolean): Option[AstJobId] = {
     coordinator.logger.debug(s"startConstructAst")
     prepareVerification(mt)
 
@@ -223,11 +222,10 @@ trait VerificationManager extends Manager {
     if (astJob.id >= 0) {
       this.resetDiagnostics(true)
       // Execute all handles
-      val (newFut, newActorRef) = coordinator.server.startStreamingAst(astJob, props(None), Some(coordinator.localLogger))
+      val newFut = coordinator.server.startStreamingAst(astJob, props(None), Some(coordinator.localLogger))
       futureAst = newFut
-      val ast = (astJob, newActorRef)
-      handler.waitOn(ast)
-      Some(ast)
+      handler.waitOn(astJob)
+      Some(astJob)
     } else {
       None
     }

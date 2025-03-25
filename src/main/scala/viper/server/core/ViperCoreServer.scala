@@ -73,7 +73,7 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     }
     ast_id
   }
-  def discardAstJobOnCompletion(jid: AstJobId, jobActor: ActorRef): Unit = discardAstOnCompletion(jid, jobActor)
+  def discardAstJobOnCompletion(jid: AstJobId): Unit = discardAstOnCompletion(jid)
 
   def verifyWithAstJob(programId: String, ast_id: AstJobId, backend_config: ViperBackendConfig, localLogger: Option[Logger] = None): VerJobId = {
     val logger = combineLoggers(localLogger)
