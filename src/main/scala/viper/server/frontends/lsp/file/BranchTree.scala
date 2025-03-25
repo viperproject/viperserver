@@ -223,7 +223,7 @@ class BranchTree {
   }
 
   def toDotFile(): Unit = {
-    val writer = PrintWriter(new java.io.File(BranchTree.DotFilePath),append=true)
+    val writer = PrintWriter(new java.io.File(BranchTree.DotFilePath))
     writer.write("digraph {\n")
     this.writeDotFileRec(writer)
     writer.write("}\n")
