@@ -133,16 +133,12 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     val combinedLogger = combineLoggers(localLogger)
     ast_jobs.lookupJob(jid) match {
       case Some(handle_future) =>
-        handle_future.flatMap(handle => {
-          implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-          val interrupt: Future[String] = (handle.job_actor ? StopAstConstruction).mapTo[String]
+        handle_future.map { handle =>
+          handle.job_actor ! StopAstConstruction
           handle.job_actor ! PoisonPill // the actor played its part.
-          interrupt
-        }).map(msg => {
-          combinedLogger.info(msg)
           combinedLogger.info(s"ast construction stopped for job #$jid")
           true
-        })
+        }
       case _ =>
         // Did not find a job with this jid.
         combinedLogger.warn(s"stopVerification - The AST construction job #$jid does not exist and can thus not be stopped.")
