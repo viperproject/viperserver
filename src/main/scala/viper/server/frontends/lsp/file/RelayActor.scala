@@ -6,14 +6,13 @@
 
 package viper.server.frontends.lsp.file
 
-import akka.actor.{Actor, Props, Status}
+import akka.actor.{Actor, PoisonPill, Props, Status}
 import viper.server.frontends.lsp
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.silver.ast
 import viper.silver.reporter._
 import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
-
 import viper.server.frontends.lsp.file.ProgressCoordinator
 import viper.silver.parser._
 
@@ -212,9 +211,11 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] Status.Success")
       // Success is sent when the stream is completed
       if (backendClassName.isDefined) task.completionHandler(0)
+      self ! PoisonPill
     case Status.Failure(cause) =>
       coordinator.logger.info(s"[receive@${task.filename}/${backendClassName.isDefined}] Streaming messages has failed in RelayActor with cause $cause")
       if (backendClassName.isDefined) task.completionHandler(-1) // no success
+      self ! PoisonPill
     case RelayActor.GetReportedErrors() => sender() ! reportedErrors.toSeq.map(_._1)
     case e: Throwable => coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] RelayActor received throwable: $e")
   }
