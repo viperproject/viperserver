@@ -147,7 +147,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
           task.addCodeAction(false)(Seq(
             CodeAction("Display explored branches",
               None,
-              Some("viper.displayExploredBranches", Seq(task.file_uri, eb.method.name)),
+              Some("viper.displayExploredBranches", Seq(eb.method.name, BranchTree.DotFilePath)),
               SelectionBoundScope(mRp),
               CodeActionKind.QuickFix,
               branchTree=branchTree
