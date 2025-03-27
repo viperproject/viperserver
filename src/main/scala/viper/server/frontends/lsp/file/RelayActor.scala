@@ -118,10 +118,9 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
 
   private def handleExploredBranches(eb: ExploredBranches): Unit = {
       if (eb.paths.nonEmpty) {
-        val branchTree = BranchTree.generate(eb.paths)
-
         val mRp = task.content.methodIdentToRangePosition(eb.method)
         if (!reportedExploredBranches.contains(mRp)) {
+          val branchTree = BranchTree.generate(eb.paths)
 
           val cacheFlag = if (eb.cached) "(cached)" else ""
           branchTree.map(tree => {
