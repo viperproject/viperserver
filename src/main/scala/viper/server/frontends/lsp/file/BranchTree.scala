@@ -201,7 +201,7 @@ class BranchTree {
           case Leaf =>
             val leftLeafIdn = s"B$newVisitedCountLeft"
             writer.write(s"  $leftLeafIdn[${leafToDotNodeContent(leftResFatalCount)}];\n")
-            writer.write(s"  $parentIdn -> $leftLeafIdn [label=\"F\"];\n")
+            writer.write(s"  $parentIdn -> $leftLeafIdn[label=\"F\"];\n")
             newVisitedCountLeft
         }
         val newVisitedCountRight = visitedCountLeft + 1
@@ -214,7 +214,7 @@ class BranchTree {
           case Leaf =>
             val rightLeafIdn = s"B$newVisitedCountRight"
             writer.write(s"  $rightLeafIdn[${leafToDotNodeContent(rightResFatalCount)}];\n")
-            writer.write(s"  $parentIdn -> $rightLeafIdn [label=\"T\"];\n")
+            writer.write(s"  $parentIdn -> $rightLeafIdn[label=\"T\"];\n")
             newVisitedCountRight
         }
         visitedCountRight
@@ -267,7 +267,7 @@ object BranchTree {
       case 0 => None
       case _ =>
         val (expressions, isResultFatal) = exploredPaths.head
-        val path = generatePathRec(expressions, if (isResultFatal) 1 else -1, Leaf) // -1 or distinguishing successful from no result at leaves
+        val path = generatePathRec(expressions, if (isResultFatal) 1 else -1, Leaf) // -1 for distinguishing successful from no result at leaves
         Some(generateRec(exploredPaths.tail, path))
     }
   }
