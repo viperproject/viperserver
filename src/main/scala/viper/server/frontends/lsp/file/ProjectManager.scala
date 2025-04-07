@@ -34,7 +34,8 @@ object LeafInfo {
 
 trait ProjectAware {
   val coordinator: ClientCoordinator
-  def getInProject(uri: String): FullManager
+  def getInProjectOpt(uri: String): Option[FullManager]
+  def getInProject(uri: String): FullManager = getInProjectOpt(uri).get
   def getSignatureHelpProject(uri: String, keyword: String, pos: lsp4j.Position, range: Range): Seq[lsp4j.SignatureInformation]
 }
 
@@ -66,8 +67,8 @@ trait ProjectManager extends FullManager with ProjectAware {
   def projectLeaves: Option[Set[String]] = project.left.toOption.map(_.keySet)
   def isRoot: Boolean = project.isLeft
 
-  def getInProject(uri: String): FullManager = {
-    if (uri == file.file_uri) this else project.left.toOption.get.get(uri).get
+  def getInProjectOpt(uri: String): Option[FullManager] = {
+    if (uri == file.file_uri) Some(this) else project.left.toOption.get.get(uri)
   }
   def getLeaf(uri: String): LeafManager = project.left.toOption.get(uri)
 

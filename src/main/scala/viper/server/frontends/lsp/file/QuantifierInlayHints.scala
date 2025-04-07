@@ -18,7 +18,7 @@ trait QuantifierInlayHints extends ProjectAware {
     }
     val pos = RangePosition(quantifier.exp.pos.asInstanceOf[AbstractSourcePosition])
     val uri = pos.file.toUri().toString()
-    inlayChosenTriggersAt(getInProject(uri), pos, triggers, oldTriggers)
+    getInProjectOpt(uri).foreach(inlayChosenTriggersAt(_, pos, triggers, oldTriggers))
   }
   private def inlayChosenTriggersAt(m: FullManager, expStart: RangePosition, triggers: Seq[Trigger], oldTriggers: Seq[Trigger]): Unit = {
     val start = Common.toPosition(expStart.start)

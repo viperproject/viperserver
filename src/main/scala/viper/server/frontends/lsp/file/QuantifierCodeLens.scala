@@ -41,7 +41,7 @@ trait QuantifierCodeLens extends ProjectAware {
       case None => coordinator.logger.error(s"Got QIs, but unknown quantifier: ${quantifier}")
       case Some(pos) => {
         val uri = pos.file.toUri().toString()
-        setQIsInFile(getInProject(uri), pos, instantiations, maxGen, maxCost)
+        getInProjectOpt(uri).foreach(setQIsInFile(_, pos, instantiations, maxGen, maxCost))
       }
     }
   }
