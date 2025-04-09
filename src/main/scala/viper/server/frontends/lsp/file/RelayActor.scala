@@ -134,10 +134,11 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
                 errorMsgPrefix = None
               )))
 
-            val failsInElse = if (tree.isInstanceOf[Branch])
-                                tree.asInstanceOf[Branch].isLeftFatal
+            val failsInElseOnly = if (tree.isInstanceOf[Branch])
+                                { val branch = tree.asInstanceOf[Branch]
+                                  !branch.isRightFatal && branch.isLeftFatal }
                               else false
-            val beamRange = task.getBeamRange(task.file_uri, eb.method, failsInElse)
+            val beamRange = task.getBeamRange(task.file_uri, eb.method, failsInElseOnly)
             coordinator.sendBranchFailureDetails(
               BranchFailureDetails(task.file_uri,Array(beamRange))
             )

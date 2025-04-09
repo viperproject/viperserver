@@ -13,7 +13,7 @@ import org.eclipse.lsp4j
 import org.eclipse.lsp4j.Position
 
 trait Branches extends ProjectAware {
-    def getBeamRange(uri: String, method: Method, failsInElse: Boolean): lsp4j.Range = {
+    def getBeamRange(uri: String, method: Method, failsInElseOnly: Boolean): lsp4j.Range = {
         var start = Common.toPosition(method.pos)
         val m = getInProject(uri)
         var currPos = m.content.iterForward(start)
@@ -49,7 +49,7 @@ trait Branches extends ProjectAware {
             currPos = m.content.iterForward(currPos.get._2).drop(1).find { case (c, _) => c == '{' || c == '}' }
         } while (currPos.isDefined && openBraceCount > 0)
         new lsp4j.Range(
-            new Position(if (failsInElse) middleLn else start.getLine,0),
+            new Position(if (failsInElseOnly) middleLn else start.getLine,0),
             new Position(endLn,0)
         )
     }
