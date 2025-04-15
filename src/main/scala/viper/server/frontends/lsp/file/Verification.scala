@@ -24,7 +24,6 @@ import org.eclipse.lsp4j
 import viper.silver.ast.utility.lsp.RangePosition
 import viper.silver.ast.HasLineColumn
 import viper.silver.ast.LineColumnPosition
-import java.nio.file.Path
 
 case class VerificationHandler(server: lsp.ViperServerService) {
   private var waitingOn: Option[Either[AstJobId, VerJobId]] = None
@@ -69,11 +68,9 @@ object VerificationPhase {
   }
 }
 
-trait VerificationManager extends Manager {
+trait VerificationManager extends ManagesLeaf {
   implicit def ec: ExecutionContext
-  def file_uri: String = file.file_uri
-  def filename: String = file.filename
-  def path: Path = file.path
+  var lastPhase: Option[VerificationPhase.VerificationPhase] = None
 
   private var futureAst: Option[Future[Unit]] = None
   private var futureCancel: Option[Future[Unit]] = None
@@ -289,7 +286,7 @@ trait VerificationManager extends Manager {
     diagnosticCount += errors.size
     errorCount += diags.count(_._2.severity == lsp4j.DiagnosticSeverity.Error)
     diags.groupBy(d => d._1).foreach { case (phase, diags) =>
-      addDiagnostic(phase.order <= VerificationPhase.TypeckEnd.order)(diags.map(_._2))
+      this.addDiagnostic(phase.order <= VerificationPhase.TypeckEnd.order)(diags.map(_._2))
     }
   }
 }

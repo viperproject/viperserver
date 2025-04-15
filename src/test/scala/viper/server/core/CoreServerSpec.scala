@@ -408,7 +408,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       val jid = verifyCarbonWithCaching(core, file)
       val relayActorRef = context.actorSystem.actorOf(fileManager.props(Some("carbon")))
       implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-      core.streamMessages(jid, relayActorRef, true).getOrElse(Future.failed(JobNotFoundException))
+      core.streamMessages(jid, relayActorRef, include_ast = true).getOrElse(Future.failed(JobNotFoundException))
         .flatMap(_ => (relayActorRef ? RelayActor.GetReportedErrors()).mapTo[Seq[AbstractError]])
         .map(actualErrors => {
           val lineNrsOfActualVerificationErrors = actualErrors
@@ -559,7 +559,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       val jids = files.map(file => verifySiliconWithoutCaching(core, file))
       // stream messages to actors
       val jidsWithActors = jids zip test_actors
-      val streamOptionsWithActors = jidsWithActors map { case (jid, actor) => (core.streamMessages(jid, actor, true), actor) }
+      val streamOptionsWithActors = jidsWithActors map { case (jid, actor) => (core.streamMessages(jid, actor, include_ast = true), actor) }
       // stream options should be defined
       val streamDones = streamOptionsWithActors map { case (streamOption, actor) =>
         assert(streamOption.isDefined)

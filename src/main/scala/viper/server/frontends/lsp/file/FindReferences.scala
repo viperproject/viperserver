@@ -20,6 +20,7 @@ case class FindReferences(
   override def rangePositions: Seq[lsp.RangePosition] = bound.scope +: references
 }
 
+/** Stores and handles all aspects relating the the lsp FindReferences feature. */
 trait FindReferencesManager extends Manager {
   // FindReferences
   type FindReferencesContainer = utility.StageRangeContainer.RangeContainer[FindReferences, lsp4j.Location]

@@ -14,7 +14,6 @@ import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
 import viper.server.frontends.lsp.file.FileContent
 import viper.server.frontends.lsp.Lsp4jSemanticHighlight
-import VerificationPhase._
 
 import org.eclipse.lsp4j
 import viper.silver.ast.utility.lsp
@@ -30,10 +29,9 @@ trait Manager {
   val content: FileContent
   val coordinator: ClientCoordinator
   implicit def logger = coordinator.logger
+
   def addContainer(c: utility.LspContainer[_, _, _, _, _]): Unit
   def resetContainers(first: Boolean): Unit
-
-  var lastPhase: Option[VerificationPhase] = None
 
   def getCodeLens(): Seq[lsp4j.CodeLens]
   def addCodeLens(first: Boolean)(vs: Seq[lsp.CodeLens]): Unit
@@ -72,6 +70,20 @@ trait Manager {
   def addCompletionProposal(first: Boolean)(vs: Seq[lsp.CompletionProposal]): Unit
 }
 
+/** Stores and handles all aspects relating the the lsp features:
+ *  - CodeLens
+ *  - Diagnostic
+ *  - DocumentSymbol
+ *  - DocumentLink
+ *  - FoldingRange
+ *  - GotoDefinition
+ *  - HoverHint
+ *  - InlayHint
+ *  - SemanticHighlight
+ *  - SignatureHelp
+ *  - SuggestionScopeRange
+ *  - CompletionProposal
+ */
 trait StandardManager extends Manager {
   private val containers: ArrayBuffer[utility.LspContainer[_, _, _, _, _]] = ArrayBuffer()
 
@@ -181,10 +193,10 @@ trait StandardManager extends Manager {
   def addCompletionProposal(first: Boolean)(vs: Seq[lsp.CompletionProposal]): Unit = add(completionProposalContainer, first, vs)
 }
 
-trait FullManager extends StandardManager with FindReferencesManager
-
-case class LeafManager(file: PathInfo, coordinator: ClientCoordinator, content: FileContent) extends FullManager {
-}
+/** Stores and manages all lsp features for an imported file in a Viper project.
+ *  Owned by the `ProjectManager` of the root file, which holds a `LeafManager` for all imported files.
+*/
+case class LeafManager(file: PathInfo, coordinator: ClientCoordinator, content: FileContent) extends StandardManager with FindReferencesManager
 object LeafManager {
   def apply(uri: String, content: String, coordinator: ClientCoordinator): LeafManager = {
     val file = PathInfo(uri)

@@ -46,7 +46,7 @@ trait QuantifierCodeLens extends ProjectAware {
     }
   }
   private object Locker
-  def setQIsInFile(m: FullManager, pos: RangePosition, instantiations: Int, maxGen: Int, maxCost: Int) = {
+  def setQIsInFile(m: LeafManager, pos: RangePosition, instantiations: Int, maxGen: Int, maxCost: Int) = {
     def newCl() = CodeLens(pos, s"Instantiations $instantiations, Max generation $maxGen, Max cost $maxCost")
     Locker.synchronized {
       val idx = quantifierMap.get(pos) match {

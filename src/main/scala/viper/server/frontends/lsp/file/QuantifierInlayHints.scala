@@ -20,7 +20,7 @@ trait QuantifierInlayHints extends ProjectAware {
     val uri = pos.file.toUri().toString()
     getInProjectOpt(uri).foreach(inlayChosenTriggersAt(_, pos, triggers, oldTriggers))
   }
-  private def inlayChosenTriggersAt(m: FullManager, expStart: RangePosition, triggers: Seq[Trigger], oldTriggers: Seq[Trigger]): Unit = {
+  private def inlayChosenTriggersAt(m: LeafManager, expStart: RangePosition, triggers: Seq[Trigger], oldTriggers: Seq[Trigger]): Unit = {
     val start = Common.toPosition(expStart.start)
     m.content.iterBackward(start).drop(1).find { case (c, _) => c != ' ' && c != '\n' } match {
       case Some((_, found)) =>

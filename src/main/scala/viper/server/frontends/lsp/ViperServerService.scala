@@ -73,7 +73,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     val logger = combineLoggers(localLogger)
     logger.debug("Sending verification request to ViperServer...")
     val relay_actor = system.actorOf(relayActor_props)
-    streamMessages(jid, relay_actor, full = true).map(_.map(_ => ()))
+    streamMessages(jid, relay_actor, include_ast = true).map(_.map(_ => ()))
   }
   def startStreamingAst(jid: AstJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
     val logger = combineLoggers(localLogger)
@@ -85,7 +85,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     val logger = combineLoggers(localLogger)
     val relay_actor = system.actorOf(relayActor_props)
     logger.debug(s"Sending verification request to ViperServer... (${relay_actor.toString()})")
-    streamMessages(jid, relay_actor, full = false).map(_.map(_ => {
+    streamMessages(jid, relay_actor, include_ast = false).map(_.map(_ => {
       logger.debug("Done verification request to ViperServer...")
       ()
     }))

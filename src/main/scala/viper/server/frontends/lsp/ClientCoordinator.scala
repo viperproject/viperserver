@@ -24,7 +24,9 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   val logger: Logger = server.combineLoggers(Some(localLogger))
   private var _client: Option[IdeLanguageClient] = None
   private val _files: ConcurrentMap[String, FileManager] = new ConcurrentHashMap() // each file is managed individually.
+  private def getFile(uri: String): Option[FileManager] = Option(_files.get(uri))
   private var _vprFileEndings: Option[Array[String]] = None
+  private var _previousFile: Option[String] = None
 
   def client: Option[IdeLanguageClient] = {
     _client
@@ -42,7 +44,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   }
 
   def closeFile(uri: String): Unit = {
-    val toRemove = Option(_files.get(uri)).map(fm => {
+    val toRemove = getFile(uri).map(fm => {
       fm.isOpen = false
       fm.removeDiagnostics()
       fm.isRoot
@@ -116,6 +118,8 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
 
   /** returns true if verification was started */
   def startVerification(backendClassName: String, customArgs: String, uri: String, manuallyTriggered: Boolean): Future[Boolean] = {
+    _previousFile.foreach(resetDiagnostics)
+    _previousFile = Some(uri)
     val fm = getFileManager(uri)
     fm.startVerification(backendClassName, customArgs, fm.content, manuallyTriggered)
   }
@@ -123,7 +127,9 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   /** returns true if parse/typecheck was started */
   def startParseTypecheck(uri: String): Boolean = {
     val fm = getFileManager(uri)
-    val project = Option(_files.get(uri)).flatMap(_.projectRoot).getOrElse(uri)
+    val project = getFile(uri).flatMap(_.projectRoot).getOrElse(uri)
+    _previousFile.foreach(resetDiagnostics)
+    _previousFile = Some(project)
     val root = getFileManager(project)
     root.runParseTypecheck(fm.content)
   }
@@ -216,19 +222,19 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   // Project management
   ///////////////////////
 
-  def addToProject(uri: String, root: String, getContents: Boolean): (Option[String], Option[Set[String]]) = {
-    getFileManager(uri).addToProject(root, getContents)
+  def addToOtherProject(uri: String, root: String, getContents: Boolean): Option[String] = {
+    getFileManager(uri).addToOtherProject(root, getContents)
   }
-  def removeFromProject(uri: String, root: String) = {
-    Option(_files.get(uri)).map(_.removeFromProject(root))
+  def removeFromOtherProject(uri: String, root: String) = {
+    getFile(uri).map(_.removeFromOtherProject(root))
   }
   def makeEmptyRoot(fm: FileManager) = {
     for (leaves <- fm.projectLeaves; leaf <- leaves) {
-      removeFromProject(leaf, fm.file_uri)
+      removeFromOtherProject(leaf, fm.file_uri)
     }
-    fm.project = Left(Map())
+    fm.project = Left(scala.collection.mutable.Map())
   }
   def handleChangeInLeaf(root: String, leaf: String, range: Range, text: String): Unit = {
-    Option(_files.get(root)).map(_.handleChangeInLeaf(leaf, range, text))
+    getFile(root).map(_.handleChangeInLeaf(leaf, range, text))
   }
 }

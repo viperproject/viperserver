@@ -125,9 +125,9 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     ver_id
   }
 
-  override def streamMessages(jid: VerJobId, clientActor: ActorRef, full: Boolean): Option[Future[Done]] = {
+  override def streamMessages(jid: VerJobId, clientActor: ActorRef, include_ast: Boolean): Option[Future[Done]] = {
     globalLogger.info(s"Streaming results for job #${jid.id}.")
-    super.streamMessages(jid, clientActor, full)
+    super.streamMessages(jid, clientActor, include_ast)
   }
   override def streamMessages(jid: AstJobId, clientActor: ActorRef): Option[Future[Done]] = {
     globalLogger.info(s"Streaming results for job #${jid.id}.")
