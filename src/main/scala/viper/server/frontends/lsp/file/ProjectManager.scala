@@ -18,7 +18,7 @@ import scala.annotation.unused
 import scala.concurrent.Future
 
 case class LeafInfo(private val roots: ArrayBuffer[String]) {
-  def lastRoot: String = roots.head
+  def lastRoot: String = roots.last
   def addRoot(root: String) = {
     roots -= root
     roots += root
@@ -41,7 +41,7 @@ trait ProjectAware extends ManagesLeaf {
 
 /** Manages a Viper project consisting of the root file and all imported files.
  * Note that any Viper file can be either of the two: a root of a project or as
- * a leaf in other project(s). */
+ * a leaf in other project(s). See documentation of `ClientCoordinator`. */
 trait ProjectManager extends ProjectAware {
   /** The current project for which this is a root (Left), or the set of project
    * roots for which this file is a leaf (Right). If this is a leaf, this
@@ -84,7 +84,7 @@ trait ProjectManager extends ProjectAware {
 
   def teardownProject() = {
     removeDiagnostics()
-    for (p <- getRootOpt; (leaf, manager) <- p) {
+    for (p <- projectLeaves; leaf <- p) {
       coordinator.removeFromOtherProject(leaf, file_uri)
     }
   }

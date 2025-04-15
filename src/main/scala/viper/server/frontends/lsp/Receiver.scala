@@ -202,7 +202,7 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
     val pos = params.getPosition
     coordinator.getRoot(uri)
       .getHoverHints(uri, pos)
-      .map(_.head)
+      .map(_.headOption.orNull)
       .asJava.toCompletableFuture
   }
 

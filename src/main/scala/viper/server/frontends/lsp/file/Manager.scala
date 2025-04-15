@@ -195,6 +195,7 @@ trait StandardManager extends Manager {
 
 /** Stores and manages all lsp features for an imported file in a Viper project.
  *  Owned by the `ProjectManager` of the root file, which holds a `LeafManager` for all imported files.
+ *  See documentation of `ClientCoordinator`.
 */
 case class LeafManager(file: PathInfo, coordinator: ClientCoordinator, content: FileContent) extends StandardManager with FindReferencesManager
 object LeafManager {

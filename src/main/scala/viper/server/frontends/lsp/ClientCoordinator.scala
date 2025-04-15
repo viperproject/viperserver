@@ -9,7 +9,6 @@ package viper.server.frontends.lsp
 import ch.qos.logback.classic.Logger
 import org.eclipse.lsp4j.Range
 import viper.server.core.VerificationExecutionContext
-import viper.server.frontends.lsp.VerificationState.Ready
 
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import scala.concurrent.Future
@@ -18,7 +17,43 @@ import scala.jdk.FutureConverters._
 import viper.server.frontends.lsp.file.FileManager
 import viper.server.frontends.lsp.file.VerificationManager
 
-/** manages per-client state and interacts with the server instance (which is shared among all clients) */
+/** Manages per-client state and interacts with the server instance (which is shared among all clients).
+ *  It owns one `FileManager` per open file, the two main components of a file
+ *  manager are: `ProjectManager` and `VerificationManager`. Each `FileManager`
+ *  also contains a `LeafManager` which holds and manages all lsp state for the
+ *  given file. For a directory with `a.vpr`, `b.vpr`, `c.vpr` and `d.vpr`,
+ *  where `a.vpr` imports `b.vpr` and `c.vpr` while `d.vpr` imports `c.vpr` and
+ *  with an IDE that has all of these files open, the structure is as follows:
+ *
+ *  1x `ClientCoordinator` owns:
+ *  - 4x `FileManager`
+ * 
+ *  The `FileManager` for `a.vpr` owns:
+ *  - 1x `LeafManager` for `a.vpr`
+ *  - 2x `LeafManager` (clones) for `b.vpr` and `c.vpr`
+ * 
+ *  The `FileManager` for `b.vpr` owns:
+ *  - 1x `LeafManager` for `b.vpr` (disabled)
+ * 
+ *  The `FileManager` for `c.vpr` owns:
+ *  - 1x `LeafManager` for `c.vpr` (disabled)
+ * 
+ *  The `FileManager` for `d.vpr` owns:
+ *  - 1x `LeafManager` for `d.vpr`
+ *  - 1x `LeafManager` (clone) for `c.vpr`
+ * 
+ *  In this structure there are two "projects" (`a.vpr` and `d.vpr`) and two
+ *  leaves (`b.vpr` and `c.vpr`) that have their local `LeafManager` disabled.
+ * 
+ *  If the IDE closes `a.vpr`, the `FileManager` and all 3 `LeafManager`s it
+ *  owns are dropped (any verification state/diagnostics are removed). The
+ *  `LeafManager` of `b.vpr` becomes "enabled" and ready to be used, while the
+ *  `FileManager` for `c.vpr` remains disabled due to also being a leaf of
+ *  `d.vpr`. We duplicate the `LeafManager`s for imported files in each project
+ *  as the lsp state might differ for the same file (e.g. if `a.vpr` and `d.vpr`
+ *  both define a different `foo` function which `c.vpr` uses -> different go to
+ *  definition).
+ */
 class ClientCoordinator(val server: ViperServerService)(implicit executor: VerificationExecutionContext) {
   val localLogger: Logger = ClientLogger(this, "Client logger", server.config.logLevel()).get
   val logger: Logger = server.combineLoggers(Some(localLogger))
@@ -77,7 +112,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
       // This should only be necessary if one wants to verify a closed file for some reason
       val fm = getFileManager(uri, Some(content))
       // This will be the new project root
-      makeEmptyRoot(fm)
+      makeRoot(fm)
       true
     } else {
       logger.trace("server is not running")
@@ -207,6 +242,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   }
   def getRoot(uri: String): FileManager = {
     val fm = getFileManager(uri)
+    logger.error(s"getRoot $uri: ${fm.projectRoot}")
     fm.projectRoot.map(getFileManager(_)).getOrElse(fm)
   }
 
@@ -224,11 +260,10 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
       _files.remove(uri).close()
     }
   }
-  def makeEmptyRoot(fm: FileManager) = {
-    for (leaves <- fm.projectLeaves; leaf <- leaves) {
-      removeFromOtherProject(leaf, fm.file_uri)
+  def makeRoot(fm: FileManager) = {
+    if (!fm.isRoot) {
+      fm.setupProject(Set())
     }
-    fm.project = Left(scala.collection.mutable.Map())
   }
   def handleChangeInLeaf(root: String, leaf: String, range: Range, text: String): Unit = {
     getFile(root).map(_.handleChangeInLeaf(leaf, range, text))

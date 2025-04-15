@@ -79,11 +79,12 @@ case object GotoDefinitionTranslator extends Translates[lsp.GotoDefinition, lsp4
 case object HoverHintTranslator extends Translates[lsp.HoverHint, lsp4j.Hover, (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)] {
   override def translate(hh: lsp.HoverHint)(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)): lsp4j.Hover = ???
   override def translate(hhs: Seq[lsp.HoverHint])(i: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean))(implicit log: Logger): Seq[lsp4j.Hover] = {
+    if (hhs.isEmpty) return Seq.empty
     val hoverStr = hhs.map(h => s"```\n${h.hint}\n```${h.documentation.map("\n" + _).getOrElse("")}").mkString("\n\n---\n\n")
     // Origin range:
-    val highlightRange = hhs.headOption.flatMap(_.highlight).map(Common.toRange)
+    val highlightRange = hhs.head.highlight.map(Common.toRange)
     val keywordSelectRange = i._2.map(_._2)
-    val selectionBoundRange = hhs.headOption.flatMap(_.bound.rangePositions.headOption.map(Common.toRange))
+    val selectionBoundRange = hhs.head.bound.rangePositions.headOption.map(Common.toRange)
     val range = highlightRange.orElse(keywordSelectRange).orElse(selectionBoundRange).orNull
     val hover = new lsp4j.Hover(new lsp4j.MarkupContent("markdown", hoverStr), range)
     // TODO: return non-seq
