@@ -201,7 +201,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     // we use `computeIfAbsent` instead of `putIfAbsent` such that a new FileManager is only created if it's absent
     val fm = _files.computeIfAbsent(uri, createFMFunc)
     // Override the content if we are given one and the file manager was not just created
-    if (!createdNew && content.isDefined) fm.content.set(content.get)
+    if (!createdNew) content.foreach(fm.content.set)
     fm
   }
   def ensureFmExists(uri: String, content: String): FileManager = {
