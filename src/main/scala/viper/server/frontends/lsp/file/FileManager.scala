@@ -43,6 +43,11 @@ trait ManagesLeaf {
 case class FileManager(root: LeafManager)(implicit executor: VerificationExecutionContext) extends MessageHandler {
   override val ec: VerificationExecutionContext = executor
   var isOpen: Boolean = true
+
+  def close(): Unit = {
+    teardownProject()
+    stopRunningVerification()
+  }
 }
 
 object FileManager {

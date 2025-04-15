@@ -51,7 +51,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     }).getOrElse(false)
     if (toRemove) {
       logger.trace(s"Removing FileManager for $uri")
-      _files.remove(uri)
+      _files.remove(uri).close()
     }
   }
 
@@ -90,15 +90,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   }
 
   def stopRunningVerification(uri: String): Future[Boolean] = {
-    val fm = getFileManager(uri)
-    fm.stop()
-      .map(_ => {
-        logger.trace(s"stopVerification has completed for ${fm.file.uri}")
-        val params = StateChangeParams(Ready.id, verificationCompleted = 0, verificationNeeded = 0, uri = uri)
-        sendStateChangeNotification(params, Some(fm))
-        true
-      })
-      .recover(_ => false)
+    getFileManager(uri).stopRunningVerification()
   }
 
   /** Stops all running verifications.
@@ -226,7 +218,11 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     getFileManager(uri).addToOtherProject(root, getContents)
   }
   def removeFromOtherProject(uri: String, root: String) = {
-    getFile(uri).map(_.removeFromOtherProject(root))
+    val shouldClose = getFile(uri).map(fm => fm.removeFromOtherProject(root) && !fm.isOpen).getOrElse(false)
+    if (shouldClose) {
+      logger.trace(s"Removing FileManager for $uri")
+      _files.remove(uri).close()
+    }
   }
   def makeEmptyRoot(fm: FileManager) = {
     for (leaves <- fm.projectLeaves; leaf <- leaves) {

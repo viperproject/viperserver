@@ -50,23 +50,20 @@ trait ProjectManager extends ProjectAware {
   var project: Either[Map[String, LeafManager], LeafInfo] = Left(Map())
   private def getRootOpt: Option[Map[String, LeafManager]] = project.left.toOption
 
-  def removeFromOtherProject(toRemove: String) = {
-    if (project.map(li => li.removeRoot(toRemove)).getOrElse(false)) {
+  def removeFromOtherProject(toRemove: String): Boolean = {
+    val becomeRoot = project.map(li => li.removeRoot(toRemove)).getOrElse(false);
+    if (becomeRoot) {
       project = Left(Map())
     }
+    becomeRoot
   }
   def addToOtherProject(newRoot: String, getContents: Boolean): Option[String] = {
-    removeDiagnostics()
+    teardownProject()
     project match {
-      case Left(p) => {
-        for ((leaf, manager) <- p) {
-          coordinator.removeFromOtherProject(leaf, file_uri)
-        }
+      case Left(_) =>
         project = Right(LeafInfo(newRoot))
-      }
-      case Right(li) => {
+      case Right(li) =>
         li.addRoot(newRoot)
-      }
     }
     if (getContents) Some(root.content.fileContent.mkString("\n")) else None
   }
@@ -85,6 +82,12 @@ trait ProjectManager extends ProjectAware {
     })
   }
 
+  def teardownProject() = {
+    removeDiagnostics()
+    for (p <- getRootOpt; (leaf, manager) <- p) {
+      coordinator.removeFromOtherProject(leaf, file_uri)
+    }
+  }
   def setupProject(newProject: Set[String]) = {
     val oldProject = getRootOpt.getOrElse(Map())
     val toRemove = oldProject.keySet.diff(newProject)

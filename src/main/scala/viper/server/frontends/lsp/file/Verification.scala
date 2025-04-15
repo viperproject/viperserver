@@ -69,6 +69,17 @@ object VerificationPhase {
 }
 
 trait VerificationManager extends ManagesLeaf {
+  def stopRunningVerification(): Future[Boolean] = {
+    stop()
+      .map(_ => {
+        coordinator.logger.trace(s"stopVerification has completed for ${file_uri}")
+        val params = lsp.StateChangeParams(Ready.id, verificationCompleted = 0, verificationNeeded = 0, uri = file_uri)
+        coordinator.sendStateChangeNotification(params, Some(this))
+        true
+      })
+      .recover(_ => false)
+  }
+
   implicit def ec: ExecutionContext
   var lastPhase: Option[VerificationPhase.VerificationPhase] = None
 
