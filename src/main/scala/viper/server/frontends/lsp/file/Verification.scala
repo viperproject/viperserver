@@ -8,8 +8,8 @@ package viper.server.frontends.lsp.file
 
 import viper.server.frontends.lsp
 import scala.concurrent.Future
-import viper.server.vsi.AstJobId
-import viper.server.vsi.VerJobId
+import viper.server.core.ViperBackendConfig
+import viper.server.vsi.{AstJobId, VerJobId}
 import scala.concurrent.ExecutionContext
 import akka.actor.Props
 
@@ -168,8 +168,10 @@ trait VerificationManager extends ManagesLeaf {
       coordinator.logger.debug(s"Already running parse/typecheck or verification")
       return false
     }
+    // TODO: add support for specifying a full list of custom args here
+    val backend = ViperBackendConfig("silicon");
     // Execute all handles
-    startConstructAst(loader, false) match {
+    startConstructAst(backend, loader, false) match {
       case None => false
       case Some(_) => {
         true
@@ -179,20 +181,21 @@ trait VerificationManager extends ManagesLeaf {
 
   /** Do full parsing, type checking and verification */
   def startVerification(backendClassName: String, customArgs: String, loader: FileContent, mt: Boolean): Future[Boolean] = {
-    coordinator.logger.info(s"verify $filename ($backendClassName)")
+    val command = getVerificationCommand(backendClassName, customArgs)
+    val backend = ViperBackendConfig(command);
+
+    coordinator.logger.info(s"verify $filename ($command)")
     if (handler.isVerifying) stop()
     futureCancel.getOrElse(Future.unit).map(_ => {
       lastPhase = None
       val astJob = handler.astHandle match {
-        case None => startConstructAst(loader, mt) match {
+        case None => startConstructAst(backend, loader, mt) match {
           case None => return Future.successful(false)
           case Some(ast) => ast
         }
         case Some(ast) => ast
       }
-      val command = getVerificationCommand(backendClassName, customArgs)
-      coordinator.logger.debug(s"verification command: $command")
-      val verJob = coordinator.server.verifyAst(astJob, command, Some(coordinator.localLogger))
+      val verJob = coordinator.server.verifyAst(astJob, file.toString(), backend, Some(coordinator.localLogger))
       if (verJob.id >= 0) {
         // Execute all handles
         this.resetContainers(false)
@@ -219,14 +222,14 @@ trait VerificationManager extends ManagesLeaf {
     s"$backendClassName $customArgs"
   }
 
-  private def startConstructAst(loader: FileContent, mt: Boolean): Option[AstJobId] = {
+  private def startConstructAst(backend: ViperBackendConfig, loader: FileContent, mt: Boolean): Option[AstJobId] = {
     coordinator.logger.debug(s"startConstructAst")
     prepareVerification(mt)
 
     val params = lsp.StateChangeParams(lsp.VerificationState.ConstructingAst.id, filename = filename)
     coordinator.sendStateChangeNotification(params, Some(this))
 
-    val astJob = coordinator.server.constructAst(path.toString(), Some(coordinator.localLogger), Some(loader))
+    val astJob = coordinator.server.constructAst(path.toString(), backend, Some(coordinator.localLogger), Some(loader))
     if (astJob.id >= 0) {
       this.resetDiagnostics(true)
       // Execute all handles

@@ -13,7 +13,7 @@ import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
-import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
+import viper.server.utility.Helpers.validateViperFile
 import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
 import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
 import viper.silver.ast.utility.FileLoader
@@ -24,35 +24,23 @@ import scala.concurrent.duration._
 class ViperServerService(config: ViperConfig)(override implicit val executor: VerificationExecutionContext)
   extends ViperCoreServer(config)(executor) with DefaultVerificationServerStart {
 
-  def constructAst(file: String, localLogger: Option[Logger] = None, loader: Option[FileLoader]): AstJobId = {
+  def constructAst(file: String, backend: ViperBackendConfig, localLogger: Option[Logger] = None, loader: Option[FileLoader]): AstJobId = {
     val logger = combineLoggers(localLogger)
     logger.debug("Requesting ViperServer to start new job...")
 
-    val arg_list = getArgListFromArgString(file)
     if (!validateViperFile(file)) {
       logger.debug(s"file not found: $file")
       return AstJobId(-1)
     }
 
-    requestAst(arg_list, localLogger, loader)
+    requestAst(file, backend, localLogger, loader)
   }
 
-  def verifyAst(astJob: AstJobId, command: String, localLogger: Option[Logger] = None): VerJobId = {
+  def verifyAst(astJob: AstJobId, file: String, backend: ViperBackendConfig, localLogger: Option[Logger] = None): VerJobId = {
     if (astJob.id < 0) {
       return VerJobId(-1)
     }
-    val arg_list = getArgListFromArgString(command)
-    val file: String = arg_list.last
-    val arg_list_partial = arg_list.dropRight(1)
     val logger = combineLoggers(localLogger)
-    val backend = try {
-      ViperBackendConfig(arg_list_partial)
-    } catch {
-      case _: IllegalArgumentException =>
-        logger.info(s"Invalid arguments: $command " +
-          s"You need to specify the verification backend, e.g., `silicon [args]`")
-        return VerJobId(-1)
-    }
 
     val ver_id = verifyWithAstJob(file, astJob, backend, localLogger)
     if (ver_id.id >= 0) {
@@ -62,11 +50,6 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
         s"the maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
     }
     ver_id
-  }
-
-  def verifyFull(file: String, command: String, localLogger: Option[Logger] = None): VerJobId = {
-    val ast_id = constructAst(file, localLogger, None)
-    verifyAst(ast_id, command, localLogger)
   }
 
   def startStreaming(jid: VerJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Option[Future[Unit]] = {

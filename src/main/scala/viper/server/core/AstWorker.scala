@@ -25,18 +25,18 @@ object OutOfResourcesException extends AstConstructionException
 case class ServerCrashException(e: Throwable) extends Exception(e)
 
 
-class AstWorker(val arg_list: List[String],
+class AstWorker(val file: String,
+                val args: List[String],
                 override val logger: Logger,
                 private val config: ViperConfig,
                 private val loader: Option[FileLoader]
                )(override val executor: VerificationExecutionContext)
   extends MessageReportingTask[Option[Program]] {
 
-  private def constructAst(arg_list: Seq[String]): Option[Program] = {
-    val file: String = arg_list.last
+  private def constructAst(args: Seq[String]): Option[Program] = {
 
     val reporter = new ActorReporter("AstGenerationReporter")
-    val astGen = new AstGenerator(logger, reporter, arg_list, disablePlugins = config.disablePlugins())
+    val astGen = new AstGenerator(logger, reporter, args, disablePlugins = config.disablePlugins())
 
     val ast_option: Option[Program] = try {
       astGen.generateViperAst(file, loader)
@@ -70,5 +70,5 @@ class AstWorker(val arg_list: List[String],
     ???
   }
 
-  override def call(): Option[Program] = constructAst(arg_list)
+  override def call(): Option[Program] = constructAst(args)
 }

@@ -59,10 +59,11 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     }
   }
 
-  def requestAst(arg_list: List[String], localLogger: Option[Logger] = None, loader: Option[FileLoader] = None): AstJobId = {
+  def requestAst(file: String, backend_config: ViperBackendConfig, localLogger: Option[Logger] = None, loader: Option[FileLoader] = None): AstJobId = {
     require(config != null)
     val logger = combineLoggers(localLogger)
-    val task_backend = new AstWorker(arg_list, logger, config, loader)(executor)
+    val args: List[String] = backend_config.toList
+    val task_backend = new AstWorker(file, args, logger, config, loader)(executor)
     val ast_id = initializeAstConstruction(task_backend)
 
     if (ast_id.id >= 0) {
