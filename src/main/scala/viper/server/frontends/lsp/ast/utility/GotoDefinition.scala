@@ -7,7 +7,6 @@
 package viper.silver.ast.utility.lsp
 import viper.silver.ast.utility.lsp.SelectionBoundTrait
 
-/** TODO */
 trait HasGotoDefinitions {
   def getGotoDefinitions: Seq[GotoDefinition]
 }

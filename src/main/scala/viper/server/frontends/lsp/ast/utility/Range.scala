@@ -11,7 +11,6 @@ import viper.silver.ast.{AbstractSourcePosition, FilePosition, HasLineColumn}
 import java.nio.file.Path
 import viper.silver.ast.LineColumnPosition
 
-/** A range  */
 case class RangePosition(file: Path, var start: HasLineColumn, var _end: HasLineColumn)
   extends AbstractSourcePosition {
   var modified: Boolean = false

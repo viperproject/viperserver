@@ -6,7 +6,6 @@
 
 package viper.silver.ast.utility.lsp
 
-/** TODO */
 trait HasReferenceTos {
   def getReferenceTos: Seq[ReferenceTo]
 }

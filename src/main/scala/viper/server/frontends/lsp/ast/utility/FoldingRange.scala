@@ -6,7 +6,6 @@
 
 package viper.silver.ast.utility.lsp
 
-/** TODO */
 trait HasFoldingRanges {
   def getFoldingRanges: Seq[FoldingRange]
 }

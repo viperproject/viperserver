@@ -6,7 +6,6 @@
 
 package viper.silver.ast.utility.lsp
 
-/** TODO */
 trait HasSignatureHelps {
   def getSignatureHelps: Seq[SignatureHelp]
 }
