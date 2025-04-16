@@ -96,7 +96,18 @@ trait VerificationManager extends ManagesLeaf {
     if (neverParsed) {
       runParseTypecheck(content)
     }
-    futureAst.map(_.map(_ => this.synchronized(f))).getOrElse(Future.successful(this.synchronized(f)))
+    // Delay the future since `futureAst` returns a future from `watchCompletion` which states:
+    // "Note that this only means the elements have been passed downstream, not that downstream has successfully processed them."
+    val future = futureAst.map(_.andThen(delay(10)(_))).getOrElse(Future.successful(()))
+    future.map(_ => this.synchronized(f))
+  }
+
+  private val system = akka.actor.ActorSystem("delayer")
+  def delay[T](ms: Int)(block: => T): Future[T] = {
+    import scala.concurrent.duration._
+    akka.pattern.after(ms.millis, system.scheduler) {
+      Future(block)
+    }
   }
 
   //other
