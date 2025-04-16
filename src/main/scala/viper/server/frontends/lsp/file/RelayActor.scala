@@ -130,7 +130,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
         task.lastPhase = Some(phase)
 
         task.addCodeLens(true)(HasCodeLens(pProgram))
-        task.addDocumentSymbol(true)(HasDocumentSymbol(pProgram))
+        task.addDocumentSymbol(true)(HasDocumentSymbol(pProgram).toSeq)
         task.addHoverHint(true)(HasHoverHints(pProgram))
         task.addGotoDefinition(true)(HasGotoDefinitions(pProgram))
         task.addFindReferences(true)(HasReferenceTos(pProgram))

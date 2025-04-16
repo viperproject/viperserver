@@ -16,7 +16,7 @@ object HasCodeLens {
 }
 
 object HasDocumentSymbol {
-  def apply(p: PNode): Seq[DocumentSymbol] = {
+  def apply(p: PNode): Iterator[DocumentSymbol] = {
     val getSymbol = PartialFunction.fromFunction(HasDocumentSymbol.getSymbol(_))
     val get = { case Some(s) => s }: PartialFunction[Option[DocumentSymbol], DocumentSymbol]
     p.subnodes flatMap (_ shallowCollect (getSymbol andThen get))
@@ -190,38 +190,38 @@ object PLspReservedString {
 ////
 
 object PLspExp {
-  def ops(self: PExp): Seq[PReserved[POperator]] = self.subnodes flatMap (_.shallowCollect({
+  def ops(self: PExp): Iterator[PReserved[POperator]] = self.subnodes flatMap (_.shallowCollect({
     case r: PReserved[_] if r.rs.isInstanceOf[POperator] => Some(r.asInstanceOf[PReserved[POperator]])
     case _: PExp => None
   }).flatten)
-  def hovers(self: PExp): Seq[RangePosition] = ops(self).flatMap(RangePosition(_))
+  def hovers(self: PExp): Iterator[RangePosition] = ops(self).flatMap(RangePosition(_))
   def hint(self: PExp): String = {
-    val pretty = self.prettyMapped({
+    val pretty = self.pretty({
       case e: PExp => e.typ.pretty
     })
     s"$pretty: ${self.typ.pretty}"
   }
   def documentation(self: PExp): Option[String] = {
-    val docs = ops(self).flatMap(op => Documentation(op.rs).map(op -> _))
+    val docs = ops(self).flatMap(op => Documentation(op.rs).map(op -> _)).toSeq
     docs.length match {
       case 0 => None
       case 1 => Some(docs.head._2)
       case _ => Some(docs.map(doc => s"`${doc._1.display}`: ${doc._2}").mkString("\n\n---\n\n"))
     }
   }
-  def getHoverHints(self: PExp): Seq[HoverHint] =
+  def getHoverHints(self: PExp): Iterator[HoverHint] =
     hovers(self).map(hp => HoverHint(hint(self), documentation(self), RangePosition(self), SelectionBoundScope(hp)))
 }
 
 object PLspCall {
   def formalArgs(self: PCall): Option[Seq[PAnyFormalArgDecl]] = self.idnref.decl.map(_.formalArgs)
-  def idnUseMatchesArg(decl: String, use: String): Boolean = {
-    val d = decl.toLowerCase()
-    val parts = use.toLowerCase().split('_')
+  def idnUseMatchesArg(decl: PIdnDef, use: PIdnRef[_]): Boolean = {
+    val d = decl.name.toLowerCase()
+    val parts = use.name.toLowerCase().split('_')
     parts.head == d || parts.last == d
   }
   def inlayHint(idndef: PIdnDef, arg: PExp): Option[InlayHint] = arg match {
-    case PIdnUseExp(use) if idnUseMatchesArg(idndef.name, use) => None
+    case PIdnUseExp(use) if idnUseMatchesArg(idndef, use) => None
     case _ => RangePosition(arg).map(argRp => {
       val declName = InlayHintLabelPart(idndef.pretty, None, RangePosition(idndef))
       val label = Seq(declName, InlayHintLabelPart(":"))
@@ -349,7 +349,7 @@ object PLspDeclaration {
   def tags(self: PDeclarationInner): Seq[SymbolTag.SymbolTag] = if (isDeprecated(self)) Seq(SymbolTag.Deprecated) else Nil
   def isDeprecated(self: PDeclarationInner): Boolean = false
   def getSymbol(self: PDeclarationInner): Option[DocumentSymbol] = (declRange(self), idndefRange(self)) match {
-    case (Some(range), Some(selectionRange)) => Some(DocumentSymbol(self.idndef.pretty, detail(self), range, selectionRange, symbolKind(self), tags(self), None, HasDocumentSymbol(self)))
+    case (Some(range), Some(selectionRange)) => Some(DocumentSymbol(self.idndef.pretty, detail(self), range, selectionRange, symbolKind(self), tags(self), None, HasDocumentSymbol(self).toSeq))
     case _ => None
   }
 
@@ -365,7 +365,7 @@ object PLspDeclaration {
     case _: PFieldDecl => Map(ExpressionScope -> 0, StatementScope -> -50)
     case _: PTypeVarDecl => Map(TypeScope -> 0)
     case _: PLabel => Map(LabelScope -> 0, StatementScope -> -50)
-    case d: PDefine => d.body match {
+    case d: PDefine => d.inner.seqnOrExp match {
       case _: PExp => Map(ExpressionScope -> 0, TypeScope -> 0, StatementScope -> -50)
       case _: PStmt => Map(StatementScope -> 0)
       case _ => Map(MemberScope -> -50)
@@ -419,8 +419,8 @@ object PLspDeclaration {
       case typ => Some(": " + typ.pretty)
     }
     case n: PMethod => {
-      val args = n.args.prettyMapped({ case fa: PTypedVarDecl => fa.typ.pretty })
-      val rets = n.returns.map(_.prettyMapped({ case fa: PTypedVarDecl => fa.typ.pretty })).getOrElse("")
+      val args = n.args.pretty({ case fa: PTypedVarDecl => fa.typ.pretty })
+      val rets = n.returns.map(_.pretty({ case fa: PTypedVarDecl => fa.typ.pretty })).getOrElse("")
       Some(s"$args$rets")
     }
     case _ => None
