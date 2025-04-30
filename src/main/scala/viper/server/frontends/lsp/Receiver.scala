@@ -382,7 +382,7 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
   @JsonRequest(C2S_Commands.RemoveDiagnostics)
   def onRemoveDiagnostics(request: RemoveDiagnosticsRequest): CompletableFuture[RemoveDiagnosticsResponse] = {
     coordinator.logger.debug("On removing diagnostics")
-    coordinator.resetDiagnostics(request.uri)
+    coordinator.resetDiagnostics(Option(request.uri))
     CompletableFuture.completedFuture(RemoveDiagnosticsResponse(true))
   }
 

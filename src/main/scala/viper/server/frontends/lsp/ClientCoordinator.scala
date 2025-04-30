@@ -90,8 +90,17 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     }
   }
 
-  def resetDiagnostics(uri: String): Unit = {
+  def resetDiagnosticsOne(uri: String): Unit = {
     getFileManager(uri).removeDiagnostics()
+  }
+
+  def resetDiagnostics(uri: Option[String]): Unit = {
+    uri match {
+      case Some(uri) =>
+        resetDiagnosticsOne(uri)
+      case None =>
+        _files.values().asScala.foreach(_.removeDiagnostics())
+    }
   }
 
   def handleChange(uri: String, range: Range, text: String): Unit = {
@@ -145,7 +154,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
 
   /** returns true if verification was started */
   def startVerification(backendClassName: String, customArgs: String, uri: String, manuallyTriggered: Boolean): Future[Boolean] = {
-    _previousFile.foreach(resetDiagnostics)
+    _previousFile.foreach(resetDiagnosticsOne)
     _previousFile = Some(uri)
     val fm = getFileManager(uri)
     fm.startVerification(backendClassName, customArgs, fm.content, manuallyTriggered)
@@ -155,7 +164,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   def startParseTypecheck(uri: String): Boolean = {
     val fm = getFileManager(uri)
     val project = getFile(uri).flatMap(_.projectRoot).getOrElse(uri)
-    _previousFile.foreach(resetDiagnostics)
+    _previousFile.foreach(resetDiagnosticsOne)
     _previousFile = Some(project)
     val root = getFileManager(project)
     root.runParseTypecheck(fm.content)
