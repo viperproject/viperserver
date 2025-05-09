@@ -114,7 +114,7 @@ trait StandardManager extends Manager {
   type DiagnosticContainer = utility.StageArrayContainer.ArrayContainer[Diagnostic, lsp4j.Diagnostic]
   val diagnosticContainer: DiagnosticContainer = utility.LspContainer(utility.DiagnosticTranslator, publishDiags)
   private def publishDiags(): Unit = {
-    val diagnosticParams = new PublishDiagnosticsParams(file.file_uri, getDiagnostic().asJava)
+    val diagnosticParams = new PublishDiagnosticsParams(file.file_uri, getDiagnostic().distinct.asJava)
     coordinator.client.map{_.publishDiagnostics(diagnosticParams)}
   }
   // containers.addOne(diagnosticContainer)

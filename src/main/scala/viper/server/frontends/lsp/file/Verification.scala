@@ -199,11 +199,9 @@ trait VerificationManager extends ManagesLeaf {
     if (handler.isVerifying) stop()
     futureCancel.getOrElse(Future.unit).map(_ => {
       lastPhase = None
-      val astJob = handler.astHandle match {
-        case None => startConstructAst(backend, loader, mt) match {
-          case None => return Future.successful(false)
-          case Some(ast) => ast
-        }
+      handler.clearWaitingOn()
+      val astJob = startConstructAst(backend, loader, mt) match {
+        case None => return Future.successful(false)
         case Some(ast) => ast
       }
       val verJob = coordinator.server.verifyAst(astJob, file.toString(), backend, Some(coordinator.localLogger))
