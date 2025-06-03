@@ -30,6 +30,10 @@ trait ManagesLeaf {
   def coordinator: lsp.ClientCoordinator = root.coordinator
 
   def file_uri: String = file.file_uri
+  // The `file_uri` we have from VS Code has the `:` after the windows drive
+  // letter encoded as `%3A`. Viper doesn't do this, so hack here to allow for
+  // string comparisons.
+  def unescape(uri: String): String = uri.replaceFirst("%3A", ":")
   def filename: String = file.filename
   def path: Path = file.path
 
