@@ -32,7 +32,7 @@ class ReformatterTest extends AnyWordSpec with Matchers with ScalatestRouteTest 
     
     def check_inner(name: String): Unit = {
       val ast = ast_gen.generateViperParseAst(snippet).get
-      val reformatted = ReformatPrettyPrinter.reformatProgram(ast);
+      val reformatted = ReformatPrettyPrinter.showProgram(ast);
       val actual = DiskLoader.loadContent(Path.of(snippet_expected)).get
       assert(reformatted == actual)
     }
