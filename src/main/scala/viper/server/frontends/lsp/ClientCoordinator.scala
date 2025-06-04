@@ -152,6 +152,10 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     })
   }
 
+  def reformatFile(uri: String): Option[String] = {
+    _files.get(uri).reformatFile()
+  }
+
   /** returns true if verification was started */
   def startVerification(backendClassName: String, customArgs: String, uri: String, manuallyTriggered: Boolean): Future[Boolean] = {
     _previousFile.filter(_ != uri).foreach(resetDiagnosticsOne)
