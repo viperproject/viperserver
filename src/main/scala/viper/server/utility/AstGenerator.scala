@@ -82,12 +82,12 @@ class AstGenerator(private val _logger: Logger,
     }
   }
 
-  def generateViperAst(vpr_file_path: String): Option[Program] = {
-    generateViperAstImpl(vpr_file_path, () => _frontend.translationResult)
+  def generateViperAst(vpr_file_path: String, loader: Option[FileLoader] = None): Option[Program] = {
+    generateViperAstImpl(vpr_file_path, () => _frontend.translationResult, loader)
   }
 
-  def generateViperParseAst(vpr_file_path: String): Option[PProgram] = {
-    generateViperAstImpl(vpr_file_path, () => _frontend.parsingResult)
+  def generateViperParseAst(vpr_file_path: String, loader: Option[FileLoader] = None): Option[PProgram] = {
+    generateViperAstImpl(vpr_file_path, () => _frontend.parsingResult, loader)
   }
 
   // Parameters that are relevant for AST creation and are boolean flags

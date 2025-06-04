@@ -190,6 +190,11 @@ trait VerificationManager extends ManagesLeaf {
     }
   }
 
+  def reformatFile(): Option[String] = {
+    coordinator.logger.info(s"reformatting the file $filename")
+    coordinator.server.reformatFile(path.toString, Some(coordinator.localLogger))
+  }
+
   /** Do full parsing, type checking and verification */
   def startVerification(backendClassName: String, customArgs: String, loader: FileContent, mt: Boolean): Future[Boolean] = {
     val command = getVerificationCommand(backendClassName, customArgs)
