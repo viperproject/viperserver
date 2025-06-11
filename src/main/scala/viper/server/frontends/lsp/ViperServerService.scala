@@ -80,7 +80,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
       case Some(handle_future) =>
         handle_future.flatMap(handle => {
           // first stop ast construction:
-          val astFuture = handle.prev_job_id.map(astJobId => stopAstConstruction(astJobId, localLogger)).getOrElse(Future.successful(true))
+          val astFuture = handle.prev_job_id.map(astJobId => stopOnlyAstConstruction(astJobId, localLogger)).getOrElse(Future.successful(true))
           astFuture.flatMap(astResult => {
             stopOnlyVerification(handle, logger)
               .map(verResult => {
@@ -112,7 +112,13 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     }
   }
 
-  def stopAstConstruction(jid: AstJobId, localLogger: Option[Logger] = None): Future[Boolean] = {
+  def stopAstConstruction(jid: AstJobId, localLogger: Option[Logger] = None): Unit = {
+    stopOnlyAstConstruction(jid, localLogger).map { found =>
+      if (found) discardAstJob(jid)
+    }
+  }
+
+  def stopOnlyAstConstruction(jid: AstJobId, localLogger: Option[Logger] = None): Future[Boolean] = {
     val combinedLogger = combineLoggers(localLogger)
     ast_jobs.lookupJob(jid) match {
       case Some(handle_future) =>
