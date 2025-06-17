@@ -165,8 +165,13 @@ trait VerificationServer extends Post {
     }
   }
 
-  protected def discardAstJob(jid: AstJobId): Unit = {
-    ast_jobs.discardJob(jid)
+  protected def discardAstOnCompletion(jid: AstJobId): Option[Future[Unit]] = {
+    ast_jobs.lookupJob(jid).map({job =>
+      ast_jobs.discardJob(jid)
+      job.map(astHandle => astHandle.queue.watchCompletion().onComplete(_ => {
+        astHandle.job_actor ! PoisonPill
+      }))
+    })
   }
 
   /** This method starts a verification process.

@@ -67,13 +67,14 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     val ast_id = initializeAstConstruction(task_backend)
 
     if (ast_id.id >= 0) {
-      logger.info(s"AST process #${ast_id.id} has successfully started.")
+      logger.info(s"Verification process #${ast_id.id} has successfully started.")
     } else {
       logger.error(s"Could not start verification process. " +
         s"The maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
     }
     ast_id
   }
+  def discardAstJobOnCompletion(jid: AstJobId): Unit = discardAstOnCompletion(jid)
 
   def verifyWithAstJob(programId: String, ast_id: AstJobId, backend_config: ViperBackendConfig, localLogger: Option[Logger] = None): VerJobId = {
     val logger = combineLoggers(localLogger)

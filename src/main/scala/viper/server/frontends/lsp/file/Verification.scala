@@ -6,7 +6,6 @@
 
 package viper.server.frontends.lsp.file
 
-import ch.qos.logback.classic.Logger
 import viper.server.frontends.lsp
 import scala.concurrent.Future
 import viper.server.core.ViperBackendConfig
@@ -26,15 +25,12 @@ import viper.silver.ast.utility.lsp.RangePosition
 import viper.silver.ast.HasLineColumn
 import viper.silver.ast.LineColumnPosition
 
-case class VerificationHandler(server: lsp.ViperServerService, logger: Logger) {
+case class VerificationHandler(server: lsp.ViperServerService) {
   private var waitingOn: Option[Either[AstJobId, VerJobId]] = None
 
   def clearWaitingOn(): Unit = {
-    logger.info(s"Waiting on is: $waitingOn")
     waitingOn match {
-      case Some(Left(jid)) =>
-        logger.warn(s"Discarding uncompleted AST job $jid.")
-        server.stopAstConstruction(jid, Some(logger))
+      case Some(Left(jid)) => server.discardAstJobOnCompletion(jid)
       case _ =>
     }
     waitingOn = None
@@ -44,7 +40,7 @@ case class VerificationHandler(server: lsp.ViperServerService, logger: Logger) {
     waitingOn = Some(Left(ast))
   }
   def waitOn(ver: VerJobId): Unit = {
-    // Do not `clearWaitingOn` since it contains the AST job we do not want to cancel
+    clearWaitingOn()
     waitingOn = Some(Right(ver))
   }
 
@@ -95,7 +91,7 @@ trait VerificationManager extends ManagesLeaf {
       futureCancel.exists(!_.isCompleted) ||
       futureVer.exists(!_.isCompleted)
 
-  var handler: VerificationHandler = VerificationHandler(coordinator.server, coordinator.logger)
+  var handler: VerificationHandler = VerificationHandler(coordinator.server)
   def getInFuture[T](f: => T): Future[T] = {
     if (neverParsed) {
       runParseTypecheck(content)
