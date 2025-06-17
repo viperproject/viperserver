@@ -33,7 +33,7 @@ case class VerificationHandler(server: lsp.ViperServerService, logger: Logger) {
     logger.info(s"Waiting on is: $waitingOn")
     waitingOn match {
       case Some(Left(jid)) =>
-        logger.warn(s"Discarding uncompleted AST job $jid.")
+        logger.warn(s"Discarding and stopping uncompleted AST job $jid.")
         server.stopAstConstruction(jid, Some(logger))
       case _ =>
     }
@@ -45,6 +45,12 @@ case class VerificationHandler(server: lsp.ViperServerService, logger: Logger) {
   }
   def waitOn(ver: VerJobId): Unit = {
     // Do not `clearWaitingOn` since it contains the AST job we do not want to cancel
+    waitingOn match {
+      case Some(Left(jid)) =>
+        logger.warn(s"Discarding uncompleted AST job $jid (though it will keep running), only keeping handle to verification job.")
+        server.discardAstJobLookup(jid)
+      case _ =>
+    }
     waitingOn = Some(Right(ver))
   }
 

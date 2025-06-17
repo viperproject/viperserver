@@ -69,8 +69,8 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     if (ast_id.id >= 0) {
       logger.info(s"AST process #${ast_id.id} has successfully started.")
     } else {
-      logger.error(s"Could not start verification process. " +
-        s"The maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
+      logger.error(s"Could not start AST process. " +
+        s"The maximum number of active AST jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
     }
     ast_id
   }
