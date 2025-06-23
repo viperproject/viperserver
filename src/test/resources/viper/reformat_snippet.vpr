@@ -1,6 +1,7 @@
-// We already have integration tests for reformatting in silver, so here
-// we just test whether the integration works.
-method expressions(xs: List[Int]) {
+// Any copyright is dedicated to the Public Domain.
+// http://creativecommons.org/publicdomain/zero/1.0/
+
+method expressions(xs: Seq[Int]) {
     var a_bool: Bool
     := true;
 }
