@@ -4,7 +4,9 @@
 //
 // Copyright (c) 2011-2020 ETH Zurich.
 
-package viper.server.frontends.lsp
+package viper.server.frontends.lsp.file
+
+import viper.server.frontends.lsp.{BackendOutput, BackendOutputType, ClientCoordinator}
 
 class ProgressCoordinator(coordinator: ClientCoordinator, val nofPredicates: Int, val nofFunctions: Int, val nofMethods: Int) {
 

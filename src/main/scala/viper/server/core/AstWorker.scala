@@ -11,8 +11,8 @@ import viper.server.ViperConfig
 import viper.server.utility.AstGenerator
 import viper.server.vsi.AstConstructionException
 import viper.silver.ast.Program
-import viper.silver.reporter.{Entity, ExceptionReport}
-import viper.silver.verifier.VerificationResult
+import viper.silver.ast.utility.FileLoader
+import viper.silver.reporter.ExceptionReport
 
 
 object ViperFileNotFoundException extends AstConstructionException
@@ -24,20 +24,21 @@ object OutOfResourcesException extends AstConstructionException
 case class ServerCrashException(e: Throwable) extends Exception(e)
 
 
-class AstWorker(val arg_list: List[String],
+class AstWorker(val file: String,
+                val args: List[String],
                 override val logger: Logger,
-                private val config: ViperConfig
+                private val config: ViperConfig,
+                private val loader: Option[FileLoader]
                )(override val executor: VerificationExecutionContext)
   extends MessageReportingTask[Option[Program]] {
 
-  private def constructAst(arg_list: Seq[String]): Option[Program] = {
-    val file: String = arg_list.last
+  private def constructAst(args: Seq[String]): Option[Program] = {
 
     val reporter = new ActorReporter("AstGenerationReporter")
-    val astGen = new AstGenerator(logger, reporter, arg_list, disablePlugins = config.disablePlugins())
+    val astGen = new AstGenerator(logger, reporter, args, disablePlugins = config.disablePlugins())
 
     val ast_option: Option[Program] = try {
-      astGen.generateViperAst(file)
+      astGen.generateViperAst(file, loader)
     } catch {
       case _: java.nio.file.NoSuchFileException =>
         logger.error(s"The file ($file) for which verification has been requested was not found.")
@@ -63,10 +64,5 @@ class AstWorker(val arg_list: List[String],
     ast_option
   }
 
-  override def mapEntityVerificationResult(entity: Entity, result: VerificationResult): VerificationResult = {
-    logger.error(s"unexpected operation: AstWorker received an entity success or entity failure message, which should not occur while constructing a Viper AST")
-    ???
-  }
-
-  override def call(): Option[Program] = constructAst(arg_list)
+  override def call(): Option[Program] = constructAst(args)
 }

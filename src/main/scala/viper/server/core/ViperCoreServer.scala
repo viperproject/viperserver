@@ -13,6 +13,8 @@ import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
 import viper.silver.ast.{Function, HasLineColumn, Method, Node, Program, SourcePosition}
+import viper.silver.ast.Program
+import viper.silver.ast.utility.FileLoader
 import viper.silver.logger.ViperLogger
 
 import scala.collection.immutable.HashSet
@@ -59,17 +61,18 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     }
   }
 
-  def requestAst(arg_list: List[String], localLogger: Option[Logger] = None): AstJobId = {
+  def requestAst(file: String, backend_config: ViperBackendConfig, localLogger: Option[Logger] = None, loader: Option[FileLoader] = None): AstJobId = {
     require(config != null)
     val logger = combineLoggers(localLogger)
-    val task_backend = new AstWorker(arg_list, logger, config)(executor)
+    val args: List[String] = backend_config.toList
+    val task_backend = new AstWorker(file, args, logger, config, loader)(executor)
     val ast_id = initializeAstConstruction(task_backend)
 
     if (ast_id.id >= 0) {
-      logger.info(s"Verification process #${ast_id.id} has successfully started.")
+      logger.info(s"AST process #${ast_id.id} has successfully started.")
     } else {
-      logger.error(s"Could not start verification process. " +
-        s"The maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
+      logger.error(s"Could not start AST process. " +
+        s"The maximum number of active AST jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
     }
     ast_id
   }
@@ -161,7 +164,11 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     ver_id
   }
 
-  override def streamMessages(jid: VerJobId, clientActor: ActorRef): Option[Future[Done]] = {
+  override def streamMessages(jid: VerJobId, clientActor: ActorRef, include_ast: Boolean): Option[Future[Done]] = {
+    globalLogger.info(s"Streaming results for job #${jid.id}.")
+    super.streamMessages(jid, clientActor, include_ast)
+  }
+  override def streamMessages(jid: AstJobId, clientActor: ActorRef): Option[Future[Done]] = {
     globalLogger.info(s"Streaming results for job #${jid.id}.")
     super.streamMessages(jid, clientActor)
   }

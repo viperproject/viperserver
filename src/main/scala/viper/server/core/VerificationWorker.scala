@@ -269,11 +269,6 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
   private def verification(input: Program): Either[Seq[AbstractError], VerificationResult] =
     Right(_frontend.verifier.verify(input))
 
-  def mapEntityVerificationResult(entity: Entity, verificationResult: VerificationResult): VerificationResult = {
-    if (disablePlugins) verificationResult
-    else _frontend.plugins.mapEntityVerificationResult(entity, verificationResult)
-  }
-
   private def mapVerificationResult(input: Program, result: VerificationResult): VerificationResult =
     if (disablePlugins) result
     else _frontend.plugins.mapVerificationResult(input, result)
