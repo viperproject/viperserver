@@ -85,6 +85,8 @@ case class VerifyParams (
               manuallyTriggered: Boolean,   // was the verification triggered manually
               workspace: String,            // the path to the open workspace folder
               backend: String,
+              verifyTarget: Position,       // A specific method/function at a position that should be verified,
+                                            // instead of the whole file.
               customArgs: String)            // contains the path of the file that should be verified
 
 case class SettingsError (errorType: SettingsErrorType, msg: String)
@@ -168,6 +170,9 @@ case class StateChangeParams(
               success: Int = NA.id,
               verificationCompleted: Double = -1,
               manuallyTriggered: Double = -1,
+              // The range of the source code that is currently being verified, if for example
+              // a specific method/function is verified instead of the whole file.
+              currentTarget: Range = null,
               filename: String = null,
               backendName: String = null,
               time: Double = -1, /** [sec] */
@@ -190,6 +195,10 @@ case class StopVerificationRequest(uri: String)
 case class StopVerificationResponse(success: Boolean)
 
 case class GetLanguageServerUrlResponse(url: String)
+
+case class GetDefinitionsRequest(uri: String)
+
+case class GetDefinitionsResponse(definitions: Array[Definition])
 
 case class RemoveDiagnosticsRequest(uri: String)
 

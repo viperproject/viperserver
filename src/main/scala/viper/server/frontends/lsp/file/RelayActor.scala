@@ -7,6 +7,7 @@
 package viper.server.frontends.lsp.file
 
 import akka.actor.{Actor, PoisonPill, Props, Status}
+import org.eclipse.lsp4j.{Diagnostic, DiagnosticSeverity, DocumentSymbol, Position, PublishDiagnosticsParams, Range, SymbolKind}
 import viper.server.frontends.lsp
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
@@ -45,6 +46,13 @@ trait MessageHandler extends ProjectManager with VerificationManager with Quanti
       var success = NA
       val mt = if (this.manuallyTriggered) 1 else 0
 
+      val target = currentTarget.map(p => {
+        val start = p.start
+        val end = p.end.getOrElse(p.start)
+
+        new Range(new Position(start.line - 1, start.column - 1), new Position(end.line - 1, end.column - 1))
+      }).getOrElse(null)
+
       val isVerifyingStage = true
 
       // do we need to start a followUp Stage?
@@ -55,7 +63,7 @@ trait MessageHandler extends ProjectManager with VerificationManager with Quanti
         coordinator.sendStateChangeNotification(params, Some(this))
 
         // notify client about outcome of verification
-        params = lsp.StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt,
+        params = lsp.StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt, currentTarget=target,
           filename = filename, time = timeMs.toDouble / 1000, verificationCompleted = 1, uri = file_uri,
           error = "")
         coordinator.sendStateChangeNotification(params, Some(this))
@@ -65,7 +73,7 @@ trait MessageHandler extends ProjectManager with VerificationManager with Quanti
         }
       } else {
         success = if (is_aborting) Aborted else Success
-        params = lsp.StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt,
+        params = lsp.StateChangeParams(Ready.id, success = success.id, manuallyTriggered = mt, currentTarget=target,
           filename = filename, time = timeMs.toDouble / 1000, verificationCompleted = 0, uri = file_uri,
           error = "")
         coordinator.sendStateChangeNotification(params, Some(this))
@@ -197,6 +205,8 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
     case WarningsDuringVerification(warnings) =>
       markErrorsAsReported(warnings)
       task.processErrors(backendClassName, warnings)
+    case TargetSelectionReport(ts) =>
+        currentTarget = Some(ts)
     // the completion handler is not yet invoked (but as part of Status.Success)
     case QuantifierChosenTriggersMessage(qexp, triggers, oldTriggers) =>
       coordinator.logger.trace(s"[receive@${task.filename}/${backendClassName.isDefined}] QuantifierChosenTriggersMessage")
