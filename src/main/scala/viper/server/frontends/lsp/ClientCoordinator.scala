@@ -9,6 +9,7 @@ package viper.server.frontends.lsp
 import ch.qos.logback.classic.Logger
 import org.eclipse.lsp4j.Range
 import viper.server.core.VerificationExecutionContext
+import viper.silver.ast.HasLineColumn
 
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import scala.concurrent.Future
@@ -153,11 +154,11 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   }
 
   /** returns true if verification was started */
-  def startVerification(backendClassName: String, customArgs: String, uri: String, manuallyTriggered: Boolean): Future[Boolean] = {
+  def startVerification(backendClassName: String, customArgs: String, uri: String, manuallyTriggered: Boolean, verifyTarget: Option[HasLineColumn] = None): Future[Boolean] = {
     _previousFile.filter(_ != uri).foreach(resetDiagnosticsOne)
     _previousFile = Some(uri)
     val fm = getFileManager(uri)
-    fm.startVerification(backendClassName, customArgs, fm.content, manuallyTriggered)
+    fm.startVerification(backendClassName, customArgs, fm.content, manuallyTriggered, verifyTarget)
   }
 
   /** returns true if parse/typecheck was started */
