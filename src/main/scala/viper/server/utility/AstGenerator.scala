@@ -13,6 +13,7 @@ import viper.server.utility.Helpers.validateViperFile
 import viper.silver.ast.Program
 import viper.silver.ast.utility.FileLoader
 import viper.silver.frontend.{SilFrontend, ViperAstProvider}
+import viper.silver.parser.PProgram
 import viper.silver.reporter.{NoopReporter, Reporter, PProgramReport}
 
 class AstGenerator(private val _logger: Logger,
@@ -32,7 +33,7 @@ class AstGenerator(private val _logger: Logger,
     *
     * Throws an exception when passed an non-existent file!
     */
-  def generateViperAst(vpr_file_path: String, loader: Option[FileLoader] = None): Option[Program] = {
+  def generateViperAstImpl[T](vpr_file_path: String, result: () => T, loader: Option[FileLoader] = None): Option[T] = {
 
     if (!validateViperFile(vpr_file_path)) {
       _logger.error(s"No such file: `$vpr_file_path`")
@@ -74,11 +75,19 @@ class AstGenerator(private val _logger: Logger,
       reportProgramStats()
     }
     if (_frontend.errors.isEmpty) {
-      Some(_frontend.translationResult)
+      Some(result())
     } else {
       _logger.info(s"Errors occurred while translating `$vpr_file_path`: ${_frontend.errors}")
       None
     }
+  }
+
+  def generateViperAst(vpr_file_path: String, loader: Option[FileLoader] = None): Option[Program] = {
+    generateViperAstImpl(vpr_file_path, () => _frontend.translationResult, loader)
+  }
+
+  def generateViperParseAst(vpr_file_path: String, loader: Option[FileLoader] = None): Option[PProgram] = {
+    generateViperAstImpl(vpr_file_path, () => _frontend.parsingResult, loader)
   }
 
   // Parameters that are relevant for AST creation and are boolean flags
