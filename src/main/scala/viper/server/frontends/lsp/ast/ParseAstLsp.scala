@@ -280,6 +280,7 @@ object PLspDeclaration {
     case _: PMethod => TokenType.Method
     case _: PAdt => TokenType.Enum
     case _: PAdtConstructor => TokenType.EnumMember
+    case _: PAdtFieldDecl => TokenType.Function
 
     case _: PAnyFunction => TokenType.Function
 
