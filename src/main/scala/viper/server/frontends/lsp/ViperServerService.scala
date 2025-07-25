@@ -17,6 +17,7 @@ import viper.server.utility.Helpers.validateViperFile
 import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
 import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
 import viper.silver.ast.utility.FileLoader
+import viper.silver.ast.HasLineColumn
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -36,13 +37,13 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     requestAst(file, backend, localLogger, loader)
   }
 
-  def verifyAst(astJob: AstJobId, file: String, backend: ViperBackendConfig, localLogger: Option[Logger] = None): VerJobId = {
+  def verifyAst(astJob: AstJobId, file: String, backend: ViperBackendConfig, localLogger: Option[Logger] = None, verifyTarget: Option[HasLineColumn] = None): VerJobId = {
     if (astJob.id < 0) {
       return VerJobId(-1)
     }
     val logger = combineLoggers(localLogger)
 
-    val ver_id = verifyWithAstJob(file, astJob, backend, localLogger)
+    val ver_id = verifyWithAstJob(file, astJob, backend, localLogger, verifyTarget)
     if (ver_id.id >= 0) {
       logger.info(s"Verification process #${ver_id.id} has successfully started.")
     } else {

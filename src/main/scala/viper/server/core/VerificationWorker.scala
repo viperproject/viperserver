@@ -32,6 +32,9 @@ case class ViperEnvelope(m: Message) extends Envelope
 class VerificationWorker(private val command: List[String],
                          private val programId: String,
                          private val program: Program,
+                         // Does the verification process target the whole file,
+                         // or just a specific function/method at a specific location?
+                         private val target: Option[SourcePosition],
                          override val logger: Logger,
                          private val config: ViperConfig)
                         (override val executor: VerificationExecutionContext)
@@ -100,6 +103,23 @@ class VerificationWorker(private val command: List[String],
       logger.error(s"The command `${command.mkString(" ")}` resulted in an exception.")
       registerTaskEnd(false)
     }
+  }
+
+  override def mapEntityVerificationResult(entity: Entity, result: VerificationResult): VerificationResult = {
+    backend.mapEntityVerificationResult(entity, result)
+  }
+
+  override def registerTaskEnd(success: Boolean): Unit = {
+    // We need to enqueue the message for choosing a specific verification target
+    // in the source code here instead of doing it in the constructor
+    // of the verification worker, because at that point the task hasn't been created yet,
+    // and thus the message cant be sent.
+    target match {
+      case Some(t) => enqueueMessage(TargetSelectionReport(t))
+      case _ =>
+    }
+
+    super.registerTaskEnd(success);
   }
 
   override def call(): Unit = run()

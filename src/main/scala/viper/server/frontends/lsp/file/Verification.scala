@@ -25,6 +25,7 @@ import org.eclipse.lsp4j
 import viper.silver.ast.utility.lsp.RangePosition
 import viper.silver.ast.HasLineColumn
 import viper.silver.ast.LineColumnPosition
+import viper.silver.ast.SourcePosition
 
 case class VerificationHandler(server: lsp.ViperServerService, logger: Logger) {
   private var waitingOn: Option[Either[AstJobId, VerJobId]] = None
@@ -131,6 +132,10 @@ trait VerificationManager extends ManagesLeaf {
   var manuallyTriggered: Boolean = _
   var neverParsed: Boolean = true
 
+  // The range of the function/method we are currently verifying, if we are verifying a specific
+  // target instead of the whole file.
+  var currentTarget: Option[SourcePosition] = None
+
   //verification results
   var jid: Int = -1
   var timeMs: Long = 0
@@ -147,6 +152,7 @@ trait VerificationManager extends ManagesLeaf {
 
     is_verifying = true
     is_aborting = false
+    currentTarget = None
     state = Stopped
     neverParsed = false
     timeMs = 0
@@ -201,7 +207,7 @@ trait VerificationManager extends ManagesLeaf {
   }
 
   /** Do full parsing, type checking and verification */
-  def startVerification(backendClassName: String, customArgs: String, loader: FileContent, mt: Boolean): Future[Boolean] = {
+  def startVerification(backendClassName: String, customArgs: String, loader: FileContent, mt: Boolean, verifyTarget: Option[HasLineColumn] = None): Future[Boolean] = {
     val command = getVerificationCommand(backendClassName, customArgs)
     val backend = ViperBackendConfig(command);
 
@@ -214,7 +220,7 @@ trait VerificationManager extends ManagesLeaf {
         case None => return Future.successful(false)
         case Some(ast) => ast
       }
-      val verJob = coordinator.server.verifyAst(astJob, file.toString(), backend, Some(coordinator.localLogger))
+      val verJob = coordinator.server.verifyAst(astJob, file.toString(), backend, Some(coordinator.localLogger), verifyTarget)
       if (verJob.id >= 0) {
         // Execute all handles
         this.resetContainers(false)
