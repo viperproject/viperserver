@@ -142,6 +142,10 @@ trait VerificationManager extends ManagesLeaf {
   var errorCount: Int = 0
   var diagnosticCount: Int = 0
 
+  // verification config cache when parse-only
+  var lastCustomArgs: Option[String] = None
+  var lastBackendClassName: Option[String] = None
+
   def prepareVerification(mt: Boolean): Unit = {
     manuallyTriggered = mt
 
@@ -189,8 +193,8 @@ trait VerificationManager extends ManagesLeaf {
       coordinator.logger.debug(s"Already running parse/typecheck or verification")
       return false
     }
-    // TODO: add support for specifying a full list of custom args here
-    val backend = ViperBackendConfig("silicon");
+    val command = getVerificationCommand(lastBackendClassName.getOrElse("silicon"), lastCustomArgs.getOrElse(""))
+    val backend = ViperBackendConfig(command)
     // Execute all handles
     startConstructAst(backend, loader, false) match {
       case None => false
@@ -202,8 +206,10 @@ trait VerificationManager extends ManagesLeaf {
 
   /** Do full parsing, type checking and verification */
   def startVerification(backendClassName: String, customArgs: String, loader: FileContent, mt: Boolean): Future[Boolean] = {
+    lastBackendClassName = Some(backendClassName)
+    lastCustomArgs = Some(customArgs)
     val command = getVerificationCommand(backendClassName, customArgs)
-    val backend = ViperBackendConfig(command);
+    val backend = ViperBackendConfig(command)
 
     coordinator.logger.info(s"verify $filename ($command)")
     if (handler.isVerifying) stop()
