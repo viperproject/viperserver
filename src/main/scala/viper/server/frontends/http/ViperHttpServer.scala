@@ -65,8 +65,6 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
       return VerificationRequestReject("File not found")
     }
 
-    val ast_id = requestAst(arg_list)
-
     val backend = try {
       ViperBackendConfig(arg_list_partial)
     } catch {
@@ -76,6 +74,7 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
         return VerificationRequestReject("Invalid arguments for backend.")
     }
 
+    val ast_id = requestAst(file, backend)
     val ver_id = verifyWithAstJob(file, ast_id, backend)
 
     VerificationRequestAccept(ast_id, ver_id)
