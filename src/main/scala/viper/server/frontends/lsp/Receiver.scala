@@ -102,6 +102,8 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     // automatically cause all references to be renamed. This would probably be too annoying.
     capabilities.setLinkedEditingRangeProvider(false)
 
+    capabilities.setDocumentFormattingProvider(true)
+
     CompletableFuture.completedFuture(new InitializeResult(capabilities))
   }
 
@@ -313,6 +315,18 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
   override def codeAction(params: CodeActionParams) = {
     // TODO
     CompletableFuture.completedFuture(Nil.asJava)
+  }
+
+  override def formatting(params: DocumentFormattingParams) = {
+    coordinator.logger.trace(s"[Req: textDocument/formatting] ${params.toString}")
+    val uri = params.getTextDocument.getUri
+    val result = coordinator.getRoot(uri).reformatFile() match {
+      case None => Seq()
+      case Some(e) =>
+        val range = new Range(new Position(0, 0), new Position(Int.MaxValue, Int.MaxValue))
+        Seq(new TextEdit(range, e))
+    }
+    CompletableFuture.completedFuture(result.asJava)
   }
 
   // --- DISABLED, see comment in `initialize` ---
