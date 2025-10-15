@@ -194,7 +194,7 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       case Some(inputPlugin) =>
         // Filter methods according to command-line arguments.
         val verifyMethods =
-          if (_frontend.config != null && _frontend.config.methods() != ":all") Seq("methods", _frontend.config.methods())
+          if (_frontend.config != null && _frontend.config.select.isDefined) Seq("methods", _frontend.config.select())
           else inputPlugin.methods map (_.name)
         val methods = inputPlugin.methods filter (m => verifyMethods.contains(m.name))
         Right(Program(inputPlugin.domains, inputPlugin.fields, inputPlugin.functions, inputPlugin.predicates, methods, inputPlugin.extensions)(inputPlugin.pos, inputPlugin.info, inputPlugin.errT))
