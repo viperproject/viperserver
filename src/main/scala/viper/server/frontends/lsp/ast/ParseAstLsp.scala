@@ -85,7 +85,7 @@ object HasSignatureHelps {
     case n: PCallable => {
     val bound = SelectionBoundKeyword(n.idndef.name)
     // Start
-    val start = SignatureHelpPart(false, s"${n.keyword.pretty}${n.idndef.pretty}${n.args.l.pretty}", None)
+    val start = SignatureHelpPart(false, s"${n.keyword.pretty} ${n.idndef.pretty}${n.args.l.pretty}", None)
     // Args
     def faToSigHelpPart(fa: PAnyFormalArgDecl): SignatureHelpPart = SignatureHelpPart(true, fa.pretty, None)
     val args = n.args.inner.first.map(faToSigHelpPart).toSeq ++ n.args.inner.inner.flatMap {
@@ -196,8 +196,8 @@ object PLspExp {
   }).flatten)
   def hovers(self: PExp): Iterator[RangePosition] = ops(self).flatMap(RangePosition(_))
   def hint(self: PExp): String = {
-    val pretty = self.pretty({
-      case e: PExp => e.typ.pretty
+    val pretty = self.pretty ({
+      case e: PExp if e != self => e.typ.pretty
     })
     s"$pretty: ${self.typ.pretty}"
   }
@@ -280,6 +280,7 @@ object PLspDeclaration {
     case _: PMethod => TokenType.Method
     case _: PAdt => TokenType.Enum
     case _: PAdtConstructor => TokenType.EnumMember
+    case _: PAdtFieldDecl => TokenType.Function
 
     case _: PAnyFunction => TokenType.Function
 
@@ -296,19 +297,11 @@ object PLspDeclaration {
   }
 
   def hint(self: PDeclarationInner): String = self match {
-    case d: PFieldDecl => s"${d.decl.map(_.field).getOrElse(PReserved.implied(PKw.Field)).pretty}${self.pretty}"
-    case d: PDomain => s"${d.domain.pretty}${d.idndef.pretty}${d.typVars.map(_.pretty).getOrElse("")}"
-    case d: PAdt => s"${d.adt.pretty}${d.idndef.pretty}${d.typVars.map(_.pretty).getOrElse("")}"
-    case d: PCallable =>
-      val firstLine = s"${d.keyword.pretty}${d.idndef.pretty}${d.args.pretty}${d.returnNodes.map(_.pretty).mkString}"
-      val contract = (d.pres.toSeq ++ d.posts.toSeq).map(_.pretty)
-      val bodyString = (contract.length, d.body) match {
-        case (_, None) => ""
-        case (0, Some(_)) => " { ... }"
-        case (_, Some(_)) => "\n{ ... }"
-      }
-      s"$firstLine${contract.mkString}$bodyString"
-    case _ => self.pretty
+    case d: PFieldDecl => s"${d.decl.map(_.field).getOrElse(PReserved.implied(PKw.Field)).pretty} ${self.pretty}"
+    // Omit all braced things when printing the declaration as `{ ... }`
+    case _ => self.pretty {
+      case PGrouped(PReserved(_: PSym.LBrace.type), _, PReserved(_: PSym.RBrace.type)) => "{ ... }"
+    }
   }
   def documentation(self: PDeclarationInner): Option[String] = self match {
     case d: PAnnotated =>

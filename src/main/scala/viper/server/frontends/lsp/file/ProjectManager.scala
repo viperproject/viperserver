@@ -207,8 +207,8 @@ trait ProjectManager extends ProjectAware {
     val start = ident.map(_._2.getStart).getOrElse(pos)
     // Get character
     val char = c.iterBackward(start).drop(1).find{ case (c, _) => c != ' ' }.map(_._1).getOrElse('\n')
-    (if (uri == file_uri) root.getCompletionProposal(scope, None, char) else Seq()) ++
-      getInProject(uri).getCompletionProposal(scope, Some(pos), char)
+    ((if (uri == file_uri) root.getCompletionProposal(scope, None, char) else Seq()) ++
+      getInProject(uri).getCompletionProposal(scope, Some(pos), char)).distinct
   }
 
   def getIdentAtPos(uri: String, pos: lsp4j.Position): Option[(String, Range)] =

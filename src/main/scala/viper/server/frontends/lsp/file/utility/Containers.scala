@@ -87,9 +87,9 @@ case class StageRangeContainer[V <: SelectableInBound]() extends StageContainer[
   }
   override def get(k: (Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean)): Seq[V] = {
     val (position, keyword, strictPosition) = k
-    val keywordMatches = keyword.flatMap(k => localKeyword.get(k._1)).iterator.flatten
-    val all = local.iterator ++ keywordMatches
-    all.filter(filter(position, strictPosition)).toSeq
+    val keywordMatches = keyword.flatMap(k => localKeyword.get(k._1)).toSeq.flatten
+    val all = local.toSeq ++ keywordMatches
+    all.filter(filter(position, strictPosition))
   }
   override protected def innerUpdate(i: (Option[String], Int), f: V => V): Boolean = {
     val a = i._1.map(localKeyword).getOrElse(local)
