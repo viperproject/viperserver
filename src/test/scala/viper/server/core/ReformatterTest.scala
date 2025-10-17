@@ -2,11 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
-// Copyright (c) 2011-2024 ETH Zurich.
+// Copyright (c) 2011-2025 ETH Zurich.
 
 package viper.server.core
 
 import akka.http.scaladsl.testkit.ScalatestRouteTest
+import org.scalatest.Assertion
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import viper.server.utility.ReformatterAstGenerator
@@ -18,9 +19,6 @@ import java.nio.file.Path
 
 
 class ReformatterTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
-  private val snippet = "src/test/resources/viper/reformat_snippet.vpr"
-  private val snippet_expected = "src/test/resources/viper/reformat_snippet_expected.vpr"
-
   private val console_logger = ViperStdOutLogger("parsingTest logger", "ALL")
 
   "ReformatterAstGenerator" should {
@@ -29,15 +27,17 @@ class ReformatterTest extends AnyWordSpec with Matchers with ScalatestRouteTest 
       ast_gen = new ReformatterAstGenerator(console_logger.get)
     }
     
-    def check_inner(): Unit = {
-      val ast = ast_gen.generateViperParseAst(snippet).get
-      val reformatted = ReformatPrettyPrinter.showProgram(ast);
-      val actual = DiskLoader.loadContent(Path.of(snippet_expected)).get
-      assert(reformatted == actual)
+    def check_formatter(pathToInput: String, pathToExpectedOutput: String): Assertion = {
+      val ast = ast_gen.generateViperParseAst(pathToInput).get
+      val reformatted = ReformatPrettyPrinter.showProgram(ast)
+      val actual = DiskLoader.loadContent(Path.of(pathToExpectedOutput)).get
+      assert(reformatted == actual, s"Formatting did not produce the expected output for file $pathToInput, got:\n$reformatted")
     }
 
     s"should be able to reformat a file correctly" in {
-      check_inner()
+      check_formatter(
+        "src/test/resources/viper/reformat_snippet.vpr",
+        "src/test/resources/viper/reformat_snippet_expected.vpr")
     }
   }
 }
