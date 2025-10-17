@@ -9,13 +9,12 @@ package viper.server.core
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
-import viper.server.utility.{AstGenerator, ReformatterAstGenerator}
-import viper.silver.ast.Program
+import viper.server.utility.ReformatterAstGenerator
 import viper.silver.ast.utility.DiskLoader
 import viper.silver.logger.ViperStdOutLogger
-import viper.silver.parser.{PProgram, ReformatPrettyPrinter}
+import viper.silver.parser.ReformatPrettyPrinter
 
-import java.nio.file.{NoSuchFileException, Path}
+import java.nio.file.Path
 
 
 class ReformatterTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
@@ -30,7 +29,7 @@ class ReformatterTest extends AnyWordSpec with Matchers with ScalatestRouteTest 
       ast_gen = new ReformatterAstGenerator(console_logger.get)
     }
     
-    def check_inner(name: String): Unit = {
+    def check_inner(): Unit = {
       val ast = ast_gen.generateViperParseAst(snippet).get
       val reformatted = ReformatPrettyPrinter.showProgram(ast);
       val actual = DiskLoader.loadContent(Path.of(snippet_expected)).get
@@ -38,7 +37,7 @@ class ReformatterTest extends AnyWordSpec with Matchers with ScalatestRouteTest 
     }
 
     s"should be able to reformat a file correctly" in {
-      check_inner("adts")
+      check_inner()
     }
   }
 }
