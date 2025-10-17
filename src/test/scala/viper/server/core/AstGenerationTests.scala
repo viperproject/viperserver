@@ -11,7 +11,7 @@ import java.nio.file.NoSuchFileException
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
-import viper.server.utility.AstGenerator
+import viper.server.utility.ViperAstGenerator
 import viper.silver.ast.Program
 import viper.silver.logger.ViperStdOutLogger
 
@@ -27,10 +27,10 @@ class AstGenerationTests extends AnyWordSpec with Matchers with ScalatestRouteTe
 
   private val console_logger = ViperStdOutLogger("parsingTest logger", "ALL")
 
-  "AstGenerator" should {
-    var ast_gen: AstGenerator = null
+  "ViperAstGenerator" should {
+    var ast_gen: ViperAstGenerator = null
     s"should be instantiated without errors" in {
-      ast_gen = new AstGenerator(console_logger.get)
+      ast_gen = new ViperAstGenerator(console_logger.get)
     }
 
     var test_ast: Option[Program] = null
