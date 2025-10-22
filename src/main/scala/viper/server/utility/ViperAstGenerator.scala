@@ -27,7 +27,7 @@ class ViperAstGenerator(private val _logger: Logger,
 
   /** Extracts the fully translated Program from the frontend
     */
-  protected override def extractResult(): Program = _frontend.translationResult
+  protected override def getResult(): Program = _frontend.translationResult
 
   /** Parses and translates a Viper file into a Viper AST (Program).
     *

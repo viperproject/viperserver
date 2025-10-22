@@ -25,7 +25,7 @@ abstract class AstGeneratorBase[T](private val _logger: Logger,
 
   /** Extracts the result of type T from the frontend
     */
-  protected def extractResult(): T
+  protected def getResult(): T
 
   /** Parses and translates a Viper file into the appropriate AST type.
     *
@@ -73,7 +73,7 @@ abstract class AstGeneratorBase[T](private val _logger: Logger,
       reportProgramStats()
     }
     if (_frontend.errors.isEmpty) {
-      Some(extractResult())
+      Some(getResult())
     } else {
       _logger.info(s"Errors occurred while translating `$vpr_file_path`: ${_frontend.errors}")
       None
