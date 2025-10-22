@@ -25,7 +25,7 @@ abstract class AstGeneratorBase[T](private val _logger: Logger,
 
   /** Extracts the result of type T from the frontend
     */
-  protected def getResult(): T
+  protected def getResult: T
 
   /** Parses and translates a Viper file into the appropriate AST type.
     *
@@ -51,7 +51,7 @@ abstract class AstGeneratorBase[T](private val _logger: Logger,
         // argument is the next item in the argList
         filteredArgs = argList.slice(optionArgIndex, optionArgIndex + 2) ++ filteredArgs
       } else {
-        argList.find(_.startsWith(s"${option}=")) match {
+        argList.find(_.startsWith(s"$option=")) match {
           case Some(arg) =>
             filteredArgs = Seq(arg) ++ filteredArgs
           case _ =>
