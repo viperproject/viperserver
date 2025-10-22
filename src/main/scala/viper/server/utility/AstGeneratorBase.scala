@@ -73,7 +73,7 @@ abstract class AstGeneratorBase[T](private val _logger: Logger,
       reportProgramStats()
     }
     if (_frontend.errors.isEmpty) {
-      Some(getResult())
+      Some(getResult)
     } else {
       _logger.info(s"Errors occurred while translating `$vpr_file_path`: ${_frontend.errors}")
       None

@@ -24,7 +24,7 @@ class ReformatterAstGenerator(private val _logger: Logger,
 
   /** Extracts the parse AST (PProgram) from the frontend
     */
-  protected override def getResult(): PProgram = _frontend.parsingResult
+  protected override def getResult: PProgram = _frontend.parsingResult
 
   /** Parses a Viper file into a parse AST (PProgram) without macro expansion.
     *
