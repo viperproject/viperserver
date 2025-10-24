@@ -33,13 +33,16 @@ case class CustomConfig(partialCommandLine: List[String], backend_name: String) 
 
 object ViperBackendConfig {
 
-  def apply(args: List[String]): ViperBackendConfig = args match {
-    //    case Nil => EmptyConfig
-    case "silicon" :: args =>  SiliconConfig(args)
-    case "carbon" :: args => CarbonConfig(args)
-    case custom :: args => CustomConfig(args, custom)
-    case invalid => throw new IllegalArgumentException(s"cannot build ViperConfig from string `$invalid`")
+  def apply(backendClassName: String, args: List[String]): ViperBackendConfig = backendClassName match {
+    case "silicon" =>  SiliconConfig(args)
+    case "carbon" => CarbonConfig(args)
+    case custom => CustomConfig(args, custom)
   }
-  
-  def apply(input: String): ViperBackendConfig = apply(getArgListFromArgString(input))
+
+  def apply(backendClassName: String, args: String): ViperBackendConfig = apply(backendClassName, getArgListFromArgString(args))
+
+  def apply(args: List[String]): ViperBackendConfig = args match {
+    case Nil => throw new IllegalArgumentException(s"cannot build ViperConfig from string `$args`")
+    case backendClassName :: args => apply(backendClassName, args)
+  }
 }

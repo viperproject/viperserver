@@ -193,8 +193,7 @@ trait VerificationManager extends ManagesLeaf {
       coordinator.logger.debug(s"Already running parse/typecheck or verification")
       return false
     }
-    val command = getVerificationCommand(lastBackendClassName.getOrElse("silicon"), lastCustomArgs.getOrElse(""))
-    val backend = ViperBackendConfig(command)
+    val backend = ViperBackendConfig(lastBackendClassName.getOrElse("silicon"), lastCustomArgs.getOrElse(""))
     // Execute all handles
     startConstructAst(backend, loader, false) match {
       case None => false
@@ -208,10 +207,9 @@ trait VerificationManager extends ManagesLeaf {
   def startVerification(backendClassName: String, customArgs: String, loader: FileContent, mt: Boolean): Future[Boolean] = {
     lastBackendClassName = Some(backendClassName)
     lastCustomArgs = Some(customArgs)
-    val command = getVerificationCommand(backendClassName, customArgs)
-    val backend = ViperBackendConfig(command)
+    val backend = ViperBackendConfig(backendClassName, customArgs)
 
-    coordinator.logger.info(s"verify $filename ($command)")
+    coordinator.logger.info(s"verify $filename ($backendClassName $customArgs)")
     if (handler.isVerifying) stop()
     futureCancel.getOrElse(Future.unit).map(_ => {
       lastPhase = None
@@ -235,16 +233,6 @@ trait VerificationManager extends ManagesLeaf {
         false
       }
     })
-  }
-
-  /** the file that should be verified has to already be part of `customArgs` */
-  private def getVerificationCommand(backendClassName: String, customArgs: String): String = {
-    if (backendClassName != "silicon" && backendClassName != "carbon") {
-      throw new Error(s"Invalid verification backend value. " +
-        s"Possible values are [silicon | carbon] " +
-        s"but found $backendClassName")
-    }
-    s"$backendClassName $customArgs"
   }
 
   private def startConstructAst(backend: ViperBackendConfig, loader: FileContent, mt: Boolean): Option[AstJobId] = {
