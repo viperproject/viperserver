@@ -13,9 +13,9 @@ import viper.silver.parser.PProgram
 import viper.silver.reporter.{NoopReporter, Reporter}
 
 class ReformatterAstGenerator(private val _logger: Logger,
-                               private val _reporter: Reporter = NoopReporter,
-                               private val argList: Seq[String] = Seq(),
-                               private val disablePlugins: Boolean = false) extends AstGeneratorBase[PProgram](_logger, _reporter, argList, disablePlugins) {
+                              private val _reporter: Reporter = NoopReporter,
+                              private val argList: Seq[String] = Seq(),
+                              private val disablePlugins: Boolean = false) extends AstGeneratorBase[PProgram](_logger, _reporter, argList, disablePlugins) {
 
   protected override val _frontend: SilFrontend = {
     _logger.info(s"Creating new ReformatterAstGenerator instance.")
@@ -23,13 +23,13 @@ class ReformatterAstGenerator(private val _logger: Logger,
   }
 
   /** Extracts the parse AST (PProgram) from the frontend
-    */
+   */
   protected override def getResult: PProgram = _frontend.parsingResult
 
   /** Parses a Viper file into a parse AST (PProgram) without macro expansion.
-    *
-    * Throws an exception when passed a non-existent file!
-    */
+   *
+   * Throws an exception when passed a non-existent file!
+   */
   def generateViperParseAst(vpr_file_path: String, loader: Option[FileLoader] = None): Option[PProgram] = {
     generateViperAstImpl(vpr_file_path, loader)
   }

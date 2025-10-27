@@ -19,28 +19,28 @@ class ViperAstGenerator(private val _logger: Logger,
                         private val disablePlugins: Boolean = false) extends AstGeneratorBase[Program](_logger, _reporter, argList, disablePlugins) {
 
   /** Creates a backend that reads and parses the file
-    */
+   */
   protected override val _frontend: SilFrontend = {
     _logger.info(s"Creating new ViperAstGenerator instance.")
     new ViperAstProvider(_reporter, disablePlugins = disablePlugins)
   }
 
   /** Extracts the fully translated Program from the frontend
-    */
+   */
   protected override def getResult: Program = _frontend.translationResult
 
   /** Parses and translates a Viper file into a Viper AST (Program).
-    *
-    * Throws an exception when passed a non-existent file!
-    */
+   *
+   * Throws an exception when passed a non-existent file!
+   */
   def generateViperAst(vpr_file_path: String, loader: Option[FileLoader] = None): Option[Program] = {
     generateViperAstImpl(vpr_file_path, loader)
   }
 
   /** Parses a Viper file into a parse AST (PProgram) without full translation.
-    *
-    * Throws an exception when passed a non-existent file!
-    */
+   *
+   * Throws an exception when passed a non-existent file!
+   */
   def generateViperParseAst(vpr_file_path: String, loader: Option[FileLoader] = None): Option[PProgram] = {
     generateViperAstImpl(vpr_file_path, loader)
     if (_frontend.errors.isEmpty) {

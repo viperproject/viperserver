@@ -14,23 +14,25 @@ import viper.silver.ast.utility.FileLoader
 import viper.silver.frontend.SilFrontend
 import viper.silver.reporter.{NoopReporter, Reporter, PProgramReport}
 
+/** Base class for AST generators. The parameter T determines the type of AST returned, currently either PProgram or Program
+ */
 abstract class AstGeneratorBase[T](private val _logger: Logger,
-                                    private val _reporter: Reporter = NoopReporter,
-                                    private val argList: Seq[String] = Seq(),
-                                    private val disablePlugins: Boolean = false) extends ProgramDefinitionsProvider {
+                                   private val _reporter: Reporter = NoopReporter,
+                                   private val argList: Seq[String] = Seq(),
+                                   private val disablePlugins: Boolean = false) extends ProgramDefinitionsProvider {
 
   /** Creates a backend that reads and parses the file
-    */
+   */
   protected val _frontend: SilFrontend
 
   /** Extracts the result of type T from the frontend
-    */
+   */
   protected def getResult: T
 
   /** Parses and translates a Viper file into the appropriate AST type.
-    *
-    * Throws an exception when passed a non-existent file!
-    */
+   *
+   * Throws an exception when passed a non-existent file!
+   */
   def generateViperAstImpl(vpr_file_path: String, loader: Option[FileLoader] = None): Option[T] = {
 
     if (!validateViperFile(vpr_file_path)) {
