@@ -150,7 +150,7 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     Future.sequence(tasks).map(_ => {
       logger.debug("all running verifications have been stopped")
     })
-  }
+}
 
   /** returns true if verification was started */
   def startVerification(backendClassName: String, customArgs: String, uri: String, manuallyTriggered: Boolean): Future[Boolean] = {
