@@ -6,6 +6,7 @@
 
 package viper.server.frontends.lsp.file
 
+import ch.qos.logback.classic.Logger
 import viper.server.frontends.lsp
 import scala.concurrent.Future
 import viper.server.core.ViperBackendConfig
@@ -25,12 +26,15 @@ import viper.silver.ast.utility.lsp.RangePosition
 import viper.silver.ast.HasLineColumn
 import viper.silver.ast.LineColumnPosition
 
-case class VerificationHandler(server: lsp.ViperServerService) {
+case class VerificationHandler(server: lsp.ViperServerService, logger: Logger) {
   private var waitingOn: Option[Either[AstJobId, VerJobId]] = None
 
   def clearWaitingOn(): Unit = {
+    logger.info(s"Waiting on is: $waitingOn")
     waitingOn match {
-      case Some(Left(jid)) => server.discardAstJobOnCompletion(jid)
+      case Some(Left(jid)) =>
+        logger.warn(s"Discarding and stopping uncompleted AST job $jid.")
+        server.stopAstConstruction(jid, Some(logger))
       case _ =>
     }
     waitingOn = None
@@ -40,7 +44,13 @@ case class VerificationHandler(server: lsp.ViperServerService) {
     waitingOn = Some(Left(ast))
   }
   def waitOn(ver: VerJobId): Unit = {
-    clearWaitingOn()
+    // Do not `clearWaitingOn` since it contains the AST job we do not want to cancel
+    waitingOn match {
+      case Some(Left(jid)) =>
+        logger.warn(s"Discarding uncompleted AST job $jid (though it will keep running), only keeping handle to verification job.")
+        server.discardAstJobLookup(jid)
+      case _ =>
+    }
     waitingOn = Some(Right(ver))
   }
 
@@ -91,7 +101,7 @@ trait VerificationManager extends ManagesLeaf {
       futureCancel.exists(!_.isCompleted) ||
       futureVer.exists(!_.isCompleted)
 
-  var handler: VerificationHandler = VerificationHandler(coordinator.server)
+  var handler: VerificationHandler = VerificationHandler(coordinator.server, coordinator.logger)
   def getInFuture[T](f: => T): Future[T] = {
     if (neverParsed) {
       runParseTypecheck(content)
@@ -131,6 +141,10 @@ trait VerificationManager extends ManagesLeaf {
   // there are errors in other files
   var errorCount: Int = 0
   var diagnosticCount: Int = 0
+
+  // verification config cache when parse-only
+  var lastCustomArgs: Option[String] = None
+  var lastBackendClassName: Option[String] = None
 
   def prepareVerification(mt: Boolean): Unit = {
     manuallyTriggered = mt
@@ -179,8 +193,7 @@ trait VerificationManager extends ManagesLeaf {
       coordinator.logger.debug(s"Already running parse/typecheck or verification")
       return false
     }
-    // TODO: add support for specifying a full list of custom args here
-    val backend = ViperBackendConfig("silicon");
+    val backend = ViperBackendConfig(lastBackendClassName.getOrElse("silicon"), lastCustomArgs.getOrElse(""))
     // Execute all handles
     startConstructAst(backend, loader, false) match {
       case None => false
@@ -190,12 +203,18 @@ trait VerificationManager extends ManagesLeaf {
     }
   }
 
+  def reformatFile(): Option[String] = {
+    coordinator.logger.info(s"reformatting the file $filename")
+    coordinator.server.reformatFile(path.toString, Some(coordinator.localLogger))
+  }
+
   /** Do full parsing, type checking and verification */
   def startVerification(backendClassName: String, customArgs: String, loader: FileContent, mt: Boolean): Future[Boolean] = {
-    val command = getVerificationCommand(backendClassName, customArgs)
-    val backend = ViperBackendConfig(command);
+    lastBackendClassName = Some(backendClassName)
+    lastCustomArgs = Some(customArgs)
+    val backend = ViperBackendConfig(backendClassName, customArgs)
 
-    coordinator.logger.info(s"verify $filename ($command)")
+    coordinator.logger.info(s"verify $filename ($backendClassName $customArgs)")
     if (handler.isVerifying) stop()
     futureCancel.getOrElse(Future.unit).map(_ => {
       lastPhase = None
@@ -219,16 +238,6 @@ trait VerificationManager extends ManagesLeaf {
         false
       }
     })
-  }
-
-  /** the file that should be verified has to already be part of `customArgs` */
-  private def getVerificationCommand(backendClassName: String, customArgs: String): String = {
-    if (backendClassName != "silicon" && backendClassName != "carbon") {
-      throw new Error(s"Invalid verification backend value. " +
-        s"Possible values are [silicon | carbon] " +
-        s"but found $backendClassName")
-    }
-    s"$backendClassName $customArgs"
   }
 
   private def startConstructAst(backend: ViperBackendConfig, loader: FileContent, mt: Boolean): Option[AstJobId] = {

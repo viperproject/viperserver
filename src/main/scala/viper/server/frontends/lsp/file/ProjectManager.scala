@@ -88,19 +88,19 @@ trait ProjectManager extends ProjectAware {
       coordinator.removeFromOtherProject(leaf, file_uri)
     }
   }
-  def setupProject(newProject: Set[String]) = {
+  def setupProject(imports: Set[String]) = {
     val oldProject = getRootOpt.getOrElse(Map())
-    val toRemove = oldProject.keySet.diff(newProject)
+    val toRemove = oldProject.keySet.diff(imports)
     for (p <- toRemove) {
       oldProject.remove(p)
       coordinator.removeFromOtherProject(p, file_uri)
     }
     project = Left(oldProject)
-    for (p <- newProject) {
+    for (p <- imports) {
       addToThisProject(p)
     }
 
-    val setupProject = SetupProjectParams(file_uri, newProject.toArray)
+    val setupProject = SetupProjectParams(file_uri, imports.toArray)
     coordinator.client.map{_.requestSetupProject(setupProject)}
   }
 
@@ -110,7 +110,7 @@ trait ProjectManager extends ProjectAware {
   def isRoot: Boolean = project.isLeft
 
   override def getInProjectOpt(uri: String): Option[LeafManager] =
-    if (uri == file_uri) Some(root) else getRootOpt.get.get(uri)
+    if (unescape(uri) == unescape(file_uri)) Some(root) else getRootOpt.get.get(uri)
   /** Gets a file in the current project, or adds it if missing. The latter can
    * happen when, e.g. we get errors in imported files before we get the
    * `PProgram` itself (to setup the project).
@@ -207,8 +207,8 @@ trait ProjectManager extends ProjectAware {
     val start = ident.map(_._2.getStart).getOrElse(pos)
     // Get character
     val char = c.iterBackward(start).drop(1).find{ case (c, _) => c != ' ' }.map(_._1).getOrElse('\n')
-    (if (uri == file_uri) root.getCompletionProposal(scope, None, char) else Seq()) ++
-      getInProject(uri).getCompletionProposal(scope, Some(pos), char)
+    ((if (uri == file_uri) root.getCompletionProposal(scope, None, char) else Seq()) ++
+      getInProject(uri).getCompletionProposal(scope, Some(pos), char)).distinct
   }
 
   def getIdentAtPos(uri: String, pos: lsp4j.Position): Option[(String, Range)] =
