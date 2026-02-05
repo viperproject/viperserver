@@ -53,6 +53,13 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     hidden = false
   )
 
+  val presentationMode: ScallopOption[Boolean] = opt[Boolean]("presentationMode",
+    descr = "Enables presentation mode, which disables most LSP features (those that are distracting in presentations).",
+    default = Some(false),
+    noshort = true,
+    hidden = false
+  )
+
   val SERVER_MODE_LSP = "LSP"
   val SERVER_MODE_HTTP = "HTTP"
   private val server_modes = Array(SERVER_MODE_LSP, SERVER_MODE_HTTP)
