@@ -30,7 +30,8 @@ trait StandardReceiver {
 trait LanguageReceiver extends StandardReceiver with LanguageServer {
 
   override def initialize(params: InitializeParams): CompletableFuture[InitializeResult] = {
-    coordinator.logger.debug(s"[Req: initialize] ${params.toString()}")
+    val presentationMode = coordinator.server.config.presentationMode()
+    coordinator.logger.debug(s"[Req: initialize] ${params.toString()} (presentation mode: $presentationMode)")
     val capabilities = new ServerCapabilities()
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Incremental)
     // Features https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#languageFeatures
@@ -52,9 +53,9 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     // Document Link (disabled Resolve):
     capabilities.setDocumentLinkProvider(new DocumentLinkOptions(false))
     // Hover:
-    capabilities.setHoverProvider(true)
+    if (!presentationMode) capabilities.setHoverProvider(true)
     // Code Lens (disabled Resolve):
-    capabilities.setCodeLensProvider(new CodeLensOptions(false))
+    if (!presentationMode) capabilities.setCodeLensProvider(new CodeLensOptions(false))
     // Folding Range:
     capabilities.setFoldingRangeProvider(true)
     // Selection Range:         [N/A]
@@ -77,21 +78,21 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     capabilities.setSemanticTokensProvider(new SemanticTokensWithRegistrationOptions(legend, true))
     // Inline Value:            [N/A]
     // Inlay Hint (disabled Resolve):
-    capabilities.setInlayHintProvider(true)
+    if (!presentationMode) capabilities.setInlayHintProvider(true)
     // Moniker:                 [N/A]
     // Completion Proposals:
-    capabilities.setCompletionProvider(new CompletionOptions(false, Seq(".", ":", "(", "[", "{").asJava))
+    if (!presentationMode) capabilities.setCompletionProvider(new CompletionOptions(false, Seq(".", ":", "(", "[", "{").asJava))
     // Pull Diagnostics:        DISABLED (we use `publishDiagnostics` instead)
     // capabilities.setDiagnosticProvider(new DiagnosticRegistrationOptions(true, false))
     // Signature Help:
     // Allow a `,` to try and restart the signature help even after it has ended
-    capabilities.setSignatureHelpProvider(new SignatureHelpOptions(Seq("(", ",").asJava, Seq().asJava))
+    if (!presentationMode) capabilities.setSignatureHelpProvider(new SignatureHelpOptions(Seq("(", ",").asJava, Seq().asJava))
     // Code Action:
     capabilities.setCodeActionProvider(true)
     // Document Color:          [N/A]
     // Color Presentation:      [N/A]
-    // Formatting:              TODO
-    // capabilities.setDocumentFormattingProvider(true)
+    // Formatting:              TODO?
+    capabilities.setDocumentFormattingProvider(true)
     // Range Formatting:        TODO
     // On type Formatting:      [N/A]
     // Rename & Prepare Rename:
@@ -102,8 +103,6 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     // current implementation this would mean that renaming a definition would
     // automatically cause all references to be renamed. This would probably be too annoying.
     capabilities.setLinkedEditingRangeProvider(false)
-
-    capabilities.setDocumentFormattingProvider(true)
 
     CompletableFuture.completedFuture(new InitializeResult(capabilities))
   }
