@@ -80,7 +80,7 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     capabilities.setInlayHintProvider(true)
     // Moniker:                 [N/A]
     // Completion Proposals:
-    capabilities.setCompletionProvider(new CompletionOptions(false, Seq(".", ":", "(", "[", "{").asJava))
+    capabilities.setCompletionProvider(new CompletionOptions(false, Seq(".", ":", "(", "[").asJava))
     // Pull Diagnostics:        DISABLED (we use `publishDiagnostics` instead)
     // capabilities.setDiagnosticProvider(new DiagnosticRegistrationOptions(true, false))
     // Signature Help:
