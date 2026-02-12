@@ -64,8 +64,8 @@ object HasFoldingRanges {
 }
 
 object HasInlayHints {
-  def apply(p: PProgram): Seq[InlayHint] = p.deepCollect({
-    case n: PCall => PLspCall.getInlayHints(n)
+  def apply(p: PProgram, beginnerMode: Boolean): Seq[InlayHint] = p.deepCollect({
+    case n: PCall if !beginnerMode => PLspCall.getInlayHints(n)
     case n: PLet => PLspLet.getInlayHints(n)
   }).flatten
 }

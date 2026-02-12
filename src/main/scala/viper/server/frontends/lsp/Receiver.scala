@@ -30,8 +30,7 @@ trait StandardReceiver {
 trait LanguageReceiver extends StandardReceiver with LanguageServer {
 
   override def initialize(params: InitializeParams): CompletableFuture[InitializeResult] = {
-    val presentationMode = coordinator.server.config.presentationMode()
-    coordinator.logger.debug(s"[Req: initialize] ${params.toString()} (presentation mode: $presentationMode)")
+    coordinator.logger.debug(s"[Req: initialize] ${params.toString()}")
     val capabilities = new ServerCapabilities()
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Incremental)
     // Features https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#languageFeatures
@@ -53,9 +52,9 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     // Document Link (disabled Resolve):
     capabilities.setDocumentLinkProvider(new DocumentLinkOptions(false))
     // Hover:
-    if (!presentationMode) capabilities.setHoverProvider(true)
+    capabilities.setHoverProvider(true)
     // Code Lens (disabled Resolve):
-    if (!presentationMode) capabilities.setCodeLensProvider(new CodeLensOptions(false))
+    capabilities.setCodeLensProvider(new CodeLensOptions(false))
     // Folding Range:
     capabilities.setFoldingRangeProvider(true)
     // Selection Range:         [N/A]
@@ -78,15 +77,15 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     capabilities.setSemanticTokensProvider(new SemanticTokensWithRegistrationOptions(legend, true))
     // Inline Value:            [N/A]
     // Inlay Hint (disabled Resolve):
-    if (!presentationMode) capabilities.setInlayHintProvider(true)
+    capabilities.setInlayHintProvider(true)
     // Moniker:                 [N/A]
     // Completion Proposals:
-    if (!presentationMode) capabilities.setCompletionProvider(new CompletionOptions(false, Seq(".", ":", "(", "[", "{").asJava))
+    capabilities.setCompletionProvider(new CompletionOptions(false, Seq(".", ":", "(", "[", "{").asJava))
     // Pull Diagnostics:        DISABLED (we use `publishDiagnostics` instead)
     // capabilities.setDiagnosticProvider(new DiagnosticRegistrationOptions(true, false))
     // Signature Help:
     // Allow a `,` to try and restart the signature help even after it has ended
-    if (!presentationMode) capabilities.setSignatureHelpProvider(new SignatureHelpOptions(Seq("(", ",").asJava, Seq().asJava))
+    capabilities.setSignatureHelpProvider(new SignatureHelpOptions(Seq("(", ",").asJava, Seq().asJava))
     // Code Action:
     capabilities.setCodeActionProvider(true)
     // Document Color:          [N/A]
