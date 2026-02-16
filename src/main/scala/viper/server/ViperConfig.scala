@@ -53,6 +53,13 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     hidden = false
   )
 
+  val beginnerMode: ScallopOption[Boolean] = opt[Boolean]("beginnerMode",
+    descr = "Enables beginner mode, which disables some advanced features that can be confusing for new users.",
+    default = Some(false),
+    noshort = true,
+    hidden = false
+  )
+
   val SERVER_MODE_LSP = "LSP"
   val SERVER_MODE_HTTP = "HTTP"
   private val server_modes = Array(SERVER_MODE_LSP, SERVER_MODE_HTTP)
