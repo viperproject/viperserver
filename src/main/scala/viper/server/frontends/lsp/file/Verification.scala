@@ -235,6 +235,8 @@ trait VerificationManager extends ManagesLeaf {
         futureVer = coordinator.server.startStreamingVer(verJob, receiver, Some(coordinator.localLogger))
         true
       } else {
+        // Ver pool full — free the orphaned AST slot
+        coordinator.server.discardAstJobLookup(astJob)
         false
       }
     })
