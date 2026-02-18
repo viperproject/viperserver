@@ -20,6 +20,17 @@ import scala.concurrent.duration.DurationInt
 import scala.jdk.CollectionConverters._
 import scala.jdk.FutureConverters._
 import scala.language.postfixOps
+import akka.actor.{Actor, PoisonPill, Props, Status}
+import viper.server.frontends.lsp
+import viper.server.frontends.lsp.VerificationState._
+import viper.server.frontends.lsp.VerificationSuccess._
+import viper.silver.ast
+import viper.silver.reporter._
+import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
+import viper.server.frontends.lsp.file.ProgressCoordinator
+import viper.silver.parser._
+import viper.silicon.Config.InferenceMode.OnError
+import viper.silicon.verifier.Verifier
 
 trait StandardReceiver {
   val coordinator: ClientCoordinator
@@ -314,8 +325,45 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
   }
 
   override def codeAction(params: CodeActionParams) = {
-    // TODO
-    CompletableFuture.completedFuture(Nil.asJava)
+    coordinator.logger.info(s"[Req: textDocument/codeAction] ${params.toString()}")
+    val uri = params.getTextDocument.getUri
+    val ctxt = params.getContext
+    var diags = Seq.empty[Diagnostic]
+    ctxt.getDiagnostics.asScala.foreach(diag => diags = diags :+ diag)
+    //ctxt.getDiagnostics.asScala.map(diag => coordinator.getRoot(uri).getCodeAction(uri, diag).map(cact => (cact.map(icact => Either.forRight[Command, CodeAction](icact))).asJava)).asJava
+    coordinator.getRoot(uri).getCodeAction(uri, diags).map(cacts => cacts.map(cact => Either.forRight[Command, CodeAction](cact)).asJava).asJava.toCompletableFuture
+    /*
+    var res = Seq[Either[Command, CodeAction]]()
+    ctxt.getDiagnostics.asScala.foreach(diag =>
+      coordinator.getRoot(uri).getCodeAction(uri, diag).foreach(cact => {
+        coordinator.logger.info(s"[CACT:] ${cact.toString()}")
+        coordinator.logger.info(s"[RESPRE:] ${res.toString()}")
+        res = res :+ Either.forRight[Command, CodeAction](cact)
+        coordinator.logger.info(s"[RESPOST:] ${res.toString()}")
+      }))
+    //coordinator.logger.info(s"[Infer specifications on error] ${Verifier.config.inferenceMode() == OnError}")
+    //ctxt.getDiagnostics.asScala.foreach(diag => res = res +: Either.forRight[Command, CodeAction]())
+*/
+    /*
+      ctxt.getDiagnostics.asScala.foreach(diag =>
+        coordinator.getInferenceResults(diag).foreach(infres => {
+          val irca = new CodeAction(infres.getEdit)
+          val editmap: Map[String, java.util.List[TextEdit]] = Map(uri -> Seq(new TextEdit(
+            new Range(
+              new Position(infres.start.line - 1, infres.start.column - 1),
+              new Position(infres.end.line - 1, infres.end.column - 1)
+            ), infres.newText)).asJava)
+          irca.setKind(CodeActionKind.QuickFix)
+          irca.setEdit(new WorkspaceEdit(editmap.asJava))
+          irca.setDiagnostics(Seq(diag).asJava)
+          //irca.setCommand(new Command("Verify after specification inference", "viper.verify"))
+          res = res :+ Either.forRight[Command, CodeAction](irca)
+          coordinator.logger.info(s"[Res: textDocument/codeAction] ${irca.toString()}")
+        }))
+      coordinator.logger.info(s"[Info: textDocument/codeAction] ${res.toString()}")
+  */
+
+    //CompletableFuture.completedFuture(res.asJava)
   }
 
   override def formatting(params: DocumentFormattingParams) = {
@@ -410,7 +458,16 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
 
   @JsonNotification(C2S_Commands.Verify)
   def onVerify(data: VerifyParams): Unit = {
+    //DEBUG-------------------------------------------------------------------------
+    /*
+    if(data.enableInference){
+      coordinator.client.get.notifyStateChanged(lsp.StateChangeParams(6, 50, 4, 1, 0, "TEST", "carbon", 42, 0, data.uri, "TESTSTAGE", "TESTERROR", lsp.InferenceResultsParams(data.uri, Array(lsp.InferenceResult(1, 0, "TESTCODE")), true)))
+      return
+    }
+    */
+    //DEBUG-------------------------------------------------------------------------
     coordinator.logger.debug("On verifying")
+    //coordinator.updateInferenceResults(data.uri, Seq.empty)
     if (coordinator.canVerificationBeStarted(data.uri, data.content, data.manuallyTriggered)) {
       // stop all other verifications because the backend crashes if multiple verifications are run in parallel
       coordinator.logger.trace("verification can be started - all running verifications are now going to be stopped")

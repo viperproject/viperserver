@@ -10,8 +10,10 @@ import org.eclipse.lsp4j
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import viper.silver.ast.utility.lsp
 import viper.server.frontends.lsp.{Common, Lsp4jSemanticHighlight}
-import viper.server.frontends.lsp.file.{Diagnostic, FindReferences}
+import viper.server.frontends.lsp.file.{CodeAction, Diagnostic, FindReferences}
 import ch.qos.logback.classic.Logger
+import org.eclipse.lsp4j.Command
+import org.eclipse.lsp4j.WorkspaceEdit
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
@@ -19,6 +21,24 @@ import scala.collection.mutable.ArrayBuffer
 trait Translates[-T, +U, I] {
   def translate(t: T)(i: I): U
   def translate(t: Seq[T])(i: I)(implicit @annotation.unused log: Logger): Seq[U] = t.map(translate(_)(i))
+}
+
+case object CodeActionTranslator extends Translates[CodeAction, lsp4j.CodeAction, lsp4j.Diagnostic] {
+  override def translate(cact: CodeAction)(i: lsp4j.Diagnostic): lsp4j.CodeAction = {
+    val lspca = new lsp4j.CodeAction(cact.title)
+    lspca.setKind(cact.kind)
+    lspca.setDiagnostics(Seq(cact.key).asJava)
+    lspca.setEdit(
+      cact.edit match {
+        case Some(e) => new WorkspaceEdit((Map(cact.fileinfo.file_uri -> e.map(edit => new lsp4j.TextEdit(new lsp4j.Range(Common.toPosition(edit.start), Common.toPosition(edit.end)), edit.newText)).asJava)).asJava)
+        case None => null
+      })
+    lspca.setCommand(cact.command match {
+      case Some(e) => new Command(e._1, e._2)
+      case None => null
+    })
+    lspca
+  }
 }
 
 case object CodeLensTranslator extends Translates[lsp.CodeLens, lsp4j.CodeLens, Unit] {

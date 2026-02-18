@@ -8,23 +8,30 @@ package viper.server.frontends.lsp.file
 
 import ch.qos.logback.classic.Logger
 import viper.server.frontends.lsp
+
 import scala.concurrent.Future
+import scala.jdk.CollectionConverters._
 import viper.server.core.ViperBackendConfig
 import viper.server.vsi.{AstJobId, VerJobId}
+
 import scala.concurrent.ExecutionContext
 import akka.actor.Props
-
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.server.frontends.lsp.VerificationState._
-
 import viper.silver.verifier.AbstractError
+
 import scala.collection.mutable.HashSet
 import viper.silver.ast.AbstractSourcePosition
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j
+import viper.server.frontends.lsp.Common
 import viper.silver.ast.utility.lsp.RangePosition
 import viper.silver.ast.HasLineColumn
 import viper.silver.ast.LineColumnPosition
+import viper.silicon.interfaces._
+import viper.silver.verifier._
+import viper.silicon.Config.InferenceMode.OnError
+import viper.silicon.verifier.Verifier
 
 case class VerificationHandler(server: lsp.ViperServerService, logger: Logger) {
   private var waitingOn: Option[Either[AstJobId, VerJobId]] = None
@@ -265,6 +272,7 @@ trait VerificationManager extends ManagesLeaf {
   def processErrors(backendClassName: Option[String], errors: Seq[AbstractError], errorMsgPrefix: Option[String] = None): Unit = {
     val errMsgPrefixWithWhitespace = errorMsgPrefix.map(s => s"$s ").getOrElse("")
     val files = HashSet[String]()
+    var cas: Seq[CodeAction] = Seq.empty
 
     val diags = errors.map(err => {
       coordinator.logger.info(s"Handling error ${err.toString()}")
@@ -306,19 +314,55 @@ trait VerificationManager extends ManagesLeaf {
       }
       files.add(rp.file.toUri().toString())
 
-      val errFullId = if(err.fullId != null) s"[${err.fullId}] " else ""
+      val errFullId = if (err.fullId != null) s"[${err.fullId}] " else ""
       val backendString = if (backendClassName.isDefined) s" [${backendClassName.get}]" else ""
       coordinator.logger.debug(s"$errorType:$backendString $errFullId" +
         s"${range.getStart.getLine + 1}:${range.getStart.getCharacter + 1} $errMsgPrefixWithWhitespace${err.readableMessage}s")
 
-      val cachFlag: String = if(err.cached) " (cached)" else ""
+      val cachFlag: String = if (err.cached) " (cached)" else ""
       val message = s"$errMsgPrefixWithWhitespace${err.readableMessage}$cachFlag"
-      (phase, Diagnostic(backendClassName, rp, message, severity, err.cached, errorMsgPrefix))
+      val diagnostic = Diagnostic(backendClassName, rp, message, severity, err.cached, errorMsgPrefix)
+      coordinator.logger.info(s"[ERRORTYPE] ${errorType}")
+      coordinator.logger.info(s"[TAKE BRANCH?] ${errorType == "Verification error"}")
+      if (errorType == "Verification error"){
+        coordinator.logger.info(s"[BRANCH TAKEN WITH ERROR:] ${err.toString()}")
+        err match {
+        case g: VerificationError =>
+          g.failureContexts.foreach { h =>
+            h match {
+              case h1: SiliconAbductionFailureContext =>
+                h1.fix match {
+                  case Some(irs) =>
+                    if (Verifier.config.inferenceMode() == OnError) {
+                      //coordinator.updateInferenceResults(lspdiag, irs)
+                      //val edits = new lsp4j.WorkspaceEdit((Map(file.file_uri -> irs.map(edit => new lsp4j.TextEdit(new lsp4j.Range(Common.toPosition(edit.start), Common.toPosition(edit.end)), edit.newText)).asJava)).asJava)
+                      //irs.foreach(ir => {cas = cas :+ CodeAction(backendClassName, ir.getEdit, "quickfix", Seq(diagnostic), None, Some(edits), None, this.file)
+                      cas = cas :+ CodeAction(backendClassName, irs.map(ir => ir.getEdit).foldLeft("")((cur: String, next: String) => if(cur == "") next else cur + ", " + next), "quickfix", Seq(diagnostic), None, Some(irs), None, this.file)
+                      //coordinator.logger.info(s"[CAS] ${cas.toString()}")})
+                      coordinator.logger.info(s"[IR] ${irs.toString()}")
+                      //coordinator.logger.info(s"[EDITS] ${edits.toString()}")
+                    }
+                  case None =>
+                    coordinator.logger.info(s"[IR] ${Seq.empty.toString()}")
+                }
+              case _ =>
+                coordinator.logger.info("NOT ABDUCTION FAILURE")
+            }
+          }
+          coordinator.logger.info(s"[ERROR CONTEXTS:] ${g.failureContexts.toString()}")
+        case _ =>
+          coordinator.logger.info("NOT VERIFICATION ERROR")
+      }
+      }
+      (phase, diagnostic)
     })
     diagnosticCount += errors.size
     errorCount += diags.count(_._2.severity == lsp4j.DiagnosticSeverity.Error)
     diags.groupBy(d => d._1).foreach { case (phase, diags) =>
       this.addDiagnostic(phase.order <= VerificationPhase.TypeckEnd.order)(diags.map(_._2))
     }
+    this.root.addCodeAction(true)(cas)
+    coordinator.logger.info(s"CODE ACTIONS: ${cas.toString()}")
+    //coordinator.logger.info(s"THIS ROOT CODE ACTIONS: ${this.root.getCodeAction.toString()}")
   }
 }

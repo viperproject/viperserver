@@ -236,6 +236,8 @@ trait ProjectManager extends ProjectAware {
     }
   }
 
+  def getCodeAction(uri: String, diags: Seq[lsp4j.Diagnostic]): Future[Seq[lsp4j.CodeAction]] =
+    Future.successful(diags.map(diag => getInProject(uri).getCodeAction(diag)).flatten)
   // Can force a refresh in the future if we get new ones, so return immediately
   def getCodeLens(uri: String): Future[Seq[lsp4j.CodeLens]] =
     Future.successful(getInProject(uri).getCodeLens())

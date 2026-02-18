@@ -81,11 +81,13 @@ case class BackendProperties(
 
 case class VerifyParams (
               uri: String,                  // file to verify
-              content: String,             // contents of file to verify
+              content: String,              // contents of file to verify
               manuallyTriggered: Boolean,   // was the verification triggered manually
               workspace: String,            // the path to the open workspace folder
               backend: String,
-              customArgs: String)            // contains the path of the file that should be verified
+              customArgs: String,           // contains the path of the file that should be verified
+              enableInference: Boolean)     // determines whether inference should be performed on verification error
+
 
 case class ReformatParams (uri: String)
 
@@ -176,7 +178,35 @@ case class StateChangeParams(
               verificationNeeded: Double = -1,
               uri: String = null,
               stage: String = null,
-              error: String = null)
+              error: String = null,
+              inferenceResults: InferenceResultsParams = null)
+
+/**
+ * Result of specification inference for a single line in a file.
+ * @param line The line number the result refers to.
+ * @param action The action to be performed (add = 0, remove = 1, edit = 2).
+ *  - Add: The inferred specification should be added.
+ *  - Remove: The inferred specification should be removed.
+ *  - Edit: The inferred specification should replace an existing one.
+ * @param content The content of the inferred specification.
+ */
+case class InferenceResult (
+              line: Int,
+              action: Int,
+              content: String)
+
+
+/**
+ * Contains results of specification inference for a file. Sent from the server to the client after inference is
+ * complete.
+ * @param uri The URI of the file the inference results refer to.
+ * @param results The list of [[InferenceResult inference results]] for the file.
+ * @param success Whether the inference process was successful.
+ */
+case class InferenceResultsParams (
+              uri: String,
+              results: Array[InferenceResult],
+              success: Boolean)
 
 case class UnhandledViperServerMessageTypeParams(msgType: String, msg: String, logLevel: Int)
 

@@ -14,14 +14,28 @@ import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
 import viper.server.frontends.lsp.file.FileContent
 import viper.server.frontends.lsp.Lsp4jSemanticHighlight
-
 import org.eclipse.lsp4j
 import viper.silver.ast.utility.lsp
 import viper.server.frontends.lsp.Common
+import viper.silicon.biabduction.InferenceResult
 
 case class Diagnostic(backendClassName: Option[String], position: lsp.RangePosition, message: String, severity: lsp4j.DiagnosticSeverity, cached: Boolean, errorMsgPrefix: Option[String]) extends lsp.HasRangePositions with lsp.BelongsToFile {
   override def rangePositions: Seq[lsp.RangePosition] = Seq(position)
   override def file: Path = position.file
+}
+
+case class CodeAction(backendClassName: Option[String],
+                      title: String,
+                      kind: String,
+                      diags: Seq[Diagnostic],
+                      command: Option[(String, String)],
+                      edit: Option[Seq[InferenceResult]],
+                      diagkey: Option[lsp4j.Diagnostic],
+                      fileinfo: PathInfo
+                     ) extends lsp.HasRangePositions with lsp.BelongsToFile with utility.HasKey[lsp4j.Diagnostic] {
+  override def rangePositions: Seq[lsp.RangePosition] = diags.map(_.position)
+  override def file: Path = fileinfo.path
+  override val key: lsp4j.Diagnostic = diagkey.orNull
 }
 
 trait Manager {
@@ -32,6 +46,12 @@ trait Manager {
 
   def addContainer(c: utility.LspContainer[_, _, _, _, _]): Unit
   def resetContainers(first: Boolean): Unit
+
+  //def toLspCommand(title: String, command: String, args: Option[Seq[AnyRef]]): lsp4j.Command
+  //def toLspWorkspaceEdit(edits: Seq[viper.silicon.biabduction.InferenceResult]): lsp4j.WorkspaceEdit
+
+  def getCodeAction(diag: lsp4j.Diagnostic): Seq[lsp4j.CodeAction]
+  def addCodeAction(first: Boolean)(vs: Seq[CodeAction]): Unit
 
   def getCodeLens(): Seq[lsp4j.CodeLens]
   def addCodeLens(first: Boolean)(vs: Seq[lsp.CodeLens]): Unit
@@ -71,6 +91,7 @@ trait Manager {
 }
 
 /** Stores and handles all aspects relating the the lsp features:
+ *  - CodeAction
  *  - CodeLens
  *  - Diagnostic
  *  - DocumentSymbol
@@ -102,6 +123,28 @@ trait StandardManager extends Manager {
     c.onUpdate()
   }
 
+
+
+  //def toLspWorkspaceEdit(edits: Seq[viper.silicon.biabduction.InferenceResult]): lsp4j.WorkspaceEdit = {
+  //  new lsp4j.WorkspaceEdit((Map(file.file_uri -> edits.map(edit => new lsp4j.TextEdit(new lsp4j.Range(Common.toPosition(edit.start), Common.toPosition(edit.end)), edit.newText)).asJava)).asJava)
+  //}
+
+  // CodeAction
+  type CodeActionContainer = utility.StageMapContainer.MapContainer[CodeAction, lsp4j.Diagnostic, lsp4j.CodeAction]
+  val codeActionContainer: CodeActionContainer = utility.LspContainer(utility.CodeActionTranslator, () => {})
+  private def initCodeActionKey(codeAction: CodeAction): Seq[CodeAction] = {
+    var cas: Seq[CodeAction] = Seq.empty
+    codeAction.diags.foreach(diag => {
+      cas = cas :+ new CodeAction(codeAction.backendClassName, codeAction.title, codeAction.kind, Seq(diag), codeAction.command, codeAction.edit, Some(diagnosticContainer.translator.translate(diag)()), codeAction.fileinfo)
+    })
+    //codeAction.key = diagnosticContainer.translator.translate(codeAction.diag)()
+    cas
+  }
+  containers.addOne(codeActionContainer)
+
+  //def getCodeAction() = codeActionContainer.get(())
+  def getCodeAction(diag: lsp4j.Diagnostic): Seq[lsp4j.CodeAction] = codeActionContainer.get(diag)//CodeAction.fromDiag.getOrElse(diag, Seq.empty).map(cact => utility.CodeActionTranslator.translate(cact)())
+  def addCodeAction(first: Boolean)(vs: Seq[CodeAction]): Unit = add(codeActionContainer, first, vs.map(v => initCodeActionKey(v)).flatten)//vs.map(v => v.addToMap()))
 
   // CodeLens
   type CodeLensContainer = utility.StageArrayContainer.ArrayContainer[lsp.CodeLens, lsp4j.CodeLens]

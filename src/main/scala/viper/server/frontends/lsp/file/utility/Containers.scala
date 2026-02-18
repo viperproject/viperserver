@@ -17,6 +17,10 @@ import viper.silver.ast.utility.lsp
 import viper.silver.ast.utility.lsp.SelectionBoundScopeTrait
 import viper.silver.ast.utility.lsp.SelectionBoundKeywordTrait
 
+trait HasKey[K] {
+  val key: K
+}
+
 trait StageContainer[K, V, I] {
   var resetCount: Int = 0
   def reset(): Unit = {
@@ -52,6 +56,33 @@ case class StageArrayContainer[V]() extends StageContainer[Unit, V, Int] {
 object StageArrayContainer {
   type ArrayContainer[V <: HasRangePositions with BelongsToFile, U] = LspContainer[StageArrayContainer[V], Unit, V, Int, U]
   implicit def default[V]: () => StageArrayContainer[V] = () => StageArrayContainer()
+}
+
+case class StageMapContainer[K, V <: HasKey[K]]() extends StageContainer[K, V, K]{
+  private val map: HashMap[K, Seq[V]] = HashMap()
+
+  override protected def innerReset(): Unit = map.clear()
+  override protected def innerAdd(v: V): K = {
+    map.put(v.key, map.getOrElse(v.key, Seq.empty) :+ v)
+    v.key
+  }
+  override def get(k: K): Seq[V] = {
+    map.getOrElse(k, Seq.empty)
+  }
+  override protected def innerUpdate(i: K, f: V => V): Boolean = {
+    if (!map.contains(i)) {
+      false
+    } else {
+      map.put(i, map(i).map(v => f(v)))
+      true
+    }
+  }
+  override def all(): Iterator[V] = map.values.flatten.iterator
+  override def filterInPlace(p: V => Boolean): Unit = map.values.map(vs => vs.filter(p))
+}
+object StageMapContainer {
+  type MapContainer[V <: HasRangePositions with BelongsToFile with HasKey[K], K, U] = LspContainer[StageMapContainer[K, V], K, V, K, U]
+  implicit def default[K, V <: HasKey[K]]: () => StageMapContainer[K, V] = () => StageMapContainer()
 }
 
 case class StageRangeContainer[V <: SelectableInBound]() extends StageContainer[(Option[lsp4j.Position], Option[(String, lsp4j.Range)], Boolean), V, (Option[String], Int)] {

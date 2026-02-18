@@ -39,6 +39,9 @@ object Common {
   }
   def toLocation(sp: ast.AbstractSourcePosition): Location =
     new Location(sp.file.toUri().toString(), toRange(sp))
+  def toHasLineColumn(pos: Position): ast.HasLineColumn = {
+    new ast.LineColumnPosition(pos.getLine + 1, pos.getCharacter + 1)
+  }
 
   def comparePosition(a: Position, b: Position): Int = {
     if (a == null && b == null) return 0
