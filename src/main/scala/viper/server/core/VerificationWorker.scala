@@ -12,6 +12,7 @@ import viper.server.ViperConfig
 import viper.server.vsi.Envelope
 import viper.silicon.{Silicon, SiliconFrontend}
 import viper.silver.ast._
+import viper.silver.ast.utility.chopper.PluginAwareChopper
 import viper.silver.frontend.SilFrontend
 import viper.silver.reporter.{Reporter, _}
 import viper.silver.utility.ViperProgramSubmitter
@@ -192,12 +193,23 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     if (disablePlugins) Right(input)
     else _frontend.plugins.beforeMethodFilter(input) match {
       case Some(inputPlugin) =>
-        // Filter methods according to command-line arguments.
-        val verifyMethods =
-          if (_frontend.config != null && _frontend.config.methods() != ":all") Seq("methods", _frontend.config.methods())
-          else inputPlugin.methods map (_.name)
-        val methods = inputPlugin.methods filter (m => verifyMethods.contains(m.name))
-        Right(Program(inputPlugin.domains, inputPlugin.fields, inputPlugin.functions, inputPlugin.predicates, methods, inputPlugin.extensions)(inputPlugin.pos, inputPlugin.info, inputPlugin.errT))
+        // Filter program according to command-line arguments.
+        val filteredProgram = if (_frontend.config == null) inputPlugin else _frontend.config.select.toOption match {
+          case Some(names) =>
+            val namesSet = names.split(",").toSet
+            val chopped = PluginAwareChopper.chop(inputPlugin)(Some {
+              case m if namesSet.contains(m.name) => true
+              case _ => false
+            }, Some(1))
+            if (chopped.isEmpty) {
+              _frontend.reporter report WarningsDuringTypechecking(Seq(TypecheckerWarning("No members were selected.", inputPlugin.pos)))
+              Program(Seq(), Seq(), Seq(), Seq(), Seq(), Seq())(inputPlugin.pos, inputPlugin.info, inputPlugin.errT)
+            } else {
+              chopped.head
+            }
+          case _ => inputPlugin
+        }
+        Right(filteredProgram)
 
       case None => Left(_frontend.plugins.errors)
     }

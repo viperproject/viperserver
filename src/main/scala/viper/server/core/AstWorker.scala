@@ -8,7 +8,7 @@ package viper.server.core
 
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
-import viper.server.utility.AstGenerator
+import viper.server.utility.ViperAstGenerator
 import viper.server.vsi.AstConstructionException
 import viper.silver.ast.Program
 import viper.silver.ast.utility.FileLoader
@@ -35,7 +35,7 @@ class AstWorker(val file: String,
   private def constructAst(args: Seq[String]): Option[Program] = {
 
     val reporter = new ActorReporter("AstGenerationReporter")
-    val astGen = new AstGenerator(logger, reporter, args, disablePlugins = config.disablePlugins())
+    val astGen = new ViperAstGenerator(logger, reporter, args, disablePlugins = config.disablePlugins())
 
     val ast_option: Option[Program] = try {
       astGen.generateViperAst(file, loader)
@@ -50,7 +50,7 @@ class AstWorker(val file: String,
         throw AstConstructionInterrupted
       case e: Throwable =>
         reporter report ExceptionReport(e)
-        logger.error(s"Creation/Execution of an AstGenerator instance ($file) resulted in $e.")
+        logger.error(s"Creation/Execution of a ViperAstGenerator instance ($file) resulted in $e.")
         registerTaskEnd(false)
         throw ServerCrashException(e)
     }

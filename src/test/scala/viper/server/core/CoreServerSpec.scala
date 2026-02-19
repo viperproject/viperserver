@@ -18,7 +18,7 @@ import org.scalatest.wordspec.AnyWordSpec
 import viper.server.ViperConfig
 import viper.server.frontends.lsp.{ClientCoordinator, GetIdentifierResponse, GetRangeResponse, GetViperFileEndingsResponse, HintMessage, IdeLanguageClient, LogParams, SetupProjectParams, StateChangeParams, UnhandledViperServerMessageTypeParams, VerificationNotStartedParams, ViperServerService}
 import viper.server.frontends.lsp.file.FileManager
-import viper.server.utility.AstGenerator
+import viper.server.utility.ViperAstGenerator
 import viper.server.vsi.{DefaultVerificationServerStart, JobNotFoundException, VerJobId}
 import viper.silver.ast
 import viper.silver.ast.{AbstractSourcePosition, HasLineColumn, Program}
@@ -58,7 +58,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
 
   private val files = List(empty_viper_file, correct_viper_file, ver_error_file)
 
-  private val ast_gen = new AstGenerator(SilentLogger().get)
+  private val ast_gen = new ViperAstGenerator(SilentLogger().get)
 
   // lazy collection of ASTs that have been parsed so far
   private var asts: Map[String, Program] = Map.empty
