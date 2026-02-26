@@ -47,9 +47,6 @@ trait Manager {
   def addContainer(c: utility.LspContainer[_, _, _, _, _]): Unit
   def resetContainers(first: Boolean): Unit
 
-  //def toLspCommand(title: String, command: String, args: Option[Seq[AnyRef]]): lsp4j.Command
-  //def toLspWorkspaceEdit(edits: Seq[viper.silicon.biabduction.InferenceResult]): lsp4j.WorkspaceEdit
-
   def getCodeAction(diag: lsp4j.Diagnostic): Seq[lsp4j.CodeAction]
   def addCodeAction(first: Boolean)(vs: Seq[CodeAction]): Unit
 
@@ -124,11 +121,6 @@ trait StandardManager extends Manager {
   }
 
 
-
-  //def toLspWorkspaceEdit(edits: Seq[viper.silicon.biabduction.InferenceResult]): lsp4j.WorkspaceEdit = {
-  //  new lsp4j.WorkspaceEdit((Map(file.file_uri -> edits.map(edit => new lsp4j.TextEdit(new lsp4j.Range(Common.toPosition(edit.start), Common.toPosition(edit.end)), edit.newText)).asJava)).asJava)
-  //}
-
   // CodeAction
   type CodeActionContainer = utility.StageMapContainer.MapContainer[CodeAction, lsp4j.Diagnostic, lsp4j.CodeAction]
   val codeActionContainer: CodeActionContainer = utility.LspContainer(utility.CodeActionTranslator, () => {})
@@ -137,14 +129,12 @@ trait StandardManager extends Manager {
     codeAction.diags.foreach(diag => {
       cas = cas :+ new CodeAction(codeAction.backendClassName, codeAction.title, codeAction.kind, Seq(diag), codeAction.command, codeAction.edit, Some(diagnosticContainer.translator.translate(diag)()), codeAction.fileinfo)
     })
-    //codeAction.key = diagnosticContainer.translator.translate(codeAction.diag)()
     cas
   }
   containers.addOne(codeActionContainer)
 
-  //def getCodeAction() = codeActionContainer.get(())
-  def getCodeAction(diag: lsp4j.Diagnostic): Seq[lsp4j.CodeAction] = codeActionContainer.get(diag)//CodeAction.fromDiag.getOrElse(diag, Seq.empty).map(cact => utility.CodeActionTranslator.translate(cact)())
-  def addCodeAction(first: Boolean)(vs: Seq[CodeAction]): Unit = add(codeActionContainer, first, vs.map(v => initCodeActionKey(v)).flatten)//vs.map(v => v.addToMap()))
+  def getCodeAction(diag: lsp4j.Diagnostic): Seq[lsp4j.CodeAction] = codeActionContainer.get(diag)
+  def addCodeAction(first: Boolean)(vs: Seq[CodeAction]): Unit = add(codeActionContainer, first, vs.map(v => initCodeActionKey(v)).flatten)
 
   // CodeLens
   type CodeLensContainer = utility.StageArrayContainer.ArrayContainer[lsp.CodeLens, lsp4j.CodeLens]

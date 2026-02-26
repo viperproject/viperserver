@@ -7,7 +7,7 @@
 package viper.server.frontends.lsp
 
 import ch.qos.logback.classic.Logger
-import org.eclipse.lsp4j.{Range, Diagnostic}
+import org.eclipse.lsp4j.Range
 import viper.server.core.VerificationExecutionContext
 
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
@@ -16,7 +16,6 @@ import scala.jdk.CollectionConverters._
 import scala.jdk.FutureConverters._
 import viper.server.frontends.lsp.file.FileManager
 import viper.server.frontends.lsp.file.VerificationManager
-import viper.silicon.interfaces.SiliconAbductionFailureContext
 
 /** Manages per-client state and interacts with the server instance (which is shared among all clients).
  *  It owns one `FileManager` per open file, the two main components of a file
@@ -63,7 +62,6 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   private def getFile(uri: String): Option[FileManager] = Option(_files.get(uri))
   private var _vprFileEndings: Option[Array[String]] = None
   private var _previousFile: Option[String] = None
-  private var inferenceResultsCache: Map[Diagnostic, Seq[viper.silicon.biabduction.InferenceResult]] = Map.empty
 
   def client: Option[IdeLanguageClient] = {
     _client
@@ -195,18 +193,6 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
           Future.failed(new Exception(s"Flushing the cache failed"))
         }
     }
-  }
-
-  def updateInferenceResults(diag: Diagnostic, fix: Seq[viper.silicon.biabduction.InferenceResult]): Unit = {
-    try{
-      inferenceResultsCache += (diag -> fix)
-    } catch {
-      case e: Throwable => logger.debug(s"Error while updating inference results: $e")
-    }
-  }
-
-  def getInferenceResults(diag: Diagnostic): Seq[viper.silicon.biabduction.InferenceResult] = {
-    inferenceResultsCache.getOrElse(diag, Seq.empty)
   }
 
   /** Notifies the client about a state change

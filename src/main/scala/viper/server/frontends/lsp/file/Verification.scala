@@ -10,7 +10,6 @@ import ch.qos.logback.classic.Logger
 import viper.server.frontends.lsp
 
 import scala.concurrent.Future
-import scala.jdk.CollectionConverters._
 import viper.server.core.ViperBackendConfig
 import viper.server.vsi.{AstJobId, VerJobId}
 
@@ -24,7 +23,6 @@ import scala.collection.mutable.HashSet
 import viper.silver.ast.AbstractSourcePosition
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j
-import viper.server.frontends.lsp.Common
 import viper.silver.ast.utility.lsp.RangePosition
 import viper.silver.ast.HasLineColumn
 import viper.silver.ast.LineColumnPosition
@@ -322,37 +320,25 @@ trait VerificationManager extends ManagesLeaf {
       val cachFlag: String = if (err.cached) " (cached)" else ""
       val message = s"$errMsgPrefixWithWhitespace${err.readableMessage}$cachFlag"
       val diagnostic = Diagnostic(backendClassName, rp, message, severity, err.cached, errorMsgPrefix)
-      coordinator.logger.info(s"[ERRORTYPE] ${errorType}")
-      coordinator.logger.info(s"[TAKE BRANCH?] ${errorType == "Verification error"}")
+      //If error contains inference results and inference mode is on error, create code action for inference results
       if (errorType == "Verification error"){
-        coordinator.logger.info(s"[BRANCH TAKEN WITH ERROR:] ${err.toString()}")
         err match {
-        case g: VerificationError =>
-          g.failureContexts.foreach { h =>
-            h match {
-              case h1: SiliconAbductionFailureContext =>
-                h1.fix match {
-                  case Some(irs) =>
-                    if (Verifier.config.inferenceMode() == OnError) {
-                      //coordinator.updateInferenceResults(lspdiag, irs)
-                      //val edits = new lsp4j.WorkspaceEdit((Map(file.file_uri -> irs.map(edit => new lsp4j.TextEdit(new lsp4j.Range(Common.toPosition(edit.start), Common.toPosition(edit.end)), edit.newText)).asJava)).asJava)
-                      //irs.foreach(ir => {cas = cas :+ CodeAction(backendClassName, ir.getEdit, "quickfix", Seq(diagnostic), None, Some(edits), None, this.file)
-                      cas = cas :+ CodeAction(backendClassName, irs.map(ir => ir.getEdit).foldLeft("")((cur: String, next: String) => if(cur == "") next else cur + ", " + next), "quickfix", Seq(diagnostic), None, Some(irs), None, this.file)
-                      //coordinator.logger.info(s"[CAS] ${cas.toString()}")})
-                      coordinator.logger.info(s"[IR] ${irs.toString()}")
-                      //coordinator.logger.info(s"[EDITS] ${edits.toString()}")
-                    }
-                  case None =>
-                    coordinator.logger.info(s"[IR] ${Seq.empty.toString()}")
-                }
-              case _ =>
-                coordinator.logger.info("NOT ABDUCTION FAILURE")
+          case g: VerificationError =>
+            g.failureContexts.foreach { h =>
+              h match {
+                case h1: SiliconAbductionFailureContext =>
+                  h1.fix match {
+                    case Some(irs) =>
+                      if (Verifier.config.inferenceMode() == OnError) {
+                        cas = cas :+ CodeAction(backendClassName, irs.map(ir => ir.getEdit).foldLeft("")((cur: String, next: String) => if(cur == "") next else cur + ", " + next), "quickfix", Seq(diagnostic), None, Some(irs), None, this.file)
+                      }
+                    case None => ()
+                  }
+                case _ => ()
+              }
             }
-          }
-          coordinator.logger.info(s"[ERROR CONTEXTS:] ${g.failureContexts.toString()}")
-        case _ =>
-          coordinator.logger.info("NOT VERIFICATION ERROR")
-      }
+          case _ => ()
+        }
       }
       (phase, diagnostic)
     })
@@ -362,7 +348,5 @@ trait VerificationManager extends ManagesLeaf {
       this.addDiagnostic(phase.order <= VerificationPhase.TypeckEnd.order)(diags.map(_._2))
     }
     this.root.addCodeAction(true)(cas)
-    coordinator.logger.info(s"CODE ACTIONS: ${cas.toString()}")
-    //coordinator.logger.info(s"THIS ROOT CODE ACTIONS: ${this.root.getCodeAction.toString()}")
   }
 }
