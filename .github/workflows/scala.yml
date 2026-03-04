@@ -87,7 +87,7 @@ jobs:
           echo "Silver: commit ${{ env.SILICON_SILVER_REF }}" >> versions.txt
         # first line overwrites versions.txt in case it already exists, all other append to the file
       - name: Upload version file
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: versions.txt
           path: versions.txt
@@ -115,7 +115,7 @@ jobs:
 
       - name: Upload log files
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: TestLogs
           path: viperserver/logs
@@ -129,7 +129,7 @@ jobs:
         working-directory: viperserver/target/universal/stage/lib
 
       - name: Upload ViperServer skinny JARs
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: viperserver-skinny-jars
           path: viperserver/viperserver-skinny-jars.zip
@@ -139,7 +139,7 @@ jobs:
         working-directory: viperserver
 
       - name: Upload ViperServer fat JAR
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: viperserver-fat-jar
           path: viperserver/target/scala-2.13/viperserver.jar
@@ -149,7 +149,7 @@ jobs:
         working-directory: viperserver
 
       - name: Upload ViperServer test fat JAR
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: viperserver-test-fat-jar
           path: viperserver/target/scala-2.13/viperserver-test.jar
@@ -184,7 +184,7 @@ jobs:
           path: silicon
 
       - name: Download ViperServer test fat JAR
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: viperserver-test-fat-jar
           path: viperserver
@@ -265,7 +265,7 @@ jobs:
 
       - name: Upload log files
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: TestLogs-${{ runner.os }}
           path: viperserver/logs
@@ -281,19 +281,19 @@ jobs:
         run: sudo apt-get install curl
 
       - name: Download ViperServer skinny JARs
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: viperserver-skinny-jars
           path: deploy
 
       - name: Download ViperServer fat JAR
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: viperserver-fat-jar
           path: deploy
 
       - name: Download version file
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: versions.txt
 
@@ -365,19 +365,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download ViperServer skinny JARs
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: viperserver-skinny-jars
           path: deploy
 
       - name: Download ViperServer fat JAR
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: viperserver-fat-jar
           path: deploy
 
       - name: Download version file
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: versions.txt
 
