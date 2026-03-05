@@ -145,8 +145,6 @@ trait VerificationServer extends Post {
 
     }).recover({
       case e: AstConstructionException =>
-        // If the AST construction phase failed, remove the verification job handle
-        // from the corresponding pool.
         val msg = s"AST construction job ${prev_job_id_maybe.get} resulted in a failure: $e"
         println(msg)
         pool.discardJob(new_jid)
@@ -239,9 +237,12 @@ trait VerificationServer extends Post {
             val resulting_source = combined_source.map(e => unpack(e))
             resulting_source.runWith(sink)
 
-            // FIXME This assumes that someone will actually complete the verification job queue.
-            // FIXME Could we guarantee that the client won't forget to do this?
-            ver_handle.queue.watchCompletion()
+            ver_handle match {
+              case VerHandle(null, null, null, _) =>
+                Future.successful(Done)
+              case _ =>
+                ver_handle.queue.watchCompletion()
+            }
         })
     }
   }
@@ -299,8 +300,13 @@ trait VerificationServer extends Post {
         handle_future.flatMap {
           case AstHandle(actor, _, _, _) =>
             (actor ? VerificationProtocol.StopAstConstruction).mapTo[String]
+          case VerHandle(null, _, _, _) =>
+            Future.successful("Job had no actor.")
           case VerHandle(actor, _, _, _) =>
             (actor ? VerificationProtocol.StopVerification).mapTo[String]
+        }.recover {
+          case _: akka.pattern.AskTimeoutException =>
+            "Job actor already terminated."
         }
       } toList
     val overall_interrupt_future: Future[List[String]] = Future.sequence(interrupt_future_list)
