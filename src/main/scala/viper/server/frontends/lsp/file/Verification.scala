@@ -218,11 +218,22 @@ trait VerificationManager extends ManagesLeaf {
     if (handler.isVerifying) stop()
     futureCancel.getOrElse(Future.unit).map(_ => {
       lastPhase = None
-      handler.clearWaitingOn()
-      val astJob = startConstructAst(backend, loader, mt) match {
-        case None => return Future.successful(false)
-        case Some(ast) => ast
+
+      // If an AST job is already running (created by an LSP feature or didChange
+      // during the async gap), reuse it instead of cancelling and rebuilding.
+      val astJob = handler.astHandle match {
+        case Some(existingAst) =>
+          coordinator.logger.info(s"Reusing existing AST job ${existingAst.id} for verification")
+          manuallyTriggered = mt
+          existingAst
+        case None =>
+          handler.clearWaitingOn()
+          startConstructAst(backend, loader, mt) match {
+            case None => return Future.successful(false)
+            case Some(ast) => ast
+          }
       }
+
       val verJob = coordinator.server.verifyAst(astJob, file.toString(), backend, Some(coordinator.localLogger))
       if (verJob.id >= 0) {
         // Execute all handles
