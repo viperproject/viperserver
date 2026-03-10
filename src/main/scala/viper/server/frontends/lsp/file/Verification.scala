@@ -23,7 +23,7 @@ import scala.collection.mutable.HashSet
 import viper.silver.ast.AbstractSourcePosition
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j
-import viper.silver.ast.utility.lsp.RangePosition
+import viper.silver.ast.utility.lsp.{CodeLens, RangePosition}
 import viper.silver.ast.HasLineColumn
 import viper.silver.ast.LineColumnPosition
 import viper.silicon.interfaces._
@@ -329,15 +329,14 @@ trait VerificationManager extends ManagesLeaf {
                 case h1: SiliconAbductionFailureContext =>
                   h1.fix match {
                     case Some(irs) =>
-                      if (Verifier.config.inferenceMode() == OnError) {
-                        cas = cas :+ CodeAction(backendClassName, irs.map(ir => ir.getEdit).foldLeft("")((cur: String, next: String) => if(cur == "") next else cur + ", " + next), "quickfix", Seq(diagnostic), None, Some(irs), None, this.file)
-                      }
-                    case None => ()
+                      cas = cas :+ CodeAction(backendClassName, irs.map(ir => ir.getEdit).foldLeft("")((cur: String, next: String) => if(cur == "") next else cur + ", " + next), "quickfix", Seq(diagnostic), None, Some(irs), None, this.file)
+                    case None => coordinator.logger.info("No inference results for error")
                   }
-                case _ => ()
+                case _ => coordinator.logger.info("No SilAbdFailureContext for error")
               }
             }
-          case _ => ()
+            if(g.failureContexts.isEmpty) coordinator.logger.info("No failure contexts for error")
+          case _ => coordinator.logger.info("No VerificationError for error")
         }
       }
       (phase, diagnostic)
@@ -347,6 +346,6 @@ trait VerificationManager extends ManagesLeaf {
     diags.groupBy(d => d._1).foreach { case (phase, diags) =>
       this.addDiagnostic(phase.order <= VerificationPhase.TypeckEnd.order)(diags.map(_._2))
     }
-    this.root.addCodeAction(true)(cas)
+    this.addCodeAction(true)(cas)
   }
 }

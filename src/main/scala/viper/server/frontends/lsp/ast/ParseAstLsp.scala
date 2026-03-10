@@ -10,9 +10,13 @@ import viper.silver.ast.utility.lsp._
 import viper.silver.ast.LineColumnPosition
 import viper.silver.parser.PStringLiteral
 import viper.silver.plugin.standard.adt._
+import viper.silicon.{Config, Map}
 
 object HasCodeLens {
-  def apply(p: PProgram): Seq[CodeLens] = p.deepCollect(PartialFunction.empty).flatten
+  def apply(p: PProgram): Seq[CodeLens] = p.deepCollect({
+    case m: PMethod =>
+      Some(CodeLens(RangePosition(m).get, "Infer Specifications", Some("viper.verify"), Some(m.idndef.name))).toSeq
+  }).flatten
 }
 
 object HasDocumentSymbol {

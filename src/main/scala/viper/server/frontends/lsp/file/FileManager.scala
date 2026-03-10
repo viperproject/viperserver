@@ -40,6 +40,7 @@ trait ManagesLeaf {
   def resetDiagnostics(first: Boolean): Unit
   def resetContainers(first: Boolean): Unit
   def addDiagnostic(first: Boolean)(vs: Seq[Diagnostic]): Unit
+  def addCodeAction(first: Boolean)(vs: Seq[CodeAction]): Unit
 
   def getInFuture[T](f: => T): Future[T]
 }

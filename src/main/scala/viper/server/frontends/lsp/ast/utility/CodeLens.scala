@@ -13,8 +13,12 @@ trait HasCodeLens {
 case class CodeLens(
     /** The range in which this code lens is valid. Should only span a single line. */
     range: RangePosition,
+    /** The text this code lens displays. */
+    title: String,
     /** The command this code lens represents. */
-    command: String,
+    command: Option[String] = None,
+    /** The command this code lens represents. */
+    data: Option[Any] = None
 ) extends HasRangePositions with BelongsToFile {
   override def rangePositions: Seq[RangePosition] = Seq(range)
   override def file = range.file

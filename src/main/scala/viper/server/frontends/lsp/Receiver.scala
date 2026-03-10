@@ -414,16 +414,7 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
 
   @JsonNotification(C2S_Commands.Verify)
   def onVerify(data: VerifyParams): Unit = {
-    //DEBUG-------------------------------------------------------------------------
-    /*
-    if(data.enableInference){
-      coordinator.client.get.notifyStateChanged(lsp.StateChangeParams(6, 50, 4, 1, 0, "TEST", "carbon", 42, 0, data.uri, "TESTSTAGE", "TESTERROR", lsp.InferenceResultsParams(data.uri, Array(lsp.InferenceResult(1, 0, "TESTCODE")), true)))
-      return
-    }
-    */
-    //DEBUG-------------------------------------------------------------------------
     coordinator.logger.debug("On verifying")
-    //coordinator.updateInferenceResults(data.uri, Seq.empty)
     if (coordinator.canVerificationBeStarted(data.uri, data.content, data.manuallyTriggered)) {
       // stop all other verifications because the backend crashes if multiple verifications are run in parallel
       coordinator.logger.trace("verification can be started - all running verifications are now going to be stopped")

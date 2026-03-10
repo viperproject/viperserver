@@ -44,8 +44,9 @@ case object CodeActionTranslator extends Translates[CodeAction, lsp4j.CodeAction
 case object CodeLensTranslator extends Translates[lsp.CodeLens, lsp4j.CodeLens, Unit] {
   override def translate(lens: lsp.CodeLens)(i: Unit): lsp4j.CodeLens = {
     val range = Common.toRange(lens.range)
-    val command = new lsp4j.Command(lens.command, "")
-    new lsp4j.CodeLens(range, command, null)
+    val command = new lsp4j.Command(lens.title, lens.command.getOrElse(""))
+    val data = lens.data.orNull
+    new lsp4j.CodeLens(range, command, data)
   }
 }
 
