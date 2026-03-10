@@ -96,16 +96,16 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     val logger = combineLoggers(localLogger)
     ver_jobs.lookupJob(jid) match {
       case Some(handle_future) =>
+        // Free the ver slot so new jobs can be added immediately
+        ver_jobs.discardJob(jid)
         handle_future.flatMap(handle => {
-          // first stop ast construction:
-          val astFuture = handle.prev_job_id.map(astJobId => stopOnlyAstConstruction(astJobId, localLogger)).getOrElse(Future.successful(true))
-          astFuture.flatMap(astResult => {
-            stopOnlyVerification(handle, logger)
-              .map(verResult => {
-                logger.info(s"verification stopped for job #$jid")
-                astResult && verResult
-              })
-          })
+          // Stop ast construction
+          handle.prev_job_id.foreach(astJobId => stopAstConstruction(astJobId, localLogger))
+          stopOnlyVerification(handle, logger)
+            .map(verResult => {
+              logger.info(s"verification stopped for job #$jid")
+              verResult
+            })
         })
       case _ =>
         // Did not find a job with this jid.

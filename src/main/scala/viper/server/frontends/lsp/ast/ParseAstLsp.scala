@@ -39,7 +39,7 @@ object HasHoverHints {
     case n: PExp => PLspExp.getHoverHints(n)
     case n: PDeclaration => PLspDeclaration.getHoverHints(n)
     case n: PReserved[_] => PLspReserved.getHoverHints(n)
-  }).flatten
+  }).flatten.distinctBy(h => (h.bound.rangePositions.headOption.map(rp => (rp.start.line, rp.start.column)), h.hint))
 }
 
 object HasGotoDefinitions {
@@ -68,10 +68,10 @@ object HasFoldingRanges {
 }
 
 object HasInlayHints {
-  def apply(p: PProgram): Seq[InlayHint] = p.deepCollect({
-    case n: PCall => PLspCall.getInlayHints(n)
+  def apply(p: PProgram, beginnerMode: Boolean): Seq[InlayHint] = p.deepCollect({
+    case n: PCall if !beginnerMode => PLspCall.getInlayHints(n)
     case n: PLet => PLspLet.getInlayHints(n)
-  }).flatten
+  }).flatten.distinctBy(h => (h.position, h.label.map(_.value)))
 }
 
 object HasSemanticHighlights {

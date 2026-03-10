@@ -80,7 +80,7 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     capabilities.setInlayHintProvider(true)
     // Moniker:                 [N/A]
     // Completion Proposals:
-    capabilities.setCompletionProvider(new CompletionOptions(false, Seq(".", ":", "(", "[", "{").asJava))
+    capabilities.setCompletionProvider(new CompletionOptions(false, Seq(".", ":", "(", "[").asJava))
     // Pull Diagnostics:        DISABLED (we use `publishDiagnostics` instead)
     // capabilities.setDiagnosticProvider(new DiagnosticRegistrationOptions(true, false))
     // Signature Help:
@@ -90,8 +90,8 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     capabilities.setCodeActionProvider(true)
     // Document Color:          [N/A]
     // Color Presentation:      [N/A]
-    // Formatting:              TODO
-    // capabilities.setDocumentFormattingProvider(true)
+    // Formatting:              TODO?
+    capabilities.setDocumentFormattingProvider(true)
     // Range Formatting:        TODO
     // On type Formatting:      [N/A]
     // Rename & Prepare Rename:
@@ -102,8 +102,6 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     // current implementation this would mean that renaming a definition would
     // automatically cause all references to be renamed. This would probably be too annoying.
     capabilities.setLinkedEditingRangeProvider(false)
-
-    capabilities.setDocumentFormattingProvider(true)
 
     CompletableFuture.completedFuture(new InitializeResult(capabilities))
   }
