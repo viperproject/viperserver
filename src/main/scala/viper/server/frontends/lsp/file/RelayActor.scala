@@ -12,7 +12,7 @@ import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.silver.ast
 import viper.silver.reporter._
-import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
+import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage, VerificationError}
 import viper.server.frontends.lsp.file.ProgressCoordinator
 import viper.silver.parser._
 
@@ -130,7 +130,8 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
         task.lastPhase = Some(phase)
 
         val beginnerMode = coordinator.server.config.beginnerMode()
-        task.addCodeLens(true)(HasCodeLens(pProgram))
+        val methodInference = coordinator.server.config.methodInference()
+        task.addCodeLens(true)(HasCodeLens(pProgram, methodInference))
         task.addDocumentSymbol(true)(HasDocumentSymbol(pProgram).toSeq)
         task.addHoverHint(true)(HasHoverHints(pProgram))
         task.addGotoDefinition(true)(HasGotoDefinitions(pProgram))

@@ -338,19 +338,20 @@ trait VerificationManager extends ManagesLeaf {
       if (errorType == "Verification error"){
         err match {
           case g: VerificationError =>
-            g.failureContexts.foreach { h =>
-              h match {
-                case h1: SiliconAbductionFailureContext =>
-                  h1.fix match {
-                    case Some(irs) =>
-                      cas = cas :+ CodeAction(backendClassName, irs.map(ir => ir.getEdit).foldLeft("")((cur: String, next: String) => if(cur == "") next else cur + ", " + next), "quickfix", Seq(diagnostic), None, Some(irs), None, this.file)
-                    case None => coordinator.logger.info("No inference results for error")
-                  }
-                case _ => coordinator.logger.info("No SilAbdFailureContext for error")
-              }
+            g.failureContexts.foreach {
+              case h1: SiliconAbductionFailureContext =>
+                h1.fix match {
+                  case Some(irs) =>
+                    cas = cas :+ CodeAction(backendClassName, irs.map(ir =>
+                      if (ir.newText.equals(""))
+                        "remove: Line " + ir.start.line + ", Col " + ir.start.column + " to Line " + ir.end.line + ", Col " + ir.end.column
+                      else
+                        "insert: " + ir.newText).foldLeft("")((cur: String, next: String) => if (cur == "") next else cur + ", " + next), "quickfix", Seq(diagnostic), None, Some(irs), None, this.file)
+                  case None => ()
+                }
+              case _ => ()
             }
-            if(g.failureContexts.isEmpty) coordinator.logger.info("No failure contexts for error")
-          case _ => coordinator.logger.info("No VerificationError for error")
+          case _ => ()
         }
       }
       (phase, diagnostic)

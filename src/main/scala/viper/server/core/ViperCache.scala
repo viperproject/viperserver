@@ -13,12 +13,14 @@ import net.liftweb.json.JsonAST.JObject
 import viper.server.core.ViperCache.logger
 import viper.server.vsi._
 import viper.silver.{ast => vpr}
-import viper.silver.ast.{Add, And, AnonymousDomainAxiom, AnySetCardinality, AnySetContains, AnySetIntersection, AnySetMinus, AnySetSubset, AnySetUnion, Apply, Applying, Assert, Cached, CondExp, ConsInfo, CurrentPerm, Div, Domain, DomainFunc, DomainFuncApp, EmptyMultiset, EmptySeq, EmptySet, EpsilonPerm, EqCmp, Exhale, Exists, ExplicitMultiset, ExplicitSeq, ExplicitSet, FalseLit, Field, FieldAccess, FieldAccessPredicate, FieldAssign, Fold, ForPerm, Forall, FractionalPerm, FullPerm, FuncApp, Function, GeCmp, Goto, GtCmp, Hashable, If, Implies, Inhale, InhaleExhaleExp, IntLit, IntPermMul, Label, LabelledOld, LeCmp, Let, LocalVar, LocalVarAssign, LocalVarDecl, LocalVarDeclStmt, LtCmp, MagicWand, Method, MethodCall, Minus, Mod, Mul, NamedDomainAxiom, NeCmp, NewStmt, NoPerm, Node, Not, NullLit, Old, Or, Package, PermAdd, PermDiv, PermGeCmp, PermGtCmp, PermLeCmp, PermLtCmp, PermMinus, PermMul, PermSub, Position, Predicate, PredicateAccess, PredicateAccessPredicate, Program, RangeSeq, SeqAppend, SeqContains, SeqDrop, SeqIndex, SeqLength, SeqTake, SeqUpdate, Seqn, Sub, Trigger, TrueLit, Unfold, Unfolding, While, WildcardPerm}
+import viper.silver.ast.{Add, And, AnonymousDomainAxiom, AnySetCardinality, AnySetContains, AnySetIntersection, AnySetMinus, AnySetSubset, AnySetUnion, Apply, Applying, Assert, Cached, CondExp, ConsInfo, CurrentPerm, Div, Domain, DomainFunc, DomainFuncApp, EmptyMultiset, EmptySeq, EmptySet, EpsilonPerm, EqCmp, Exhale, Exists, ExplicitMultiset, ExplicitSeq, ExplicitSet, FalseLit, Field, FieldAccess, FieldAccessPredicate, FieldAssign, FilePosition, Fold, ForPerm, Forall, FractionalPerm, FullPerm, FuncApp, Function, GeCmp, Goto, GtCmp, Hashable, IdentifierPosition, If, Implies, Inhale, InhaleExhaleExp, IntLit, IntPermMul, Label, LabelledOld, LeCmp, Let, LineColumnPosition, LocalVar, LocalVarAssign, LocalVarDecl, LocalVarDeclStmt, LtCmp, MagicWand, Method, MethodCall, Minus, Mod, Mul, NamedDomainAxiom, NeCmp, NewStmt, NoPerm, Node, Not, NullLit, Old, Or, Package, PermAdd, PermDiv, PermGeCmp, PermGtCmp, PermLeCmp, PermLtCmp, PermMinus, PermMul, PermSub, Position, Predicate, PredicateAccess, PredicateAccessPredicate, Program, RangeSeq, SeqAppend, SeqContains, SeqDrop, SeqIndex, SeqLength, SeqTake, SeqUpdate, Seqn, SourcePosition, Sub, TranslatedPosition, Trigger, TrueLit, Unfold, Unfolding, While, WildcardPerm}
 import viper.silver.utility.CacheHelper
 import viper.silver.verifier.errors.{ApplyFailed, CallFailed, ContractNotWellformed, FoldFailed, HeuristicsFailed, IfFailed, InhaleFailed, Internal, LetWandFailed, UnfoldFailed, _}
-import viper.silver.verifier.{AbstractVerificationError, VerificationError, errors}
+import viper.silver.verifier.{AbstractVerificationError, FailureContext, VerificationError, errors}
 import net.liftweb.json.Serialization.{read, write}
 import net.liftweb.json.{DefaultFormats, Formats, JArray, JField, JInt, JString, MappingException, ShortTypeHints}
+import viper.silicon.interfaces.SiliconAbductionFailureContext
+import viper.silver.ast.utility.lsp.RangePosition
 import viper.silver.verifier.reasons.{AssertionFalse, DivisionByZero, EpsilonAsParam, FeatureUnsupported, InsufficientPermission, InternalReason, InvalidPermMultiplication, LabelledStateNotReached, MagicWandChunkNotFound, MapKeyNotContained, NegativePermission, QPAssertionNotInjective, ReceiverNull, SeqIndexExceedsLength, SeqIndexNegative, UnexpectedNode}
 
 import java.nio.charset.StandardCharsets
@@ -84,6 +86,7 @@ object ViperCache extends Cache {
           logger.trace(s"Got a cache hit for method ${concerning_method.name} and backend $backendName")
           // set cached flag:
           val cachedErrors = content.errors.map(setCached)
+          cachedErrors.foreach(e => e.failureContexts = content.failureContextsMap.toMap.getOrElse(e, Seq.empty[FailureContext]))
           CacheResult(concerning_method, cachedErrors)
         } catch {
           case e: Throwable =>
@@ -303,11 +306,12 @@ object ViperCache extends Cache {
         backendName: String, file: String,
         p: Program,
         errors: List[AbstractVerificationError]): SerializedViperCacheContent = {
+    val failureContextCacheMap = errors.map(e => setCached(e) -> (e.failureContexts.filter(c => c.isInstanceOf[SiliconAbductionFailureContext])))
 
     val key: String = getKey(file = file, backendName = backendName)
 
     implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.errorNodeHints(p, key))
-    SerializedViperCacheContent(write(ViperCacheContent(errors)))
+    SerializedViperCacheContent(write(ViperCacheContent(errors, failureContextCacheMap)))
   }
 }
 
@@ -521,7 +525,9 @@ object ViperCacheHelper {
     classOf[InternalReason], classOf[FeatureUnsupported], classOf[UnexpectedNode], classOf[AssertionFalse], classOf[EpsilonAsParam],
     classOf[ReceiverNull], classOf[DivisionByZero], classOf[NegativePermission], classOf[InsufficientPermission], classOf[InvalidPermMultiplication],
     classOf[MagicWandChunkNotFound], classOf[QPAssertionNotInjective], classOf[LabelledStateNotReached], classOf[SeqIndexNegative],
-    classOf[SeqIndexExceedsLength], classOf[MapKeyNotContained]
+    classOf[SeqIndexExceedsLength], classOf[MapKeyNotContained], classOf[SiliconAbductionFailureContext], classOf[LineColumnPosition],
+    classOf[FilePosition], classOf[RangePosition], classOf[IdentifierPosition], classOf[SourcePosition], classOf[TranslatedPosition],
+    classOf[IdentifierPosition]
   )) {
 
     override def serialize: PartialFunction[Any, JObject] = {
@@ -556,7 +562,7 @@ case class SerializedViperCacheContent(content: String) extends CacheContent
 /** Class containing the verification results of a viper verification run
   *
   */
-case class ViperCacheContent(errors: List[AbstractVerificationError])
+case class ViperCacheContent(errors: List[AbstractVerificationError], failureContextsMap: List[(AbstractVerificationError, Seq[FailureContext])])
 
 /** An access path holds a List of Numbers
   *
