@@ -85,8 +85,7 @@ case class VerifyParams (
               manuallyTriggered: Boolean,   // was the verification triggered manually
               workspace: String,            // the path to the open workspace folder
               backend: String,
-              customArgs: String,           // contains the path of the file that should be verified
-              enableInference: Boolean)     // determines whether inference should be performed on verification error
+              customArgs: String)     // determines whether inference should be performed on verification error
 
 
 case class ReformatParams (uri: String)

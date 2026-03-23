@@ -23,7 +23,7 @@ import scala.collection.mutable.HashSet
 import viper.silver.ast.AbstractSourcePosition
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j
-import viper.silver.ast.utility.lsp.RangePosition
+import viper.silver.ast.utility.lsp.{CodeLens, RangePosition}
 import viper.silver.ast.HasLineColumn
 import viper.silver.ast.LineColumnPosition
 import viper.silicon.interfaces._
@@ -223,11 +223,23 @@ trait VerificationManager extends ManagesLeaf {
     if (handler.isVerifying) stop()
     futureCancel.getOrElse(Future.unit).map(_ => {
       lastPhase = None
-      handler.clearWaitingOn()
-      val astJob = startConstructAst(backend, loader, mt) match {
-        case None => return Future.successful(false)
-        case Some(ast) => ast
+
+
+      val astJob = handler.astHandle match {
+        // If an AST job is already running (due file edit or LSP features), reuse it instead of cancelling and rebuilding.
+        case Some(existingAst) =>
+          coordinator.logger.info(s"Reusing existing AST job ${existingAst.id} for verification")
+          manuallyTriggered = mt
+          existingAst
+        // Otherwise, start a new AST job for verification.
+        case None =>
+          handler.clearWaitingOn()
+          startConstructAst(backend, loader, mt) match {
+            case None => return Future.successful(false)
+            case Some(ast) => ast
+          }
       }
+
       val verJob = coordinator.server.verifyAst(astJob, file.toString(), backend, Some(coordinator.localLogger))
       if (verJob.id >= 0) {
         // Execute all handles
@@ -240,6 +252,8 @@ trait VerificationManager extends ManagesLeaf {
         futureVer = coordinator.server.startStreamingVer(verJob, receiver, Some(coordinator.localLogger))
         true
       } else {
+        // Ver pool full — free the orphaned AST slot
+        coordinator.server.discardAstJobLookup(astJob)
         false
       }
     })
@@ -324,18 +338,18 @@ trait VerificationManager extends ManagesLeaf {
       if (errorType == "Verification error"){
         err match {
           case g: VerificationError =>
-            g.failureContexts.foreach { h =>
-              h match {
-                case h1: SiliconAbductionFailureContext =>
-                  h1.fix match {
-                    case Some(irs) =>
-                      if (Verifier.config.inferenceMode() == OnError) {
-                        cas = cas :+ CodeAction(backendClassName, irs.map(ir => ir.getEdit).foldLeft("")((cur: String, next: String) => if(cur == "") next else cur + ", " + next), "quickfix", Seq(diagnostic), None, Some(irs), None, this.file)
-                      }
-                    case None => ()
-                  }
-                case _ => ()
-              }
+            g.failureContexts.foreach {
+              case h1: SiliconAbductionFailureContext =>
+                h1.fix match {
+                  case Some(irs) =>
+                    cas = cas :+ CodeAction(backendClassName, irs.map(ir =>
+                      if (ir.newText.equals(""))
+                        "remove: Line " + ir.start.line + ", Col " + ir.start.column + " to Line " + ir.end.line + ", Col " + ir.end.column
+                      else
+                        "insert: " + ir.newText).foldLeft("")((cur: String, next: String) => if (cur == "") next else cur + ", " + next), "quickfix", Seq(diagnostic), None, Some(irs), None, this.file)
+                  case None => ()
+                }
+              case _ => ()
             }
           case _ => ()
         }
@@ -347,6 +361,6 @@ trait VerificationManager extends ManagesLeaf {
     diags.groupBy(d => d._1).foreach { case (phase, diags) =>
       this.addDiagnostic(phase.order <= VerificationPhase.TypeckEnd.order)(diags.map(_._2))
     }
-    this.root.addCodeAction(true)(cas)
+    this.addCodeAction(true)(cas)
   }
 }

@@ -17,7 +17,7 @@ import viper.server.frontends.lsp.Lsp4jSemanticHighlight
 import org.eclipse.lsp4j
 import viper.silver.ast.utility.lsp
 import viper.server.frontends.lsp.Common
-import viper.silicon.biabduction.InferenceResult
+import viper.silicon.biabduction.ProgramEdit
 
 case class Diagnostic(backendClassName: Option[String], position: lsp.RangePosition, message: String, severity: lsp4j.DiagnosticSeverity, cached: Boolean, errorMsgPrefix: Option[String]) extends lsp.HasRangePositions with lsp.BelongsToFile {
   override def rangePositions: Seq[lsp.RangePosition] = Seq(position)
@@ -29,7 +29,7 @@ case class CodeAction(backendClassName: Option[String],
                       kind: String,
                       diags: Seq[Diagnostic],
                       command: Option[(String, String)],
-                      edit: Option[Seq[InferenceResult]],
+                      edit: Option[Seq[ProgramEdit]],
                       diagkey: Option[lsp4j.Diagnostic],
                       fileinfo: PathInfo
                      ) extends lsp.HasRangePositions with lsp.BelongsToFile with utility.HasKey[lsp4j.Diagnostic] {
@@ -132,7 +132,6 @@ trait StandardManager extends Manager {
     cas
   }
   containers.addOne(codeActionContainer)
-
   def getCodeAction(diag: lsp4j.Diagnostic): Seq[lsp4j.CodeAction] = codeActionContainer.get(diag)
   def addCodeAction(first: Boolean)(vs: Seq[CodeAction]): Unit = add(codeActionContainer, first, vs.map(v => initCodeActionKey(v)).flatten)
 
