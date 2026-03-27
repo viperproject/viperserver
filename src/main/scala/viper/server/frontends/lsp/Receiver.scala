@@ -24,6 +24,7 @@ import scala.language.postfixOps
 
 trait StandardReceiver {
   val coordinator: ClientCoordinator
+
   implicit def executor: VerificationExecutionContext
 }
 
@@ -42,11 +43,11 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     // Find References:
     capabilities.setReferencesProvider(true)
     // Prepare Call Hierarchy:  [N/A]
-      // Incoming Calls:        [N/A]
-      // Outgoing Calls:        [N/A]
+    // Incoming Calls:        [N/A]
+    // Outgoing Calls:        [N/A]
     // Prepare Type Hierarchy:  [N/A]
-      // Super Types:           [N/A]
-      // Sub Types:             [N/A]
+    // Super Types:           [N/A]
+    // Sub Types:             [N/A]
     // Document Highlight:
     capabilities.setDocumentHighlightProvider(true)
     // Document Link (disabled Resolve):
@@ -58,21 +59,21 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     // Folding Range:
     capabilities.setFoldingRangeProvider(true)
     // Selection Range:         [N/A]
-        // could try extracting from document symbols,
-        // but this req doesn't seem to ever be sent
+    // could try extracting from document symbols,
+    // but this req doesn't seem to ever be sent
     // Document Symbols:
     capabilities.setDocumentSymbolProvider(true)
     // Semantic Tokens:
     val legend = new SemanticTokensLegend(
       Seq(SemanticTokenTypes.Namespace, SemanticTokenTypes.Type, SemanticTokenTypes.Class, SemanticTokenTypes.Enum,
-          SemanticTokenTypes.Interface, SemanticTokenTypes.Struct, SemanticTokenTypes.TypeParameter, SemanticTokenTypes.Parameter,
-          SemanticTokenTypes.Variable, SemanticTokenTypes.Property, SemanticTokenTypes.EnumMember, SemanticTokenTypes.Event,
-          SemanticTokenTypes.Function, SemanticTokenTypes.Method, SemanticTokenTypes.Macro, SemanticTokenTypes.Keyword,
-          SemanticTokenTypes.Modifier, SemanticTokenTypes.Comment, SemanticTokenTypes.String, SemanticTokenTypes.Number,
-          SemanticTokenTypes.Regexp, SemanticTokenTypes.Operator, SemanticTokenTypes.Decorator, "constant").asJava,
+        SemanticTokenTypes.Interface, SemanticTokenTypes.Struct, SemanticTokenTypes.TypeParameter, SemanticTokenTypes.Parameter,
+        SemanticTokenTypes.Variable, SemanticTokenTypes.Property, SemanticTokenTypes.EnumMember, SemanticTokenTypes.Event,
+        SemanticTokenTypes.Function, SemanticTokenTypes.Method, SemanticTokenTypes.Macro, SemanticTokenTypes.Keyword,
+        SemanticTokenTypes.Modifier, SemanticTokenTypes.Comment, SemanticTokenTypes.String, SemanticTokenTypes.Number,
+        SemanticTokenTypes.Regexp, SemanticTokenTypes.Operator, SemanticTokenTypes.Decorator, "constant").asJava,
       Seq(SemanticTokenModifiers.Declaration, SemanticTokenModifiers.Definition, SemanticTokenModifiers.Readonly, SemanticTokenModifiers.Static,
-          SemanticTokenModifiers.Deprecated, SemanticTokenModifiers.Abstract, SemanticTokenModifiers.Async, SemanticTokenModifiers.Modification,
-          SemanticTokenModifiers.Documentation, SemanticTokenModifiers.DefaultLibrary, "controlFlow").asJava
+        SemanticTokenModifiers.Deprecated, SemanticTokenModifiers.Abstract, SemanticTokenModifiers.Async, SemanticTokenModifiers.Modification,
+        SemanticTokenModifiers.Documentation, SemanticTokenModifiers.DefaultLibrary, "controlFlow").asJava
     )
     capabilities.setSemanticTokensProvider(new SemanticTokensWithRegistrationOptions(legend, true))
     // Inline Value:            [N/A]
@@ -80,18 +81,18 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     capabilities.setInlayHintProvider(true)
     // Moniker:                 [N/A]
     // Completion Proposals:
-    capabilities.setCompletionProvider(new CompletionOptions(false, Seq(".", ":", "(", "[", "{", "\n", "\t").asJava))
+    capabilities.setCompletionProvider(new CompletionOptions(false, Seq(".", ":", "(", "[").asJava))
     // Pull Diagnostics:        DISABLED (we use `publishDiagnostics` instead)
     // capabilities.setDiagnosticProvider(new DiagnosticRegistrationOptions(true, false))
     // Signature Help:
-        // Allow a `,` to try and restart the signature help even after it has ended
+    // Allow a `,` to try and restart the signature help even after it has ended
     capabilities.setSignatureHelpProvider(new SignatureHelpOptions(Seq("(", ",").asJava, Seq().asJava))
     // Code Action:
     capabilities.setCodeActionProvider(true)
     // Document Color:          [N/A]
     // Color Presentation:      [N/A]
-    // Formatting:              TODO
-    // capabilities.setDocumentFormattingProvider(true)
+    // Formatting:              TODO?
+    capabilities.setDocumentFormattingProvider(true)
     // Range Formatting:        TODO
     // On type Formatting:      [N/A]
     // Rename & Prepare Rename:
@@ -192,7 +193,7 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
     val uri = params.getTextDocument.getUri
     val pos = params.getPosition
     coordinator.getRoot(uri).getGotoDefinitions(uri, pos).map(defns => {
-        Either.forRight[java.util.List[_ <: Location], java.util.List[_ <: LocationLink]](defns.asJava)
+      Either.forRight[java.util.List[_ <: Location], java.util.List[_ <: LocationLink]](defns.asJava)
     }).asJava.toCompletableFuture
   }
 
@@ -316,6 +317,18 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
     CompletableFuture.completedFuture(Nil.asJava)
   }
 
+  override def formatting(params: DocumentFormattingParams) = {
+    coordinator.logger.trace(s"[Req: textDocument/formatting] ${params.toString}")
+    val uri = params.getTextDocument.getUri
+    val result = coordinator.getRoot(uri).reformatFile() match {
+      case None => Seq()
+      case Some(e) =>
+        val range = new Range(new Position(0, 0), new Position(Int.MaxValue, Int.MaxValue))
+        Seq(new TextEdit(range, e))
+    }
+    CompletableFuture.completedFuture(result.asJava)
+  }
+
   // --- DISABLED, see comment in `initialize` ---
   override def diagnostic(params: DocumentDiagnosticParams) = {
     coordinator.logger.trace(s"[Req: textDocument/diagnostic] ${params.toString()}")
@@ -352,9 +365,10 @@ trait WorkspaceReceiver extends StandardReceiver with WorkspaceService {
 }
 
 class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl: String)(implicit _executor: VerificationExecutionContext)
-    extends LanguageClientAware with LanguageReceiver with WorkspaceReceiver with TextDocumentReceiver {
+  extends LanguageClientAware with LanguageReceiver with WorkspaceReceiver with TextDocumentReceiver {
 
   override val coordinator = new ClientCoordinator(server)
+
   override def executor: VerificationExecutionContext = _executor
 
   override def getTextDocumentService(): TextDocumentService = this
@@ -408,16 +422,22 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
           if (verificationStarted) {
             coordinator.logger.info("Verification Started")
           } else {
-            coordinator.client.map{_.notifyVerificationNotStarted(VerificationNotStartedParams(data.uri))}
+            coordinator.client.map {
+              _.notifyVerificationNotStarted(VerificationNotStartedParams(data.uri))
+            }
           }
         })
       }).recover(e => {
         coordinator.logger.debug(s"Error handling verify request: $e")
-        coordinator.client.map{_.notifyVerificationNotStarted(VerificationNotStartedParams(data.uri))}
+        coordinator.client.map {
+          _.notifyVerificationNotStarted(VerificationNotStartedParams(data.uri))
+        }
       })
     } else {
       coordinator.logger.info("The verification cannot be started.")
-      coordinator.client.map{_.notifyVerificationNotStarted(VerificationNotStartedParams(data.uri))}
+      coordinator.client.map {
+        _.notifyVerificationNotStarted(VerificationNotStartedParams(data.uri))
+      }
     }
   }
 

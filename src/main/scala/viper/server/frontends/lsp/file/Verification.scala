@@ -147,6 +147,10 @@ trait VerificationManager extends ManagesLeaf {
   var errorCount: Int = 0
   var diagnosticCount: Int = 0
 
+  // verification config cache when parse-only
+  var lastCustomArgs: Option[String] = None
+  var lastBackendClassName: Option[String] = None
+
   def prepareVerification(mt: Boolean): Unit = {
     manuallyTriggered = mt
 
@@ -195,8 +199,7 @@ trait VerificationManager extends ManagesLeaf {
       coordinator.logger.debug(s"Already running parse/typecheck or verification")
       return false
     }
-    // TODO: add support for specifying a full list of custom args here
-    val backend = ViperBackendConfig("silicon");
+    val backend = ViperBackendConfig(lastBackendClassName.getOrElse("silicon"), lastCustomArgs.getOrElse(""))
     // Execute all handles
     startConstructAst(backend, loader, false) match {
       case None => false
@@ -206,20 +209,38 @@ trait VerificationManager extends ManagesLeaf {
     }
   }
 
+  def reformatFile(): Option[String] = {
+    coordinator.logger.info(s"reformatting the file $filename")
+    coordinator.server.reformatFile(path.toString, Some(coordinator.localLogger))
+  }
+
   /** Do full parsing, type checking and verification */
   def startVerification(backendClassName: String, customArgs: String, loader: FileContent, mt: Boolean, verifyTarget: Option[HasLineColumn] = None): Future[Boolean] = {
-    val command = getVerificationCommand(backendClassName, customArgs)
-    val backend = ViperBackendConfig(command);
+    lastBackendClassName = Some(backendClassName)
+    lastCustomArgs = Some(customArgs)
+    val backend = ViperBackendConfig(backendClassName, customArgs)
 
-    coordinator.logger.info(s"verify $filename ($command)")
+    coordinator.logger.info(s"verify $filename ($backendClassName $customArgs)")
     if (handler.isVerifying) stop()
     futureCancel.getOrElse(Future.unit).map(_ => {
       lastPhase = None
-      handler.clearWaitingOn()
-      val astJob = startConstructAst(backend, loader, mt) match {
-        case None => return Future.successful(false)
-        case Some(ast) => ast
+
+
+      val astJob = handler.astHandle match {
+        // If an AST job is already running (due file edit or LSP features), reuse it instead of cancelling and rebuilding.
+        case Some(existingAst) =>
+          coordinator.logger.info(s"Reusing existing AST job ${existingAst.id} for verification")
+          manuallyTriggered = mt
+          existingAst
+        // Otherwise, start a new AST job for verification.
+        case None =>
+          handler.clearWaitingOn()
+          startConstructAst(backend, loader, mt) match {
+            case None => return Future.successful(false)
+            case Some(ast) => ast
+          }
       }
+
       val verJob = coordinator.server.verifyAst(astJob, file.toString(), backend, Some(coordinator.localLogger), verifyTarget)
       if (verJob.id >= 0) {
         // Execute all handles
@@ -232,19 +253,11 @@ trait VerificationManager extends ManagesLeaf {
         futureVer = coordinator.server.startStreamingVer(verJob, receiver, Some(coordinator.localLogger))
         true
       } else {
+        // Ver pool full — free the orphaned AST slot
+        coordinator.server.discardAstJobLookup(astJob)
         false
       }
     })
-  }
-
-  /** the file that should be verified has to already be part of `customArgs` */
-  private def getVerificationCommand(backendClassName: String, customArgs: String): String = {
-    if (backendClassName != "silicon" && backendClassName != "carbon") {
-      throw new Error(s"Invalid verification backend value. " +
-        s"Possible values are [silicon | carbon] " +
-        s"but found $backendClassName")
-    }
-    s"$backendClassName $customArgs"
   }
 
   private def startConstructAst(backend: ViperBackendConfig, loader: FileContent, mt: Boolean): Option[AstJobId] = {
