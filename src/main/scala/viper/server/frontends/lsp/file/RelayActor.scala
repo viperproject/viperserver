@@ -121,6 +121,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] got new pProgram for ${task.filename}")
       val files = pProgram.imports.flatMap(_.resolved).map(_.toUri().toString()).toSet
       task.setupProject(files)
+      task.allEntityNames = (pProgram.methods.map(_.idndef.name) ++ pProgram.functions.map(_.idndef.name) ++ pProgram.predicates.map(_.idndef.name)).toArray
       val parseSuccess = pProgram.errors.isEmpty
       val phase = if (typeckSuccess) VerificationPhase.TypeckEnd
         else if (parseSuccess) VerificationPhase.ParseEnd
@@ -145,7 +146,8 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
     case StatisticsReport(m, f, p, _, _) =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] StatisticsReport")
       task.progress = new ProgressCoordinator(coordinator, p, f, m)
-      val params = lsp.StateChangeParams(VerificationRunning.id, progress = 0, filename = task.filename)
+      val params = lsp.StateChangeParams(VerificationRunning.id, progress = 0, filename = task.filename,
+        allEntities = task.allEntityNames)
       coordinator.sendStateChangeNotification(params, Some(task))
     case AstConstructionFailureMessage(_, res) =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] AstConstructionFailureMessage")
@@ -163,16 +165,28 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
       if (task.progress == null) {
         coordinator.logger.debug("The backend must send a VerificationStart message before the ...Verified message.")
       } else {
-        val output = lsp.BackendOutput(lsp.BackendOutputType.FunctionVerified, name = concerning.name)
+        val outputType = concerning match {
+          case _: ast.Method    => lsp.BackendOutputType.MethodVerified
+          case _: ast.Predicate => lsp.BackendOutputType.PredicateVerified
+          case _                => lsp.BackendOutputType.FunctionVerified
+        }
+        val output = lsp.BackendOutput(outputType, name = concerning.name)
         task.progress.updateProgress(output)
         val progressPercentage = task.progress.toPercent
-        val params = lsp.StateChangeParams(VerificationRunning.id, progress = progressPercentage, filename = task.filename)
+        val params = lsp.StateChangeParams(VerificationRunning.id, progress = progressPercentage,
+          filename = task.filename, verifiedEntity = concerning.name)
         coordinator.sendStateChangeNotification(params, Some(task))
       }
-    case EntityFailureMessage(_, _, _, res, _) =>
+    case EntityFailureMessage(_, concerning, _, res, _) =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] EntityFailureMessage")
       markErrorsAsReported(res.errors)
       task.processErrors(backendClassName, res.errors)
+      if (task.progress != null) {
+        val progressPercentage = task.progress.toPercent
+        val params = lsp.StateChangeParams(VerificationRunning.id, progress = progressPercentage,
+          filename = task.filename, failedEntity = concerning.name)
+        coordinator.sendStateChangeNotification(params, Some(task))
+      }
     case OverallSuccessMessage(_, verificationTime) =>
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] OverallSuccessMessage")
       task.state = VerificationReporting
