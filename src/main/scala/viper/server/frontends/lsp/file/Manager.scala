@@ -15,6 +15,7 @@ import scala.collection.mutable.ArrayBuffer
 import viper.server.frontends.lsp.file.FileContent
 import viper.server.frontends.lsp.Lsp4jSemanticHighlight
 import org.eclipse.lsp4j
+
 import viper.silver.ast.utility.lsp
 import viper.server.frontends.lsp.Common
 import viper.silicon.biabduction.ProgramEdit
