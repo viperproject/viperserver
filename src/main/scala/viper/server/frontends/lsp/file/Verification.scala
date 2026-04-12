@@ -8,17 +8,16 @@ package viper.server.frontends.lsp.file
 
 import ch.qos.logback.classic.Logger
 import viper.server.frontends.lsp
-
 import scala.concurrent.Future
 import viper.server.core.ViperBackendConfig
 import viper.server.vsi.{AstJobId, VerJobId}
-
 import scala.concurrent.ExecutionContext
 import akka.actor.Props
+
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.server.frontends.lsp.VerificationState._
-import viper.silver.verifier.AbstractError
 
+import viper.silver.verifier.AbstractError
 import scala.collection.mutable.HashSet
 import viper.silver.ast.AbstractSourcePosition
 import org.eclipse.lsp4j.Range
@@ -239,7 +238,6 @@ trait VerificationManager extends ManagesLeaf {
             case Some(ast) => ast
           }
       }
-
       val verJob = coordinator.server.verifyAst(astJob, file.toString(), backend, Some(coordinator.localLogger))
       if (verJob.id >= 0) {
         // Execute all handles
@@ -326,12 +324,12 @@ trait VerificationManager extends ManagesLeaf {
       }
       files.add(rp.file.toUri().toString())
 
-      val errFullId = if (err.fullId != null) s"[${err.fullId}] " else ""
+      val errFullId = if(err.fullId != null) s"[${err.fullId}] " else ""
       val backendString = if (backendClassName.isDefined) s" [${backendClassName.get}]" else ""
       coordinator.logger.debug(s"$errorType:$backendString $errFullId" +
         s"${range.getStart.getLine + 1}:${range.getStart.getCharacter + 1} $errMsgPrefixWithWhitespace${err.readableMessage}s")
 
-      val cachFlag: String = if (err.cached) " (cached)" else ""
+      val cachFlag: String = if(err.cached) " (cached)" else ""
       val message = s"$errMsgPrefixWithWhitespace${err.readableMessage}$cachFlag"
       val diagnostic = Diagnostic(backendClassName, rp, message, severity, err.cached, errorMsgPrefix)
       //If error contains inference results and inference mode is on error, create code action for inference results
