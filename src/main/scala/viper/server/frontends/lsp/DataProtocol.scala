@@ -81,12 +81,11 @@ case class BackendProperties(
 
 case class VerifyParams (
               uri: String,                  // file to verify
-              content: String,              // contents of file to verify
+              content: String,             // contents of file to verify
               manuallyTriggered: Boolean,   // was the verification triggered manually
               workspace: String,            // the path to the open workspace folder
               backend: String,
-              customArgs: String)     // determines whether inference should be performed on verification error
-
+              customArgs: String)            // contains the path of the file that should be verified
 
 case class ReformatParams (uri: String)
 
