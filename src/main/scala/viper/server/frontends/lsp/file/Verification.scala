@@ -8,26 +8,27 @@ package viper.server.frontends.lsp.file
 
 import ch.qos.logback.classic.Logger
 import viper.server.frontends.lsp
+
 import scala.concurrent.Future
 import viper.server.core.ViperBackendConfig
 import viper.server.vsi.{AstJobId, VerJobId}
+
 import scala.concurrent.ExecutionContext
 import akka.actor.Props
-
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.server.frontends.lsp.VerificationState._
-
 import viper.silver.verifier.AbstractError
+
 import scala.collection.mutable.HashSet
 import viper.silver.ast.AbstractSourcePosition
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j
-import viper.silver.ast.utility.lsp.{CodeLens, RangePosition}
+import viper.server.frontends.lsp.{InferenceResult, InferenceResultParams}
+import viper.silver.ast.utility.lsp.RangePosition
 import viper.silver.ast.HasLineColumn
 import viper.silver.ast.LineColumnPosition
 import viper.silicon.interfaces._
 import viper.silver.verifier._
-import viper.silicon.verifier.Verifier
 
 case class VerificationHandler(server: lsp.ViperServerService, logger: Logger) {
   private var waitingOn: Option[Either[AstJobId, VerJobId]] = None

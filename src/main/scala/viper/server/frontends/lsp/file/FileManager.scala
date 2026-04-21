@@ -42,8 +42,6 @@ trait ManagesLeaf {
   def addDiagnostic(first: Boolean)(vs: Seq[Diagnostic]): Unit
   def addCodeAction(first: Boolean)(vs: Seq[CodeAction]): Unit
 
-  def addCodeAction(first: Boolean)(vs: Seq[CodeAction])
-
   def getInFuture[T](f: => T): Future[T]
 }
 
