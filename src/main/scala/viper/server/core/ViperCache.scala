@@ -85,8 +85,11 @@ object ViperCache extends Cache {
           val content = read[ViperCacheContent](ce.content.asInstanceOf[SerializedViperCacheContent].content)
           logger.trace(s"Got a cache hit for method ${concerning_method.name} and backend $backendName")
           // set cached flag:
-          val cachedErrors = content.errors.map(setCached)
-          cachedErrors.foreach(e => e.failureContexts = content.failureContextsMap.toMap.getOrElse(e, Seq.empty[FailureContext]))
+          val cachedErrors = content.errors.map(e => {
+            val ce = setCached(e._1)
+            ce.failureContexts = e._2
+            ce
+          })
           CacheResult(concerning_method, cachedErrors)
         } catch {
           case e: Throwable =>
@@ -306,12 +309,11 @@ object ViperCache extends Cache {
         backendName: String, file: String,
         p: Program,
         errors: List[AbstractVerificationError]): SerializedViperCacheContent = {
-    val failureContextCacheMap = errors.map(e => setCached(e) -> (e.failureContexts.filter(c => c.isInstanceOf[SiliconAbductionFailureContext])))
 
     val key: String = getKey(file = file, backendName = backendName)
 
     implicit val formats: Formats = DefaultFormats.withHints(ViperCacheHelper.errorNodeHints(p, key))
-    SerializedViperCacheContent(write(ViperCacheContent(errors, failureContextCacheMap)))
+    SerializedViperCacheContent(write(ViperCacheContent(errors.map(e => (e, e.failureContexts.filter(c => c.isInstanceOf[SiliconAbductionFailureContext]))))))
   }
 }
 
@@ -562,7 +564,7 @@ case class SerializedViperCacheContent(content: String) extends CacheContent
 /** Class containing the verification results of a viper verification run
   *
   */
-case class ViperCacheContent(errors: List[AbstractVerificationError], failureContextsMap: List[(AbstractVerificationError, Seq[FailureContext])])
+case class ViperCacheContent(errors: List[(AbstractVerificationError, Seq[FailureContext])])
 
 /** An access path holds a List of Numbers
   *

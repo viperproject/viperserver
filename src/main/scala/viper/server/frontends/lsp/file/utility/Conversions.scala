@@ -23,6 +23,18 @@ trait Translates[-T, +U, I] {
   def translate(t: Seq[T])(i: I)(implicit @annotation.unused log: Logger): Seq[U] = t.map(translate(_)(i))
 }
 
+object TranslationHelper {
+  def toWorkspaceEdit(uri: String, edits: Seq[viper.silicon.biabduction.ProgramEdit]): WorkspaceEdit = {
+    new WorkspaceEdit((Map(uri -> edits.map(edit =>
+      new lsp4j.TextEdit(
+        new lsp4j.Range(
+          Common.toPosition(edit.start),
+          Common.toPosition(edit.end)),
+        edit.newText)
+    ).asJava)).asJava)
+  }
+}
+
 case object CodeActionTranslator extends Translates[CodeAction, lsp4j.CodeAction, lsp4j.Diagnostic] {
   override def translate(cact: CodeAction)(i: lsp4j.Diagnostic): lsp4j.CodeAction = {
     val lspca = new lsp4j.CodeAction(cact.title)
@@ -30,7 +42,7 @@ case object CodeActionTranslator extends Translates[CodeAction, lsp4j.CodeAction
     lspca.setDiagnostics(Seq(cact.key).asJava)
     lspca.setEdit(
       cact.edit match {
-        case Some(e) => new WorkspaceEdit((Map(cact.fileinfo.file_uri -> e.map(edit => new lsp4j.TextEdit(new lsp4j.Range(Common.toPosition(edit.start), Common.toPosition(edit.end)), edit.newText)).asJava)).asJava)
+        case Some(e) => TranslationHelper.toWorkspaceEdit(cact.fileinfo.file_uri, e)
         case None => null
       })
     lspca.setCommand(cact.command match {
@@ -44,8 +56,8 @@ case object CodeActionTranslator extends Translates[CodeAction, lsp4j.CodeAction
 case object CodeLensTranslator extends Translates[lsp.CodeLens, lsp4j.CodeLens, Unit] {
   override def translate(lens: lsp.CodeLens)(i: Unit): lsp4j.CodeLens = {
     val range = Common.toRange(lens.range)
-    val command = new lsp4j.Command(lens.title, lens.command.getOrElse(""))
-    val data = lens.data.orNull
+    val command = new lsp4j.Command(lens.title, lens.command.getOrElse(""), lens.args.getOrElse(Seq.empty).asJava)
+    val data = lens.args.orNull
     new lsp4j.CodeLens(range, command, data)
   }
 }

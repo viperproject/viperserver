@@ -85,8 +85,7 @@ case class VerifyParams (
               manuallyTriggered: Boolean,   // was the verification triggered manually
               workspace: String,            // the path to the open workspace folder
               backend: String,
-              customArgs: String,           // contains the path of the file that should be verified
-              enableInference: Boolean)     // determines whether inference should be performed on verification error
+              customArgs: String)           // contains the path of the file that should be verified
 
 
 case class ReformatParams (uri: String)
@@ -179,6 +178,17 @@ case class StateChangeParams(
               uri: String = null,
               stage: String = null,
               error: String = null)
+
+case class InferenceResultParams(
+              inferenceResults: Array[InferenceResult])
+
+case class InferenceResult(
+              start_line: Int,
+              start_col: Int,
+              end_line: Int,
+              end_col: Int,
+              edit: String,
+              file_uri: String)
 
 case class UnhandledViperServerMessageTypeParams(msgType: String, msg: String, logLevel: Int)
 

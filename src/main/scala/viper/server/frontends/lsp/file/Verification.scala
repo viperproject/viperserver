@@ -21,14 +21,16 @@ import viper.silver.verifier.AbstractError
 
 import scala.collection.mutable.HashSet
 import viper.silver.ast.AbstractSourcePosition
-import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.{Range, WorkspaceEdit}
 import org.eclipse.lsp4j
+import viper.server.frontends.lsp.{InferenceResult, InferenceResultParams}
+import viper.server.frontends.lsp.file.utility.TranslationHelper
+import viper.silicon.Config
 import viper.silver.ast.utility.lsp.{CodeLens, RangePosition}
 import viper.silver.ast.HasLineColumn
 import viper.silver.ast.LineColumnPosition
 import viper.silicon.interfaces._
 import viper.silver.verifier._
-import viper.silicon.Config.InferenceMode.OnError
 import viper.silicon.verifier.Verifier
 
 case class VerificationHandler(server: lsp.ViperServerService, logger: Logger) {
@@ -128,6 +130,7 @@ trait VerificationManager extends ManagesLeaf {
   //other
   var lastSuccess: VerificationSuccess = NA
   var internalErrorMessage: String = ""
+  var inferenceMode: Boolean = false
 
   //state specific to one verification
   var is_aborting: Boolean = false
@@ -217,6 +220,7 @@ trait VerificationManager extends ManagesLeaf {
   def startVerification(backendClassName: String, customArgs: String, loader: FileContent, mt: Boolean): Future[Boolean] = {
     lastBackendClassName = Some(backendClassName)
     lastCustomArgs = Some(customArgs)
+    inferenceMode = customArgs.contains("--inferenceMode=full")
     val backend = ViperBackendConfig(backendClassName, customArgs)
 
     coordinator.logger.info(s"verify $filename ($backendClassName $customArgs)")
@@ -285,6 +289,7 @@ trait VerificationManager extends ManagesLeaf {
     val errMsgPrefixWithWhitespace = errorMsgPrefix.map(s => s"$s ").getOrElse("")
     val files = HashSet[String]()
     var cas: Seq[CodeAction] = Seq.empty
+    var lsp_irs: Array[InferenceResult] = Array.empty
 
     val diags = errors.map(err => {
       coordinator.logger.info(s"Handling error ${err.toString()}")
@@ -342,6 +347,15 @@ trait VerificationManager extends ManagesLeaf {
               case h1: SiliconAbductionFailureContext =>
                 h1.fix match {
                   case Some(irs) =>
+                    irs.foreach(ir =>
+                      lsp_irs = lsp_irs :+ InferenceResult(
+                        start_line = ir.start.line,
+                        start_col = ir.start.column,
+                        end_line = ir.end.line,
+                        end_col = ir.end.column,
+                        edit = ir.newText,
+                        file_uri = this.file.file_uri)
+                    )
                     cas = cas :+ CodeAction(backendClassName, irs.map(ir =>
                       if (ir.newText.equals(""))
                         "remove: Line " + ir.start.line + ", Col " + ir.start.column + " to Line " + ir.end.line + ", Col " + ir.end.column
@@ -356,6 +370,12 @@ trait VerificationManager extends ManagesLeaf {
       }
       (phase, diagnostic)
     })
+
+    if(inferenceMode){
+      coordinator.sendInferenceResults(InferenceResultParams(inferenceResults = lsp_irs))
+      return
+    }
+
     diagnosticCount += errors.size
     errorCount += diags.count(_._2.severity == lsp4j.DiagnosticSeverity.Error)
     diags.groupBy(d => d._1).foreach { case (phase, diags) =>

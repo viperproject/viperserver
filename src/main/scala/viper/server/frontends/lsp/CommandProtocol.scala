@@ -32,6 +32,7 @@ object S2C_Commands {
   final val Log = "Log"
   final val Hint = "Hint"
   final val VerificationNotStarted = "VerificationNotStarted"
+  final val InferenceResults = "InferenceResults"
   // final val StopDebugging = "StopDebugging"
   // final val StepsAsDecorationOptions = "StepsAsDecorationOptions"
   // final val HeapGraph = "HeapGraph"

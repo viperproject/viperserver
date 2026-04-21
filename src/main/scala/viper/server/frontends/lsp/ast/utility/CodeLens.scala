@@ -18,7 +18,7 @@ case class CodeLens(
     /** The command this code lens represents. */
     command: Option[String] = None,
     /** The command this code lens represents. */
-    data: Option[Any] = None
+    args: Option[Seq[AnyRef]] = None
 ) extends HasRangePositions with BelongsToFile {
   override def rangePositions: Seq[RangePosition] = Seq(range)
   override def file = range.file

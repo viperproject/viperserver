@@ -12,9 +12,7 @@ import viper.silver.parser.PStringLiteral
 import viper.silver.plugin.standard.adt._
 
 object HasCodeLens {
-  def apply(p: PProgram, methodInference: Boolean): Seq[CodeLens] = p.deepCollect({
-    case m: PMethod if methodInference => Some(CodeLens(RangePosition(m).get, "Infer Specifications", Some("viper.verify"), Some(m.idndef.name))).toSeq
-  }).flatten
+  def apply(p: PProgram): Seq[CodeLens] = p.deepCollect(PartialFunction.empty).flatten
 }
 
 object HasDocumentSymbol {

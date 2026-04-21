@@ -209,6 +209,14 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     }
   }
 
+  def sendInferenceResults(irs: InferenceResultParams): Unit = {
+    try{
+      client.get.notifyInferenceResults(irs)
+    } catch {
+      case e: Throwable => logger.debug(s"Error while sending inference results: $e")
+    }
+  }
+
   def refreshEndings(): Future[Array[String]] = {
     client.map{_.requestVprFileEndings().asScala.map(response => {
       _vprFileEndings = Some(response.fileEndings)

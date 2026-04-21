@@ -46,13 +46,6 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     }
   }
 
-  val methodInference: ScallopOption[Boolean] = opt[Boolean]("methodInference",
-    descr = "Toggle option to infer specifications for methods.",
-    default = Some(false),
-    noshort = true,
-    hidden = false
-  )
-
   val backendSpecificCache: ScallopOption[Boolean] = opt[Boolean]("backendSpecificCache",
     descr = "Use a separate cache for each backend?",
     default = Some(false),
