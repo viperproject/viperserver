@@ -14,6 +14,7 @@ import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
 import viper.server.frontends.lsp.file.FileContent
 import viper.server.frontends.lsp.Lsp4jSemanticHighlight
+
 import org.eclipse.lsp4j
 import viper.silver.ast.utility.lsp
 import viper.server.frontends.lsp.Common
@@ -132,7 +133,6 @@ trait StandardManager extends Manager {
     cas
   }
   containers.addOne(codeActionContainer)
-
   def getCodeAction(diag: lsp4j.Diagnostic): Seq[lsp4j.CodeAction] = codeActionContainer.get(diag)
   def addCodeAction(first: Boolean)(vs: Seq[CodeAction]): Unit = add(codeActionContainer, first, vs.map(v => initCodeActionKey(v)).flatten)
 

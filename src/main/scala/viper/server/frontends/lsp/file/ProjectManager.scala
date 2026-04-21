@@ -141,6 +141,8 @@ trait ProjectManager extends ProjectAware {
     })
     grouped foreach (g => toC(g._1)(g._2))
   }
+  def addCodeAction(first: Boolean)(vs: Seq[CodeAction]): Unit =
+    addBtf(uri => getInProject(uri).addCodeAction(first), vs)
 
   override def addCodeAction(first: Boolean)(vs: Seq[CodeAction]): Unit =
     addBtf(uri => getInProject(uri).addCodeAction(first), vs)
