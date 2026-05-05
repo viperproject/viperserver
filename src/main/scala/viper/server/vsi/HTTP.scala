@@ -78,7 +78,6 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
     ast_jobs = new JobPool("AST-pool", active_jobs)
     ver_jobs = new JobPool("Verification-pool", active_jobs)
     bindingFuture = Http().newServerAt("localhost", port).bindFlow(setRoutes())
-    _termActor = system.actorOf(Terminator.props(ast_jobs, ver_jobs, Some(bindingFuture)), Terminator.GetNextTerminatorName)
     bindingFuture.map { serverBinding =>
       val newPort = serverBinding.localAddress.getPort
       if (port == 0) {
@@ -90,6 +89,11 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
       isRunning = true
       Done
     }
+  }
+
+  override protected def onExit(): Future[Unit] = {
+    if (bindingFuture == null) Future.unit
+    else bindingFuture.flatMap(_.unbind()).map(_ => ())
   }
 
   /** The returned future is completed when the server is stopped.
