@@ -15,11 +15,10 @@ import viper.server.ViperConfig
 import viper.server.core.VerificationExecutionContext
 import viper.viperserver.BuildInfo
 
-import scala.concurrent.Future
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.{Future, Promise}
 import scala.jdk.CollectionConverters._
 import scala.jdk.FutureConverters._
-import scala.language.postfixOps
+import java.util.concurrent.TimeUnit
 
 trait StandardReceiver {
   val coordinator: ClientCoordinator
@@ -121,8 +120,12 @@ trait LanguageReceiver extends StandardReceiver with LanguageServer {
     // we instruct the server to stop all verifications but we only wait for 2s for their completion since
     // the LSP client expects a response within 3s
     val stopVerifications = coordinator.stopAllRunningVerifications()
-    val timeout = akka.pattern.after(2 seconds)(Future.unit)(executor.actorSystem)
-    Future.firstCompletedOf(Seq(stopVerifications, timeout)).asJava.thenApply(_ => null.asInstanceOf[AnyRef]).toCompletableFuture()
+    val timeoutPromise = Promise[Unit]()
+    executor.scheduler.schedule(new Runnable {
+      override def run(): Unit = timeoutPromise.trySuccess(())
+    }, 2L, TimeUnit.SECONDS)
+    Future.firstCompletedOf(Seq(stopVerifications, timeoutPromise.future))(executor)
+      .asJava.thenApply(_ => null.asInstanceOf[AnyRef]).toCompletableFuture()
   }
 
   override def setTrace(params: SetTraceParams): Unit = {

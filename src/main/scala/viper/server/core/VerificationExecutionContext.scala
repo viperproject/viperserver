@@ -6,7 +6,7 @@
 
 package viper.server.core
 
-import java.util.concurrent.{ExecutorService, Executors, ThreadFactory, TimeUnit}
+import java.util.concurrent.{ExecutorService, Executors, ScheduledExecutorService, ThreadFactory, TimeUnit}
 import java.util.{concurrent => java_concurrent}
 
 import akka.actor.ActorSystem
@@ -17,6 +17,7 @@ import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorServic
 trait VerificationExecutionContext extends ExecutionContext {
   def executorService: ExecutorService
   def actorSystem: ActorSystem
+  def scheduler: ScheduledExecutorService
   def submit(r: Runnable): java_concurrent.Future[_]
   /** terminate executor and actor system */
   def terminate(timeoutMSec: Long = 1000): Unit
@@ -62,6 +63,16 @@ class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_Syste
     })
   override def executorService: ExecutorService = service
 
+  private lazy val schedulerService: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactory {
+    private val mCount = new java.util.concurrent.atomic.AtomicInteger(1)
+    override def newThread(runnable: Runnable): Thread = {
+      val t = new Thread(runnable, s"$threadNamePrefix-scheduler-${mCount.getAndIncrement()}")
+      t.setDaemon(true)
+      t
+    }
+  })
+  override def scheduler: ScheduledExecutorService = schedulerService
+
   private lazy val context: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(executorService)
 
   override def execute(runnable: Runnable): Unit = context.execute(runnable)
@@ -78,6 +89,7 @@ class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_Syste
     val oldSystem = actorSystem
     system = None
     Await.ready(oldSystem.terminate(), FiniteDuration(timeoutMSec, TimeUnit.MILLISECONDS))
+    schedulerService.shutdownNow()
     executorService.shutdown()
     executorService.awaitTermination(timeoutMSec, TimeUnit.MILLISECONDS)
   }

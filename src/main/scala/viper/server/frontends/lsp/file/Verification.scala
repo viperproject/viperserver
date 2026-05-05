@@ -9,9 +9,10 @@ package viper.server.frontends.lsp.file
 import ch.qos.logback.classic.Logger
 import viper.server.frontends.lsp
 import scala.concurrent.Future
-import viper.server.core.ViperBackendConfig
+import viper.server.core.{ViperBackendConfig, VerificationExecutionContext}
 import viper.server.vsi.{AstJobId, VerJobId}
-import scala.concurrent.ExecutionContext
+import scala.concurrent.Promise
+import java.util.concurrent.TimeUnit
 import akka.actor.Props
 
 import viper.server.frontends.lsp.VerificationSuccess._
@@ -90,7 +91,7 @@ trait VerificationManager extends ManagesLeaf {
       .recover(_ => false)
   }
 
-  implicit def ec: ExecutionContext
+  implicit def ec: VerificationExecutionContext
   var lastPhase: Option[VerificationPhase.VerificationPhase] = None
 
   private var futureAst: Option[Future[Unit]] = None
@@ -112,12 +113,12 @@ trait VerificationManager extends ManagesLeaf {
     future.map(_ => this.synchronized(f))
   }
 
-  private val system = akka.actor.ActorSystem("delayer")
   def delay[T](ms: Int)(block: => T): Future[T] = {
-    import scala.concurrent.duration._
-    akka.pattern.after(ms.millis, system.scheduler) {
-      Future(block)
-    }
+    val promise = Promise[T]()
+    ec.scheduler.schedule(new Runnable {
+      override def run(): Unit = promise.completeWith(Future(block))
+    }, ms.toLong, TimeUnit.MILLISECONDS)
+    promise.future
   }
 
   //other
