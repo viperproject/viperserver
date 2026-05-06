@@ -6,7 +6,6 @@
 
 package viper.server.vsi
 
-import akka.actor.ActorRef
 import akka.stream.scaladsl.SourceQueueWithComplete
 import org.reactivestreams.Publisher
 
@@ -30,19 +29,19 @@ case class VerJobId(id: Int) extends JobId {
 
 sealed trait JobHandle {
   def tag: String  // identify the kind of job this is
-  val job_actor: ActorRef
+  val execution: JobExecution[_]
   val queue: SourceQueueWithComplete[Envelope]
   val publisher: Publisher[Envelope]
 }
 
-case class AstHandle[R](job_actor: ActorRef,
+case class AstHandle[R](execution: JobExecution[_],
                         queue: SourceQueueWithComplete[Envelope],
                         publisher: Publisher[Envelope],
                         artifact: Future[R]) extends JobHandle {
   def tag = "AST"
 }
 
-case class VerHandle(job_actor: ActorRef,
+case class VerHandle(execution: JobExecution[_],
                      queue: SourceQueueWithComplete[Envelope],
                      publisher: Publisher[Envelope],
                      prev_job_id: Option[AstJobId]) extends JobHandle {

@@ -7,18 +7,15 @@
 package viper.server.vsi
 
 import akka.{Done, NotUsed}
-import akka.actor.{ActorRef, ActorSystem, PoisonPill, Status}
-import akka.pattern.ask
+import akka.actor.{ActorRef, ActorSystem, Status}
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.stream.OverflowStrategy
 import akka.util.Timeout
 import viper.server.core.VerificationExecutionContext
 
-import scala.concurrent.duration._
 import scala.concurrent.Future
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success}
-import scala.language.postfixOps
 
 
 abstract class VerificationServerException extends Exception
@@ -97,36 +94,27 @@ trait VerificationServer extends Post {
               Future.successful(VerHandle(null, null, null, prev_job_id_maybe))
           }
         case Some(task) =>
-          /** What we really want here is SourceQueueWithComplete[Envelope]
-            * Publisher[Envelope] might be needed to create a stream later on,
-            * but the publisher and the queue are synchronized are should be viewed
-            * as different representation of the same concept.
-            */
           val (queue, publisher) = Source.queue[Envelope](10000, OverflowStrategy.backpressure)
             .toMat(Sink.asPublisher(false))(Keep.both).run()
 
           task.setQueue(queue)
 
-          val job_actor = system.actorOf(JobActor.props(new_jid), s"${pool.tag}_job_actor_${new_jid}")
+          val execution = new JobExecution(task.futureTask)
 
           /** Register cleanup task. */
           queue.watchCompletion().onComplete(_ => {
             if (discardOnCompletion) {
-                pool.discardJob(new_jid)
-                /** FIXME: if the job actors are meant to be reused from one phase to another (only partially implemented),
-                  * FIXME: then they should be stopped only after the **last** job is completed in the pipeline. */
-                job_actor ! PoisonPill
+              pool.discardJob(new_jid)
             }
           })
 
-          (job_actor ? (new_jid match {
+          execution.start(executor.executorService)
+
+          val handle: JobHandle = new_jid match {
             case _: AstJobId =>
-              VerificationProtocol.ConstructAst(task, queue, publisher, executor)
+              AstHandle(execution, queue, publisher, task.artifact)
             case _: VerJobId =>
-              VerificationProtocol.Verify(task, queue, publisher,
-                /** TODO: Use factories for specializing the messages.
-                  * TODO: Clearly, there should be a clean separation between concrete job types
-                  * TODO: (AST Construction, Verification) and generic types (JobHandle). */
+              VerHandle(execution, queue, publisher,
                 prev_job_id_maybe match {
                   case Some(prev_job_id: AstJobId) =>
                     Some(prev_job_id)
@@ -134,10 +122,10 @@ trait VerificationServer extends Post {
                     throw new IllegalArgumentException(s"cannot map ${prev_job_id.toString} to expected type AstJobId")
                   case None =>
                     None
-                }, executor)
-          })).mapTo[T]
+                })
+          }
+          Future.successful(handle.asInstanceOf[T])
       }
-      /** TODO avoid hardcoded parameters */
 
     }).recover({
       case e: AstConstructionException =>
@@ -290,19 +278,17 @@ trait VerificationServer extends Post {
   /** This method interrupts active jobs upon termination of the server.
     */
   protected def getInterruptFutureList(): Future[List[String]] = {
-    implicit val askTimeout: Timeout = Timeout(1000 milliseconds)
     val handles = ver_jobs.jobHandles ++ ast_jobs.jobHandles
-    val interrupt_future_list: List[Future[String]] = handles map {
-      case (_, handle_future) =>
-        handle_future.flatMap {
-          case AstHandle(actor, _, _, _) =>
-            (actor ? VerificationProtocol.StopAstConstruction).mapTo[String]
-          case VerHandle(actor, _, _, _) =>
-            (actor ? VerificationProtocol.StopVerification).mapTo[String]
-        }
-      } toList
-    val overall_interrupt_future: Future[List[String]] = Future.sequence(interrupt_future_list)
-    overall_interrupt_future
+    val interrupt_future_list: List[Future[String]] = handles.map {
+      case (jid, handle_future) =>
+        handle_future.map(handle => formatInterruptResult(jid, handle.execution.cancel()))
+    }.toList
+    Future.sequence(interrupt_future_list)
+  }
+
+  protected def formatInterruptResult(jid: JobId, interrupted: Boolean): String = {
+    if (interrupted) s"$jid has been successfully interrupted."
+    else s"$jid has already been finalized."
   }
 }
 

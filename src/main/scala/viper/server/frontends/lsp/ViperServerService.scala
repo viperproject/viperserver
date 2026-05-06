@@ -6,10 +6,6 @@
 
 package viper.server.frontends.lsp
 
-import scala.language.postfixOps
-import akka.actor.PoisonPill
-import akka.pattern.ask
-import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
@@ -17,13 +13,11 @@ import viper.server.frontends.lsp.file.RelayHandler
 import viper.server.utility.ReformatterAstGenerator
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.utility.Helpers.validateViperFile
-import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
 import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
 import viper.silver.parser.ReformatPrettyPrinter
 import viper.silver.ast.utility.FileLoader
 
 import scala.concurrent.Future
-import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
 class ViperServerService(config: ViperConfig)(override implicit val executor: VerificationExecutionContext)
@@ -133,17 +127,12 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
 
   private def stopOnlyVerification(handle: VerHandle, combinedLogger: Logger): Future[Boolean] = {
     handle match {
-      // If AST construction failed, a verification handle will be returned where the actor field is null.
+      // If AST construction failed, a verification handle will be returned where the execution field is null.
       case VerHandle(null, _, _, _) => Future.successful(false)
-      case _ => {
-        implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-        val interrupt: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
-        handle.job_actor ! PoisonPill // the actor played its part.
-        interrupt.map(msg => {
-          combinedLogger.info(msg)
-          true
-        })
-      }
+      case _ =>
+        val interrupted = handle.execution.cancel()
+        combinedLogger.info(formatInterruptResult(VerJobId(-1), interrupted))
+        Future.successful(true)
     }
   }
 
@@ -151,9 +140,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
   def discardAstJobLookup(jid: AstJobId): Unit = {
     ast_jobs.lookupJob(jid).map({job =>
       ast_jobs.discardJob(jid)
-      job.map(astHandle => astHandle.queue.watchCompletion().onComplete(_ => {
-        astHandle.job_actor ! PoisonPill
-      }))
+      job
     })
   }
 
@@ -168,8 +155,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     ast_jobs.lookupJob(jid) match {
       case Some(handle_future) =>
         handle_future.map { handle =>
-          handle.job_actor ! StopAstConstruction
-          handle.job_actor ! PoisonPill // the actor played its part.
+          handle.execution.cancel()
           combinedLogger.info(s"ast construction stopped for job #$jid")
           true
         }

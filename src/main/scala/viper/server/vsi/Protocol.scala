@@ -6,42 +6,7 @@
 
 package viper.server.vsi
 
-import akka.stream.scaladsl.SourceQueueWithComplete
-import org.reactivestreams.Publisher
 import spray.json.{DefaultJsonProtocol, RootJsonFormat}
-import viper.server.core.VerificationExecutionContext
-
-object VerificationProtocol {
-
-  sealed trait StartProcessRequest[T] {
-    val task: MessageStreamingTask[T]
-    val queue: SourceQueueWithComplete[Envelope]
-    val publisher: Publisher[Envelope]
-    val executor: VerificationExecutionContext
-  }
-
-  // Request Job Actor to execute an AST construction task
-  case class ConstructAst[T](task: MessageStreamingTask[T],
-                             queue: SourceQueueWithComplete[Envelope],
-                             publisher: Publisher[Envelope],
-                             executor: VerificationExecutionContext) extends StartProcessRequest[T]
-
-  // Request Job Actor to execute a verification task
-  case class Verify[T](task: MessageStreamingTask[T],
-                       queue: SourceQueueWithComplete[Envelope],
-                       publisher: Publisher[Envelope],
-                       prev_job_id: Option[AstJobId],
-                       executor: VerificationExecutionContext) extends StartProcessRequest[T]
-
-  sealed trait StopProcessRequest
-
-  // Request Job Actor to stop its verification task
-  case object StopAstConstruction extends StopProcessRequest
-
-  // Request Job Actor to stop its verification task
-  case object StopVerification extends StopProcessRequest
-}
-
 
 object Requests extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
 

@@ -7,19 +7,14 @@
 package viper.server.vsi
 
 import akka.{Done, NotUsed}
-import akka.actor.PoisonPill
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.marshalling.ToResponseMarshallable
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
-import akka.pattern.ask
 import akka.stream.scaladsl.Source
-import akka.util.Timeout
-import viper.server.vsi.VerificationProtocol.StopVerification
 
 import scala.concurrent.{Future, Promise}
-import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
 /** This trait contains the bear essentials required for an HTTP server.
@@ -226,12 +221,8 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
         case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>
-              implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-              val interrupt_done: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
-              onSuccess(interrupt_done) { msg =>
-                handle.job_actor ! PoisonPill // the actor played its part.
-                complete(discardJobConfirmation(id, msg))
-              }
+              val msg = formatInterruptResult(ver_id, handle.execution.cancel())
+              complete(discardJobConfirmation(id, msg))
             case Failure(_) =>
               complete(discardJobRejection(id))
           }
