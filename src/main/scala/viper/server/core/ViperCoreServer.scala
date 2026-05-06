@@ -6,9 +6,6 @@
 
 package viper.server.core
 
-import akka.Done
-import akka.actor.ActorRef
-import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
@@ -16,17 +13,13 @@ import viper.silver.ast.Program
 import viper.silver.ast.utility.FileLoader
 import viper.silver.logger.ViperLogger
 
-import scala.concurrent.duration._
 import scala.concurrent.Future
-import scala.language.postfixOps
 
 abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: VerificationExecutionContext) extends VerificationServer with ViperPost {
 
   override type AST = Program
 
   // --- VCS : Configuration ---
-
-  override lazy val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
 
   /** global logger that should be used for the server's entire lifetime. Log messages are reported to the global logger as well as local one (if they exist) */
   val globalLogger: Logger = getGlobalLogger(config)
@@ -51,11 +44,11 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     * This function must be called before any other. Calling any other function before this one
     * will result in an IllegalStateException.
     */
-  def start(): Future[Done] = {
+  def start(): Future[Unit] = {
     ViperCache.initialize(globalLogger, config.backendSpecificCache(), config.cacheFile.toOption)
     start(config.maximumActiveJobs()) map { _ =>
       globalLogger.info(s"ViperCoreServer has started.")
-      Done
+      ()
     }
   }
 
@@ -123,15 +116,6 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
         s"The maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
     }
     ver_id
-  }
-
-  override def streamMessages(jid: VerJobId, clientActor: ActorRef, include_ast: Boolean): Option[Future[Done]] = {
-    globalLogger.info(s"Streaming results for job #${jid.id}.")
-    super.streamMessages(jid, clientActor, include_ast)
-  }
-  override def streamMessages(jid: AstJobId, clientActor: ActorRef): Option[Future[Done]] = {
-    globalLogger.info(s"Streaming results for job #${jid.id}.")
-    super.streamMessages(jid, clientActor)
   }
 
   def flushCache(localLogger: Option[Logger] = None): Boolean = {

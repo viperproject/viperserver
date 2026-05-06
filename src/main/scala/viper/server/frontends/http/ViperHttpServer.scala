@@ -7,7 +7,6 @@
 package viper.server.frontends.http
 
 import java.net.InetSocketAddress
-import akka.Done
 import edu.mit.csail.sdg.alloy4.A4Reporter
 import edu.mit.csail.sdg.parser.CompUtil
 import edu.mit.csail.sdg.translator.{A4Options, TranslateAlloyToKodkod}
@@ -27,19 +26,19 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
 
   var port: Int = 0
   private var undertow: Undertow = _
-  private val stoppedPromise: Promise[Done] = Promise()
+  private val stoppedPromise: Promise[Unit] = Promise()
 
   private val routes: ViperCaskRoutes = new ViperCaskRoutes(this)
 
-  override def start(): Future[Done] = {
+  override def start(): Future[Unit] = {
     port = config.port.toOption.getOrElse(0)
     super.start().map { _ =>
       println(s"ViperServer online at http://localhost:$port")
-      Done
+      ()
     }(executor)
   }
 
-  override def start(active_jobs: Int): Future[Done] = {
+  override def start(active_jobs: Int): Future[Unit] = {
     ast_jobs = new JobPool("AST-pool", active_jobs)
     ver_jobs = new JobPool("Verification-pool", active_jobs)
     undertow = Undertow.builder()
@@ -50,7 +49,7 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
     val boundAddr = undertow.getListenerInfo.get(0).getAddress.asInstanceOf[InetSocketAddress]
     port = boundAddr.getPort
     isRunning = true
-    Future.successful(Done)
+    Future.unit
   }
 
   override protected def onExit(): Future[Unit] = {
@@ -66,7 +65,7 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
   }
 
   /** Future that resolves once the server has been shut down via /exit. */
-  def stopped(): Future[Done] = stoppedPromise.future
+  def stopped(): Future[Unit] = stoppedPromise.future
 
   /** Triggered by the `/exit` route. Stops jobs, unbinds the listener, then
     * completes the `stopped()` future.
@@ -83,7 +82,7 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
         println("forcibly shutting down...")
         "forcibly shutting down..."
     }
-    stoppedPromise.complete(confirmation.map(_ => Done))
+    stoppedPromise.complete(confirmation.map(_ => ()))
     ServerStopConfirmed(msg).toJson.compactPrint
   }
 

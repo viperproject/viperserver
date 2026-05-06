@@ -25,17 +25,11 @@ lazy val server = (project in file("."))
         fork := true,
 
         libraryDependencies += "net.liftweb" %% "lift-json" % "3.5.0",
-        libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.6.10",
-        libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json" % "10.2.1",
-        libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.6.10",
-        libraryDependencies += "com.typesafe.akka" %% "akka-stream-testkit" % "2.6.10" % Test,
-        libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.2.1" % Test,
         libraryDependencies += "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.20.1", // Java implementation of language server protocol
-        libraryDependencies += "com.lihaoyi" %% "cask" % "0.9.5", // Lightweight HTTP server (replacing Akka HTTP)
-        libraryDependencies += "com.lihaoyi" %% "upickle" % "4.0.2", // JSON marshalling for cask
+        libraryDependencies += "com.lihaoyi" %% "cask" % "0.9.5", // Lightweight HTTP server (replaces Akka HTTP)
         libraryDependencies += "io.spray" %% "spray-json" % "1.3.6", // JSON AST and serialization (existing marshallers)
-        // upickle and geny pull conflicting transitive versions across the dependency tree;
-        // accept the newer ones since they are the consumers' preferred versions.
+        // upickle is pulled transitively by cask. Silver depends on an older
+        // upickle so allow the newer version (cask's) to win.
         libraryDependencySchemes += "com.lihaoyi" %% "upickle" % "always",
         libraryDependencySchemes += "com.lihaoyi" %% "upickle-core" % "always",
         libraryDependencySchemes += "com.lihaoyi" %% "upickle-implicits" % "always",

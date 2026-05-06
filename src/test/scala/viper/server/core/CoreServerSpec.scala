@@ -7,9 +7,6 @@
 package viper.server.core
 
 import java.nio.file.Paths
-import akka.actor.{Actor, Props, Status}
-import akka.pattern.ask
-import akka.util.Timeout
 import org.eclipse.lsp4j.{MessageActionItem, MessageParams, Position, PublishDiagnosticsParams, Range, ShowMessageRequestParams}
 import org.scalatest.exceptions.TestFailedException
 import org.scalatest.matchers.should.Matchers
@@ -520,64 +517,24 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       verifyMultipleFiles(core, List(fileBeforeModification, fileAfterReorderingDomainFunctions, fileAfterReorderingDomainAxioms), handleResult)(context)
     })
 
-    object ClientActor {
-      case object ReportOutcome
-      def props(): Props = Props(new ClientActor())
-    }
-
-    class ClientActor() extends Actor {
-
-      private var outcome: Option[Boolean] = None
-      private val outcomePromise: Promise[Boolean] = Promise()
-
-      override def receive: PartialFunction[Any, Unit] = {
-        case m: Message =>
-          m match {
-            case _: OverallSuccessMessage => outcome = Some(true)
-            case _: OverallFailureMessage => outcome = Some(false)
-            case _ =>
-          }
-        case ClientActor.ReportOutcome =>
-          sender() ! outcomePromise.future
-        case Status.Success =>
-          // Success is sent when the stream is completed
-          if (outcome.isEmpty) {
-            // we should have received an overall message by now
-            outcomePromise.failure(new RuntimeException("expected to receive an overall verification message but received none so far"))
-          } else {
-            outcomePromise.success(outcome.get)
-          }
-        case Status.Failure(f) => outcomePromise.failure(f)
-      }
-    }
-
-    s"be able to verify multiple programs with caching disabled and retrieve results via `streamMessages()`" in withServer[ViperCoreServer]({ (core, context) =>
+    s"be able to verify multiple programs with caching disabled and retrieve results via `collectMessages()`" in withServer[ViperCoreServer]({ (core, context) =>
       implicit val ctx: VerificationExecutionContext = context
-      val test_actors = 0 to 2 map (_ => context.actorSystem.actorOf(ClientActor.props()))
       val jids = files.map(file => verifySiliconWithoutCaching(core, file))
-      // stream messages to actors
-      val jidsWithActors = jids zip test_actors
-      val streamOptionsWithActors = jidsWithActors map { case (jid, actor) => (core.streamMessages(jid, actor, include_ast = true), actor) }
-      // stream options should be defined
-      val streamDones = streamOptionsWithActors map { case (streamOption, actor) =>
-        assert(streamOption.isDefined)
-        val streamDoneFuture = streamOption.get
-        // as soon as stream completes, complete it with the actor
-        streamDoneFuture.map(_ => actor)
+      val outcomeFutures: Seq[Future[Boolean]] = jids.map { jid =>
+        core.collectMessages(jid).getOrElse(Future.failed(JobNotFoundException)).map { msgs =>
+          val outcomes = msgs.collect {
+            case _: OverallSuccessMessage => true
+            case _: OverallFailureMessage => false
+          }
+          if (outcomes.isEmpty) {
+            throw new RuntimeException("expected to receive an overall verification message but received none")
+          }
+          outcomes.head
+        }
       }
-      // streamDones futures should eventually be resolved
-      val allVerificationsFuture = Future.sequence(streamDones)
-      val outcomesFuture = allVerificationsFuture.flatMap(actors => {
-        val outcomeFutures = actors.map(actor => {
-          implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-          (actor ? ClientActor.ReportOutcome).mapTo[Future[Boolean]].flatten
-        })
-        Future.sequence(outcomeFutures)
-      })
-      val assertionsFuture = outcomesFuture.map(_.zip(files) map { case (outcome, file) =>
+      val assertionsFuture = Future.sequence(outcomeFutures).map(_.zip(files) map { case (outcome, file) =>
         assert(outcome == (file != ver_error_file))
       })
-      // map assertionsFuture to a single assertion:
       assertionsFuture.map(_ => Succeeded)
     })
 

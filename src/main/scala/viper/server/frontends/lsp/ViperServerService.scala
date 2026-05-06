@@ -18,7 +18,6 @@ import viper.silver.parser.ReformatPrettyPrinter
 import viper.silver.ast.utility.FileLoader
 
 import scala.concurrent.Future
-import scala.util.{Failure, Success}
 
 class ViperServerService(config: ViperConfig)(override implicit val executor: VerificationExecutionContext)
   extends ViperCoreServer(config)(executor) with DefaultVerificationServerStart {
@@ -74,13 +73,8 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
   def startStreamingAst(jid: AstJobId, handler: RelayHandler, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
     val logger = combineLoggers(localLogger)
     logger.debug(s"Sending ast construct request to ViperServer...")
-    messageEnvelopeSource(jid).map(_.flatMap { case (ast_handle, ast_source) =>
-      val done = ast_source.map(e => unpack(e)).runForeach(handler.handleMessage)
-      done.onComplete {
-        case Success(_) => handler.onStreamSuccess()
-        case Failure(e) => handler.onStreamFailure(e)
-      }
-      ast_handle.stream.watchCompletion
+    messageEnvelopes(jid).map(_.flatMap { case (_, iter) =>
+      drainIteratorTo(iter, handler)
     })
   }
   def startStreamingVer(jid: VerJobId, handler: RelayHandler, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
@@ -93,14 +87,26 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
   }
 
   private def runStreamWithHandler(jid: VerJobId, handler: RelayHandler, include_ast: Boolean): Option[Future[Unit]] = {
-    messageEnvelopeSource(jid, include_ast).map(_.flatMap { case (ver_handle, combined_source) =>
-      val done = combined_source.map(e => unpack(e)).runForeach(handler.handleMessage)
-      done.onComplete {
-        case Success(_) => handler.onStreamSuccess()
-        case Failure(e) => handler.onStreamFailure(e)
-      }
-      ver_handle.stream.watchCompletion
+    messageEnvelopes(jid, include_ast).map(_.flatMap { case (_, iter) =>
+      drainIteratorTo(iter, handler)
     })
+  }
+
+  /** Drains `iter` on the executor's thread pool, dispatching messages to
+    * `handler`. The returned future completes when the iterator is exhausted
+    * or fails, after the corresponding terminal handler callback has run.
+    */
+  private def drainIteratorTo(iter: Iterator[viper.server.vsi.Envelope], handler: RelayHandler): Future[Unit] = {
+    Future {
+      try {
+        for (env <- iter) handler.handleMessage(unpack(env))
+        handler.onStreamSuccess()
+      } catch {
+        case e: Throwable =>
+          handler.onStreamFailure(e)
+          throw e
+      }
+    }(executor)
   }
 
   def stopVerification(jid: VerJobId, localLogger: Option[Logger] = None): Future[Boolean] = {

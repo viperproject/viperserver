@@ -6,10 +6,6 @@
 
 package viper.server.vsi
 
-import akka.{Done, NotUsed}
-import akka.actor.{ActorRef, ActorSystem, Status}
-import akka.stream.scaladsl.{Sink, Source}
-import akka.util.Timeout
 import viper.server.core.VerificationExecutionContext
 
 import scala.concurrent.Future
@@ -21,28 +17,17 @@ abstract class VerificationServerException extends Exception
 case object JobNotFoundException extends VerificationServerException
 abstract class AstConstructionException extends VerificationServerException
 
-/** This trait provides state and process management functionality for verification servers.
+/** State and process management for verification servers.
   *
-  * The server runs on Akka's actor system. This means that the entire server's state
-  * and process management are run by actors. The 3 actors in charge are:
-  *
-  *   1) Job Actor
-  *   2) Queue Actor
-  *   3) Terminator Actor
-  *
-  *  The first two actors manage individual verification processes. I.e., on
-  *  initializeVerificationProcess() and instance of each actor is created. The JobActor launches
-  *  the actual VerificationTask, while the QueueActor acts as a middleman for communication
-  *  between a VerificationTask's backend and the server. The Terminator Actor is in charge of
-  *  terminating both individual processes and the server.
+  * Each booked job owns a `JobExecution` (cancellable Future-task wrapper) and an
+  * `EnvelopeStream` over which the backend streams messages back to consumers.
+  * Two pools (AST construction, verification) are managed in parallel.
   */
 trait VerificationServer extends Post {
 
   type AST
 
   implicit val executor: VerificationExecutionContext
-  implicit val system: ActorSystem = executor.actorSystem
-  implicit def askTimeout: Timeout
 
   /** Hook invoked from `stop()` after all jobs have been interrupted. Default
     * is a no-op. The HTTP frontend overrides this to unbind its server port.
@@ -59,13 +44,12 @@ trait VerificationServer extends Post {
 
   /** Configures an instance of VerificationServer.
     *
-    * This function must be called before any other. Calling any other function before this one
-    * will result in an IllegalStateException.
-    * The returned future resolves when the server has been started.
-    *
-    * Note that a default implementation is provided in DefaultVerificationServerStart
+    * Calling any other function before this one will result in an
+    * IllegalStateException. The returned future resolves when the server has
+    * been started. A default implementation is provided in
+    * `DefaultVerificationServerStart`.
     */
-  def start(active_jobs: Int): Future[Done]
+  def start(active_jobs: Int): Future[Unit]
 
   protected def initializeProcess[S <: JobId, T <: JobHandle : ClassTag]
       (pool: JobPool[S, T],
@@ -79,14 +63,12 @@ trait VerificationServer extends Post {
 
     require(pool.newJobsAllowed)
 
-    /** Ask the pool to book a new job using the above function
-      * to construct Future[JobHandle] and Promise[AST] later on. */
     pool.bookNewJob((new_jid: S) => task_maybe_fut.flatMap((task_maybe: Option[MessageStreamingTask[_]]) => {
       task_maybe match {
         case None =>
-          /** If there's no task, that means their prerequisite tasks haven't produced usable artifacts.
-            * The sole purpose of this task is hence to hold the identifier of its predecessor.
-            * We should remove this task from the job pool. */
+          /** No task means a prerequisite produced no usable artifact; the placeholder
+            * just holds the predecessor's id and is removed from the pool.
+            */
           pool.discardJob(new_jid)
           new_jid match {
             case _: VerJobId =>
@@ -94,12 +76,10 @@ trait VerificationServer extends Post {
           }
         case Some(task) =>
           val stream = new EnvelopeStream()
-
           task.setStream(stream)
 
           val execution = new JobExecution(task.futureTask)
 
-          /** Register cleanup task. */
           stream.watchCompletion.onComplete(_ => {
             if (discardOnCompletion) {
               pool.discardJob(new_jid)
@@ -127,8 +107,7 @@ trait VerificationServer extends Post {
 
     }).recover({
       case e: AstConstructionException =>
-        // If the AST construction phase failed, remove the verification job handle
-        // from the corresponding pool.
+        // If the AST construction phase failed, drop the verification job handle.
         val msg = s"AST construction job ${prev_job_id_maybe.get} resulted in a failure: $e"
         println(msg)
         pool.discardJob(new_jid)
@@ -151,10 +130,7 @@ trait VerificationServer extends Post {
     ast_jobs.discardJob(jid)
   }
 
-  /** This method starts a verification process.
-    *
-    * As such, it accepts an instance of a VerificationTask, which it will pass to the JobActor.
-    */
+  /** Starts a verification process. */
   protected def initializeVerificationProcess(task_maybe_fut: Future[Option[MessageStreamingTask[Unit]]],
                                               ast_job_id_maybe: Option[AstJobId]): VerJobId = {
     if (!isRunning) {
@@ -168,10 +144,10 @@ trait VerificationServer extends Post {
     }
   }
 
-  /** Build the combined Envelope source for a verification job (optionally
-    * prepending the AST job's messages). Callers attach a sink to consume.
+  /** Combined envelope iterator for a verification job, optionally prepending
+    * the AST job's messages. Caller iterates synchronously to drain.
     */
-  protected def messageEnvelopeSource(jid: VerJobId, include_ast: Boolean): Option[Future[(VerHandle, Source[Envelope, NotUsed])]] = {
+  protected def messageEnvelopes(jid: VerJobId, include_ast: Boolean): Option[Future[(VerHandle, Iterator[Envelope])]] = {
     if (!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
@@ -180,82 +156,55 @@ trait VerificationServer extends Post {
       handle_future.flatMap((ver_handle: VerHandle) => {
         ver_handle.prev_job_id match {
           case _ if !include_ast =>
-            Future.successful((None, ver_handle))
+            Future.successful((None: Option[AstHandle[Option[AST]]], ver_handle))
           case None =>
-            Future.successful((None, ver_handle))
+            Future.successful((None: Option[AstHandle[Option[AST]]], ver_handle))
           case Some(ast_id) =>
             ast_jobs.lookupJob(ast_id) match {
               case Some(ast_handle_fut) =>
-                ast_handle_fut.map(ast_handle => (Some(ast_handle), ver_handle))
+                ast_handle_fut.map(ast_handle => (Some(ast_handle): Option[AstHandle[Option[AST]]], ver_handle))
               case None =>
-                Future.successful((None, ver_handle))
+                Future.successful((None: Option[AstHandle[Option[AST]]], ver_handle))
             }
         }
       }).map {
-        case (ast_handle_maybe: Option[AstHandle[Option[AST]]], ver_handle: VerHandle) =>
-          val ver_source = ver_handle match {
-            case VerHandle(null, null, _) =>
-              Source.empty[Envelope]
-            case _ =>
-              Source.fromIterator(() => ver_handle.stream.iterator)
+        case (ast_handle_maybe, ver_handle) =>
+          val ver_iter: Iterator[Envelope] = ver_handle match {
+            case VerHandle(null, null, _) => Iterator.empty
+            case _ => ver_handle.stream.iterator
           }
-          val combined_source = ast_handle_maybe match {
-            case None => ver_source
-            case Some(ast_handle) => ver_source.prepend(Source.fromIterator(() => ast_handle.stream.iterator))
+          val combined: Iterator[Envelope] = ast_handle_maybe match {
+            case None => ver_iter
+            case Some(ast_handle) => ast_handle.stream.iterator ++ ver_iter
           }
-          (ver_handle, combined_source)
+          (ver_handle, combined)
       })
   }
 
-  /** Build the Envelope source for an AST job. */
-  protected def messageEnvelopeSource(jid: AstJobId): Option[Future[(AstHandle[Option[AST]], Source[Envelope, NotUsed])]] = {
+  /** Envelope iterator for an AST job. */
+  protected def messageEnvelopes(jid: AstJobId): Option[Future[(AstHandle[Option[AST]], Iterator[Envelope])]] = {
     if (!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
 
     ast_jobs.lookupJob(jid).map(_.map(ast_handle =>
-      (ast_handle, Source.fromIterator(() => ast_handle.stream.iterator))))
+      (ast_handle, ast_handle.stream.iterator)))
   }
 
-  /** Stream all messages generated by the Verification backend to some actor.
-    * If `include_ast` is set, this will also stream the AST messages.
-    *
-    * Deletes the JobHandle on completion.
-    */
-  protected def streamMessages(jid: VerJobId, clientActor: ActorRef, include_ast: Boolean): Option[Future[Done]] = {
-    messageEnvelopeSource(jid, include_ast).map(_.flatMap { case (ver_handle, combined_source) =>
-      val sink = Sink.actorRef(clientActor, Status.Success, Status.Failure)
-      combined_source.map(e => unpack(e)).runWith(sink)
-      ver_handle.stream.watchCompletion.map(_ => Done)
-    })
-  }
-
-  /** Collect all messages generated by a verification job (including AST
-    * messages) into a list. Returns None if the job is unknown.
-    */
+  /** Collect all messages from a verification job (including AST messages) into a list. */
   def collectMessages(jid: VerJobId): Option[Future[List[A]]] = {
-    messageEnvelopeSource(jid, include_ast = true).map(_.flatMap { case (_, combined_source) =>
-      combined_source.map(e => unpack(e)).runFold(List.empty[A])(_ :+ _)
-    })
-  }
-
-  /** Stream all messages generated by the AST backend to some actor.
-    *
-    * Deletes the JobHandle on completion.
-    */
-  protected def streamMessages(jid: AstJobId, clientActor: ActorRef): Option[Future[Done]] = {
-    messageEnvelopeSource(jid).map(_.flatMap { case (ast_handle, ast_source) =>
-      ast_source.map(e => unpack(e)).runWith(Sink.actorRef(clientActor, Status.Success, Status.Failure))
-      ast_handle.stream.watchCompletion.map(_ => Done)
+    messageEnvelopes(jid, include_ast = true).map(_.flatMap { case (_, iter) =>
+      Future {
+        iter.map(e => unpack(e)).toList
+      }(executor)
     })
   }
 
   /** Stops an instance of VerificationServer from running.
-    * The actor system and executor do not get terminated and are the responsibility of the caller
     *
-    * As such it should be the last method called. Calling any other function after stop will
-    * result in an IllegalStateException.
-    * */
+    * Should be the last method called. Calling any other function after `stop`
+    * will result in an IllegalStateException.
+    */
   def stop(): Future[List[String]] = {
     if(!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
@@ -271,8 +220,7 @@ trait VerificationServer extends Post {
     })
   }
 
-  /** This method interrupts active jobs upon termination of the server.
-    */
+  /** Interrupts all active jobs (used during server shutdown). */
   protected def getInterruptFutureList(): Future[List[String]] = {
     val handles = ver_jobs.jobHandles ++ ast_jobs.jobHandles
     val interrupt_future_list: List[Future[String]] = handles.map {
@@ -289,10 +237,10 @@ trait VerificationServer extends Post {
 }
 
 trait DefaultVerificationServerStart extends VerificationServer {
-  override def start(active_jobs: Int): Future[Done] = {
+  override def start(active_jobs: Int): Future[Unit] = {
     ast_jobs = new JobPool("VSI-AST-pool", active_jobs)
     ver_jobs = new JobPool("VSI-Verification-pool", active_jobs)
     isRunning = true
-    Future.successful(Done)
+    Future.unit
   }
 }
