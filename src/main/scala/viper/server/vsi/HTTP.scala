@@ -150,7 +150,7 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
         case Some(handle_future) =>
           onComplete(handle_future) {
             case Success(handle) =>
-              val s: Source[Envelope, NotUsed] = Source.fromPublisher(handle.publisher)
+              val s: Source[Envelope, NotUsed] = Source.fromIterator(() => handle.stream.iterator)
               complete(unpackMessages(s))
             case Failure(error) =>
               // TODO use AST-specific response
@@ -190,18 +190,18 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
           })) {
             case Success((ast_handle_maybe, ver_handle)) =>
               val ver_source = ver_handle match {
-                case VerHandle(null, null, null, _) =>
+                case VerHandle(null, null, _) =>
                   /** There were no messages produced during verification. */
                   Source.empty[Envelope]
                 case _ =>
-                  Source.fromPublisher(ver_handle.publisher)
+                  Source.fromIterator(() => ver_handle.stream.iterator)
               }
               val ast_source = ast_handle_maybe match {
                 case None =>
                   /** The AST messages were already consumed. */
                   Source.empty[Envelope]
                 case Some(ast_handle) =>
-                  Source.fromPublisher(ast_handle.publisher)
+                  Source.fromIterator(() => ast_handle.stream.iterator)
               }
               val resulting_source = ver_source.prepend(ast_source)
               complete(unpackMessages(resulting_source))

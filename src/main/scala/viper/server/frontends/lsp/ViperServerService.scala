@@ -80,7 +80,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
         case Success(_) => handler.onStreamSuccess()
         case Failure(e) => handler.onStreamFailure(e)
       }
-      ast_handle.queue.watchCompletion().map(_ => ())
+      ast_handle.stream.watchCompletion
     })
   }
   def startStreamingVer(jid: VerJobId, handler: RelayHandler, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
@@ -99,7 +99,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
         case Success(_) => handler.onStreamSuccess()
         case Failure(e) => handler.onStreamFailure(e)
       }
-      ver_handle.queue.watchCompletion().map(_ => ())
+      ver_handle.stream.watchCompletion
     })
   }
 
@@ -128,7 +128,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
   private def stopOnlyVerification(handle: VerHandle, combinedLogger: Logger): Future[Boolean] = {
     handle match {
       // If AST construction failed, a verification handle will be returned where the execution field is null.
-      case VerHandle(null, _, _, _) => Future.successful(false)
+      case VerHandle(null, _, _) => Future.successful(false)
       case _ =>
         val interrupted = handle.execution.cancel()
         combinedLogger.info(formatInterruptResult(VerJobId(-1), interrupted))

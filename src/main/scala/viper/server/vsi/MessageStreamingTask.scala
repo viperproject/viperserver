@@ -7,21 +7,18 @@
 package viper.server.vsi
 
 import java.util.concurrent.{Callable, FutureTask}
-import akka.stream.scaladsl.SourceQueueWithComplete
 import ch.qos.logback.classic.Logger
 
-import scala.concurrent.duration._
-import scala.concurrent.{Await, Future, Promise}
+import scala.concurrent.{Future, Promise}
 import scala.util.Try
 
 
 
-/** This class is a generic wrapper for a any sort of task a VerificationServer might
-  * work on.
+/** Generic wrapper for any task a VerificationServer might work on.
   *
-  * Implements Callable and provides an artifact future that completes when the task
-  * terminates. Holds a reference to a SourceQueue used to push backend messages to
-  * downstream consumers.
+  * Implements Callable and provides an artifact future that completes when the
+  * task terminates. Holds a reference to an `EnvelopeStream` used to push
+  * backend messages to downstream consumers.
   * */
 abstract class MessageStreamingTask[T] extends Callable[T] with Post {
 
@@ -31,19 +28,18 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
     override def done(): Unit = artifactPromise.complete(Try(get()))
   }
 
-  private var queue: SourceQueueWithComplete[Envelope] = _
+  private var stream: EnvelopeStream = _
   private var hasEnded: Boolean = false
 
-  final def setQueue(q: SourceQueueWithComplete[Envelope]): Unit = {
-    if (queue != null) {
-      throw new IllegalStateException("cannot set queue - a queue has already been set")
+  final def setStream(s: EnvelopeStream): Unit = {
+    if (stream != null) {
+      throw new IllegalStateException("cannot set stream - a stream has already been set")
     }
-    queue = q
+    stream = s
   }
 
-  /** Offers `msg` to the downstream queue, blocking until the offer resolves.
-    * With the default backpressure overflow strategy, this naturally throttles the
-    * verification thread when consumers are slow.
+  /** Offers `msg` to the downstream stream, blocking until queue space is available
+    * (natural backpressure when consumers are slow).
     */
   protected def enqueueMessage(msg: Envelope, logger: Logger): Unit = {
     if (hasEnded) {
@@ -52,7 +48,7 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
 
     logger.trace(s"enqueueMessage: $msg")
     try {
-      Await.result(queue.offer(msg), Duration.Inf)
+      stream.offer(msg)
     } catch {
       case ex: Exception =>
         logger.error(s"exception in enqueueMessage occurred: $ex")
@@ -60,9 +56,9 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
     }
   }
 
-  /** Closes the downstream queue, signalling the end of the message stream.
+  /** Closes the downstream stream, signalling the end of the message stream.
     *
-    * @param success retained for API compatibility; queue completion is the same
+    * @param success retained for API compatibility; stream completion is the same
     *                regardless of success/failure outcome.
     */
   protected def registerTaskEnd(success: Boolean, logger: Logger): Unit = {
@@ -72,6 +68,6 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
 
     hasEnded = true
     logger.trace(s"registerTaskEnd: $success")
-    queue.complete()
+    stream.complete()
   }
 }

@@ -6,9 +6,6 @@
 
 package viper.server.vsi
 
-import akka.stream.scaladsl.SourceQueueWithComplete
-import org.reactivestreams.Publisher
-
 import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.mutable
 import scala.concurrent.{Future, Promise}
@@ -30,20 +27,17 @@ case class VerJobId(id: Int) extends JobId {
 sealed trait JobHandle {
   def tag: String  // identify the kind of job this is
   val execution: JobExecution[_]
-  val queue: SourceQueueWithComplete[Envelope]
-  val publisher: Publisher[Envelope]
+  val stream: EnvelopeStream
 }
 
 case class AstHandle[R](execution: JobExecution[_],
-                        queue: SourceQueueWithComplete[Envelope],
-                        publisher: Publisher[Envelope],
+                        stream: EnvelopeStream,
                         artifact: Future[R]) extends JobHandle {
   def tag = "AST"
 }
 
 case class VerHandle(execution: JobExecution[_],
-                     queue: SourceQueueWithComplete[Envelope],
-                     publisher: Publisher[Envelope],
+                     stream: EnvelopeStream,
                      prev_job_id: Option[AstJobId]) extends JobHandle {
   def tag = "VER"
 }
