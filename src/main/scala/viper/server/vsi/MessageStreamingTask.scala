@@ -7,15 +7,11 @@
 package viper.server.vsi
 
 import java.util.concurrent.{Callable, FutureTask}
-import scala.language.postfixOps
-import akka.actor.ActorRef
-import akka.pattern.ask
-import akka.stream.QueueOfferResult
-import akka.util.Timeout
+import akka.stream.scaladsl.SourceQueueWithComplete
 import ch.qos.logback.classic.Logger
 
-import scala.concurrent.{Await, Future, Promise}
 import scala.concurrent.duration._
+import scala.concurrent.{Await, Future, Promise}
 import scala.util.Try
 
 
@@ -23,12 +19,9 @@ import scala.util.Try
 /** This class is a generic wrapper for a any sort of task a VerificationServer might
   * work on.
   *
-  * It has the following properties:
-  *  - implements callable and provides an artifact future that completes when the task terminates
-  *  - provides a reference to a queue actor.
-  *
-  *  The first serves the purpose of running the task concurrently. The second allows to
-  *  communicate from the verification process to the server.
+  * Implements Callable and provides an artifact future that completes when the task
+  * terminates. Holds a reference to a SourceQueue used to push backend messages to
+  * downstream consumers.
   * */
 abstract class MessageStreamingTask[T] extends Callable[T] with Post {
 
@@ -38,52 +31,40 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
     override def done(): Unit = artifactPromise.complete(Try(get()))
   }
 
-  private var q_actor: ActorRef = _
+  private var queue: SourceQueueWithComplete[Envelope] = _
   private var hasEnded: Boolean = false
 
-  final def setQueueActor(actor: ActorRef): Unit = {
-    if (q_actor != null) {
-      throw new IllegalStateException("cannot set queue actor - a queue actor has already been set")
+  final def setQueue(q: SourceQueueWithComplete[Envelope]): Unit = {
+    if (queue != null) {
+      throw new IllegalStateException("cannot set queue - a queue has already been set")
     }
-
-    q_actor = actor
+    queue = q
   }
 
-  /** Sends massage to the attached actor.
-    *
-    * The actor receiving this message offers it to a queue. This offering returns a Future,
-    * which  will eventually indicate whether or not the offer was successful. This method is
-    * blocking, as it waits for the successful completion of such an offer.
-    * */
+  /** Offers `msg` to the downstream queue, blocking until the offer resolves.
+    * With the default backpressure overflow strategy, this naturally throttles the
+    * verification thread when consumers are slow.
+    */
   protected def enqueueMessage(msg: Envelope, logger: Logger): Unit = {
     if (hasEnded) {
       throw new IllegalStateException("cannot enqueue message - message streaming task's end has already been registered")
     }
 
     logger.trace(s"enqueueMessage: $msg")
-    implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-    // answer is a future that will resolve with the actor's response to the BackendReport request
-    val answer = (q_actor ? TaskProtocol.BackendReport(msg)).mapTo[Future[QueueOfferResult]]
-    // currentOffer is the future that the actor will send in its response (assuming that no timeout occurred requesting it from the actor)
-    // currentOffer will resolve when the message is dequeued from the queue
-    val currentOffer = answer.flatten
     try {
-      // note that an exception is thrown if the currentOffer future fails, e.g. because the askTimeout occurred
-      Await.result(currentOffer, Duration.Inf)
+      Await.result(queue.offer(msg), Duration.Inf)
     } catch {
       case ex: Exception =>
         logger.error(s"exception in enqueueMessage occurred: $ex")
-        // rethrow exception:
         throw ex
     }
   }
 
-  /** Notify the queue actor that the task has come to an end
+  /** Closes the downstream queue, signalling the end of the message stream.
     *
-    * The actor receiving this message will close the queue.
-    *
-    * @param success indicates whether or not the task has ended as successfully.
-    * */
+    * @param success retained for API compatibility; queue completion is the same
+    *                regardless of success/failure outcome.
+    */
   protected def registerTaskEnd(success: Boolean, logger: Logger): Unit = {
     if (hasEnded) {
       throw new IllegalStateException("cannot register task end - message streaming task's end has already been registered")
@@ -91,6 +72,6 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
 
     hasEnded = true
     logger.trace(s"registerTaskEnd: $success")
-    q_actor ! TaskProtocol.FinalBackendReport(success)
+    queue.complete()
   }
 }

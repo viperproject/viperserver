@@ -105,14 +105,7 @@ trait VerificationServer extends Post {
           val (queue, publisher) = Source.queue[Envelope](10000, OverflowStrategy.backpressure)
             .toMat(Sink.asPublisher(false))(Keep.both).run()
 
-          /** This actor will be responsible for managing ONE queue,
-            * whereas the JobActor can manage multiple tasks, all of which are related to some pipeline,
-            * e.g.   [Text] ---> [AST] ---> [VerificationResult]
-            *        '--- Task I ----'                         |
-            *                    '---------- Task II ----------'
-            **/
-          val message_actor = system.actorOf(QueueActor.props(queue), s"${pool.tag}--message_actor--${new_jid.id}")
-          task.setQueueActor(message_actor)
+          task.setQueue(queue)
 
           val job_actor = system.actorOf(JobActor.props(new_jid), s"${pool.tag}_job_actor_${new_jid}")
 

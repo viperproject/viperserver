@@ -11,12 +11,6 @@ import org.reactivestreams.Publisher
 import spray.json.{DefaultJsonProtocol, RootJsonFormat}
 import viper.server.core.VerificationExecutionContext
 
-// Protocol to communicate with QueueActor
-object TaskProtocol {
-  case class BackendReport(msg: Envelope)
-  case class FinalBackendReport(success: Boolean)
-}
-
 object VerificationProtocol {
 
   sealed trait StartProcessRequest[T] {
