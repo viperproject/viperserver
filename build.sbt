@@ -33,6 +33,7 @@ lazy val server = (project in file("."))
         libraryDependencies += "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.20.1", // Java implementation of language server protocol
         libraryDependencies += "com.lihaoyi" %% "cask" % "0.9.5", // Lightweight HTTP server (replacing Akka HTTP)
         libraryDependencies += "com.lihaoyi" %% "upickle" % "4.0.2", // JSON marshalling for cask
+        libraryDependencies += "io.spray" %% "spray-json" % "1.3.6", // JSON AST and serialization (existing marshallers)
         // upickle and geny pull conflicting transitive versions across the dependency tree;
         // accept the newer ones since they are the consumers' preferred versions.
         libraryDependencySchemes += "com.lihaoyi" %% "upickle" % "always",

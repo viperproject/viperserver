@@ -8,7 +8,7 @@ package viper.server.vsi
 
 import spray.json.{DefaultJsonProtocol, RootJsonFormat}
 
-object Requests extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport with DefaultJsonProtocol {
+object Requests extends DefaultJsonProtocol {
 
   case class VerificationRequest(arg: String)
   implicit val VerificationRequest_format: RootJsonFormat[VerificationRequest] = jsonFormat1(VerificationRequest.apply)
