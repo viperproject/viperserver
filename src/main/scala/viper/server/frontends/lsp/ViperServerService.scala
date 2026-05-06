@@ -7,12 +7,13 @@
 package viper.server.frontends.lsp
 
 import scala.language.postfixOps
-import akka.actor.{PoisonPill, Props}
+import akka.actor.PoisonPill
 import akka.pattern.ask
 import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
+import viper.server.frontends.lsp.file.RelayHandler
 import viper.server.utility.ReformatterAstGenerator
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.utility.Helpers.validateViperFile
@@ -23,6 +24,7 @@ import viper.silver.ast.utility.FileLoader
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.util.{Failure, Success}
 
 class ViperServerService(config: ViperConfig)(override implicit val executor: VerificationExecutionContext)
   extends ViperCoreServer(config)(executor) with DefaultVerificationServerStart {
@@ -70,26 +72,41 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     }
   }
 
-  def startStreaming(jid: VerJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
+  def startStreaming(jid: VerJobId, handler: RelayHandler, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
     val logger = combineLoggers(localLogger)
     logger.debug("Sending verification request to ViperServer...")
-    val relay_actor = system.actorOf(relayActor_props)
-    streamMessages(jid, relay_actor, include_ast = true).map(_.map(_ => ()))
+    runStreamWithHandler(jid, handler, include_ast = true)
   }
-  def startStreamingAst(jid: AstJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
+  def startStreamingAst(jid: AstJobId, handler: RelayHandler, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
     val logger = combineLoggers(localLogger)
-    val relay_actor = system.actorOf(relayActor_props)
-    logger.debug(s"Sending ast construct request to ViperServer... (${relay_actor.toString()})")
-    streamMessages(jid, relay_actor).map(_.map(_ => ()))
+    logger.debug(s"Sending ast construct request to ViperServer...")
+    messageEnvelopeSource(jid).map(_.flatMap { case (ast_handle, ast_source) =>
+      val done = ast_source.map(e => unpack(e)).runForeach(handler.handleMessage)
+      done.onComplete {
+        case Success(_) => handler.onStreamSuccess()
+        case Failure(e) => handler.onStreamFailure(e)
+      }
+      ast_handle.queue.watchCompletion().map(_ => ())
+    })
   }
-  def startStreamingVer(jid: VerJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
+  def startStreamingVer(jid: VerJobId, handler: RelayHandler, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
     val logger = combineLoggers(localLogger)
-    val relay_actor = system.actorOf(relayActor_props)
-    logger.debug(s"Sending verification request to ViperServer... (${relay_actor.toString()})")
-    streamMessages(jid, relay_actor, include_ast = false).map(_.map(_ => {
+    logger.debug(s"Sending verification request to ViperServer...")
+    runStreamWithHandler(jid, handler, include_ast = false).map(_.map(r => {
       logger.debug("Done verification request to ViperServer...")
-      ()
+      r
     }))
+  }
+
+  private def runStreamWithHandler(jid: VerJobId, handler: RelayHandler, include_ast: Boolean): Option[Future[Unit]] = {
+    messageEnvelopeSource(jid, include_ast).map(_.flatMap { case (ver_handle, combined_source) =>
+      val done = combined_source.map(e => unpack(e)).runForeach(handler.handleMessage)
+      done.onComplete {
+        case Success(_) => handler.onStreamSuccess()
+        case Failure(e) => handler.onStreamFailure(e)
+      }
+      ver_handle.queue.watchCompletion().map(_ => ())
+    })
   }
 
   def stopVerification(jid: VerJobId, localLogger: Option[Logger] = None): Future[Boolean] = {

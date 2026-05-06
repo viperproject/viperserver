@@ -13,7 +13,6 @@ import viper.server.core.{ViperBackendConfig, VerificationExecutionContext}
 import viper.server.vsi.{AstJobId, VerJobId}
 import scala.concurrent.Promise
 import java.util.concurrent.TimeUnit
-import akka.actor.Props
 
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.server.frontends.lsp.VerificationState._
@@ -244,7 +243,7 @@ trait VerificationManager extends ManagesLeaf {
         errorCount = 0
         diagnosticCount = 0
         handler.waitOn(verJob)
-        val receiver = props(Some(backendClassName))
+        val receiver = newRelayHandler(Some(backendClassName))
         futureVer = coordinator.server.startStreamingVer(verJob, receiver, Some(coordinator.localLogger))
         true
       } else {
@@ -266,7 +265,7 @@ trait VerificationManager extends ManagesLeaf {
     if (astJob.id >= 0) {
       this.resetDiagnostics(true)
       // Execute all handles
-      val newFut = coordinator.server.startStreamingAst(astJob, props(None), Some(coordinator.localLogger))
+      val newFut = coordinator.server.startStreamingAst(astJob, newRelayHandler(None), Some(coordinator.localLogger))
       futureAst = newFut
       handler.waitOn(astJob)
       Some(astJob)
@@ -275,7 +274,7 @@ trait VerificationManager extends ManagesLeaf {
     }
   }
 
-  def props(backendClassName: Option[String]): Props
+  def newRelayHandler(backendClassName: Option[String]): RelayHandler
 
   def processErrors(backendClassName: Option[String], errors: Seq[AbstractError], errorMsgPrefix: Option[String] = None): Unit = {
     val errMsgPrefixWithWhitespace = errorMsgPrefix.map(s => s"$s ").getOrElse("")

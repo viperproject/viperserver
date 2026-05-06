@@ -6,7 +6,6 @@
 
 package viper.server.frontends.lsp.file
 
-import akka.actor.{Actor, PoisonPill, Props, Status}
 import viper.server.frontends.lsp
 import viper.server.frontends.lsp.VerificationState._
 import viper.server.frontends.lsp.VerificationSuccess._
@@ -17,7 +16,7 @@ import viper.server.frontends.lsp.file.ProgressCoordinator
 import viper.silver.parser._
 
 trait MessageHandler extends ProjectManager with VerificationManager with QuantifierCodeLens with QuantifierInlayHints with SignatureHelp {
-  override def props(backendClassName: Option[String]): Props = RelayActor.props(this, backendClassName)
+  override def newRelayHandler(backendClassName: Option[String]): RelayHandler = new RelayHandler(this, backendClassName)
 
   var progress: ProgressCoordinator = null
 
@@ -84,13 +83,7 @@ trait MessageHandler extends ProjectManager with VerificationManager with Quanti
   }
 }
 
-object RelayActor {
-  def props(task: MessageHandler, backendClassName: Option[String]): Props = Props(new RelayActor(task, backendClassName))
-
-  case class GetReportedErrors()
-}
-
-class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends Actor {
+class RelayHandler(task: MessageHandler, backendClassName: Option[String]) {
   val coordinator = task.coordinator
 
   /**
@@ -98,7 +91,7 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
     * `ErrorMessage`). Storing the position along with the error fixes the issue that two errors with offending nodes
     * at different position just get dropped.
     */
-  var reportedErrors: Set[(AbstractError, Option[ast.Position])] = Set.empty
+  private var reportedErrors: Set[(AbstractError, Option[ast.Position])] = Set.empty
   /** helper function to add an error to `reportedErrors` */
   private def markErrorAsReported(err: AbstractError): Unit = err match {
     case err: ErrorMessage => reportedErrors = reportedErrors + ((err, Some(err.offendingNode.pos)))
@@ -112,112 +105,114 @@ class RelayActor(task: MessageHandler, backendClassName: Option[String]) extends
     case _ => reportedErrors.contains((err, None))
   }
 
-  override def receive: PartialFunction[Any, Unit] = {
-    case m if task.is_aborting =>
+  def getReportedErrors: Seq[AbstractError] = reportedErrors.toSeq.map(_._1)
+
+  def handleMessage(m: Message): Unit = {
+    if (task.is_aborting) {
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] ignoring message because we are aborting: $m")
+      return
+    }
+    m match {
+      case PProgramReport(typeckSuccess, pProgram) =>
+        // New project
+        coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] got new pProgram for ${task.filename}")
+        val files = pProgram.imports.flatMap(_.resolved).map(_.toUri().toString()).toSet
+        task.setupProject(files)
+        val parseSuccess = pProgram.errors.isEmpty
+        val phase = if (typeckSuccess) VerificationPhase.TypeckEnd
+          else if (parseSuccess) VerificationPhase.ParseEnd
+          else VerificationPhase.ParseStart
+        if (typeckSuccess || task.lastPhase.forall(_.order <= phase.order)) {
+          task.resetContainers(true)
+          task.lastPhase = Some(phase)
 
-    case PProgramReport(typeckSuccess, pProgram) =>
-      // New project
-      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] got new pProgram for ${task.filename}")
-      val files = pProgram.imports.flatMap(_.resolved).map(_.toUri().toString()).toSet
-      task.setupProject(files)
-      val parseSuccess = pProgram.errors.isEmpty
-      val phase = if (typeckSuccess) VerificationPhase.TypeckEnd
-        else if (parseSuccess) VerificationPhase.ParseEnd
-        else VerificationPhase.ParseStart
-      if (typeckSuccess || task.lastPhase.forall(_.order <= phase.order)) {
-        task.resetContainers(true)
-        task.lastPhase = Some(phase)
-
-        val beginnerMode = coordinator.server.config.beginnerMode()
-        task.addCodeLens(true)(HasCodeLens(pProgram))
-        task.addDocumentSymbol(true)(HasDocumentSymbol(pProgram).toSeq)
-        task.addHoverHint(true)(HasHoverHints(pProgram))
-        task.addGotoDefinition(true)(HasGotoDefinitions(pProgram))
-        task.addFindReferences(true)(HasReferenceTos(pProgram))
-        task.addFoldingRange(true)(HasFoldingRanges(pProgram))
-        task.addInlayHint(true)(HasInlayHints(pProgram, beginnerMode))
-        task.addSemanticHighlight(true)(HasSemanticHighlights(pProgram))
-        task.addSignatureHelp(true)(HasSignatureHelps(pProgram))
-        task.addSuggestionScopeRange(true)(HasSuggestionScopeRanges(pProgram))
-        task.addCompletionProposal(true)(HasCompletionProposals(pProgram))
-      }
-    case StatisticsReport(m, f, p, _, _) =>
-      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] StatisticsReport")
-      task.progress = new ProgressCoordinator(coordinator, p, f, m)
-      val params = lsp.StateChangeParams(VerificationRunning.id, progress = 0, filename = task.filename)
-      coordinator.sendStateChangeNotification(params, Some(task))
-    case AstConstructionFailureMessage(_, res) =>
-      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] AstConstructionFailureMessage")
-      markErrorsAsReported(res.errors)
-      task.processErrors(backendClassName, res.errors, Some("Constructing the AST has failed:"))
-    case ExceptionReport(e) =>
-      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] ExceptionReport (${e.toString()}, ${e.getStackTrace().toString()})")
-      task.processErrors(backendClassName, Seq(AbortedExceptionally(e)))
-    case InvalidArgumentsReport(_, errors) =>
-      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] InvalidArgumentsReport")
-      markErrorsAsReported(errors)
-      task.processErrors(backendClassName, errors, Some(s"Invalid arguments have been passed to the backend $backendClassName:"))
-    case EntitySuccessMessage(_, concerning, _, _) =>
-      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] EntitySuccessMessage")
-      if (task.progress == null) {
-        coordinator.logger.debug("The backend must send a VerificationStart message before the ...Verified message.")
-      } else {
-        val output = lsp.BackendOutput(lsp.BackendOutputType.FunctionVerified, name = concerning.name)
-        task.progress.updateProgress(output)
-        val progressPercentage = task.progress.toPercent
-        val params = lsp.StateChangeParams(VerificationRunning.id, progress = progressPercentage, filename = task.filename)
+          val beginnerMode = coordinator.server.config.beginnerMode()
+          task.addCodeLens(true)(HasCodeLens(pProgram))
+          task.addDocumentSymbol(true)(HasDocumentSymbol(pProgram).toSeq)
+          task.addHoverHint(true)(HasHoverHints(pProgram))
+          task.addGotoDefinition(true)(HasGotoDefinitions(pProgram))
+          task.addFindReferences(true)(HasReferenceTos(pProgram))
+          task.addFoldingRange(true)(HasFoldingRanges(pProgram))
+          task.addInlayHint(true)(HasInlayHints(pProgram, beginnerMode))
+          task.addSemanticHighlight(true)(HasSemanticHighlights(pProgram))
+          task.addSignatureHelp(true)(HasSignatureHelps(pProgram))
+          task.addSuggestionScopeRange(true)(HasSuggestionScopeRanges(pProgram))
+          task.addCompletionProposal(true)(HasCompletionProposals(pProgram))
+        }
+      case StatisticsReport(m, f, p, _, _) =>
+        coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] StatisticsReport")
+        task.progress = new ProgressCoordinator(coordinator, p, f, m)
+        val params = lsp.StateChangeParams(VerificationRunning.id, progress = 0, filename = task.filename)
         coordinator.sendStateChangeNotification(params, Some(task))
-      }
-    case EntityFailureMessage(_, _, _, res, _) =>
-      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] EntityFailureMessage")
-      markErrorsAsReported(res.errors)
-      task.processErrors(backendClassName, res.errors)
-    case OverallSuccessMessage(_, verificationTime) =>
-      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] OverallSuccessMessage")
-      task.state = VerificationReporting
-      task.timeMs = verificationTime
-      // the completion handler is not yet invoked (but as part of Status.Success)
-    case OverallFailureMessage(_, verificationTime, failure) =>
-      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] OverallFailureMessage")
-      task.state = VerificationReporting
-      task.timeMs = verificationTime
-      // we filter `failure.errors` such that only new errors are reported
-      // this is important since Silicon provides errors as part of EntityFailureMessages and the OverallFailureMessage
-      // where else Carbon does not produce EntityFailureMessages (except for cached members in which case
-      // ViperServer produces EntitySuccessMessage and EntityFailureMessages)
-      val newErrors = failure.errors.filterNot(hasAlreadyBeenReported)
-      markErrorsAsReported(newErrors)
-      task.processErrors(backendClassName, newErrors)
-    case WarningsDuringParsing(warnings) =>
-      markErrorsAsReported(warnings)
-      task.processErrors(backendClassName, warnings)
-    case WarningsDuringTypechecking(warnings) =>
-      markErrorsAsReported(warnings)
-      task.processErrors(backendClassName, warnings)
-    case WarningsDuringVerification(warnings) =>
-      markErrorsAsReported(warnings)
-      task.processErrors(backendClassName, warnings)
-    // the completion handler is not yet invoked (but as part of Status.Success)
-    case QuantifierChosenTriggersMessage(qexp, triggers, oldTriggers) =>
-      coordinator.logger.trace(s"[receive@${task.filename}/${backendClassName.isDefined}] QuantifierChosenTriggersMessage")
-      task.handleQuantifierChosenTriggers(qexp, triggers, oldTriggers)
-    case QuantifierInstantiationsMessage(quantifier, instantiations, magGen, maxCost) =>
-      coordinator.logger.trace(s"[receive@${task.filename}/${backendClassName.isDefined}] QuantifierInstantiationsMessage")
-      task.handleQuantifierInstantiations(quantifier, instantiations, magGen, maxCost)
-    case m: Message =>
-      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] Message")
-      coordinator.client.map{_.notifyUnhandledViperServerMessage(lsp.UnhandledViperServerMessageTypeParams(m.name, m.toString, lsp.LogLevel.Info.id))}
-    case Status.Success =>
-      coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] Status.Success")
-      // Success is sent when the stream is completed
-      if (backendClassName.isDefined) task.completionHandler(0)
-      self ! PoisonPill
-    case Status.Failure(cause) =>
-      coordinator.logger.info(s"[receive@${task.filename}/${backendClassName.isDefined}] Streaming messages has failed in RelayActor with cause $cause")
-      if (backendClassName.isDefined) task.completionHandler(-1) // no success
-      self ! PoisonPill
-    case RelayActor.GetReportedErrors() => sender() ! reportedErrors.toSeq.map(_._1)
-    case e: Throwable => coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] RelayActor received throwable: $e")
+      case AstConstructionFailureMessage(_, res) =>
+        coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] AstConstructionFailureMessage")
+        markErrorsAsReported(res.errors)
+        task.processErrors(backendClassName, res.errors, Some("Constructing the AST has failed:"))
+      case ExceptionReport(e) =>
+        coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] ExceptionReport (${e.toString()}, ${e.getStackTrace().toString()})")
+        task.processErrors(backendClassName, Seq(AbortedExceptionally(e)))
+      case InvalidArgumentsReport(_, errors) =>
+        coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] InvalidArgumentsReport")
+        markErrorsAsReported(errors)
+        task.processErrors(backendClassName, errors, Some(s"Invalid arguments have been passed to the backend $backendClassName:"))
+      case EntitySuccessMessage(_, concerning, _, _) =>
+        coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] EntitySuccessMessage")
+        if (task.progress == null) {
+          coordinator.logger.debug("The backend must send a VerificationStart message before the ...Verified message.")
+        } else {
+          val output = lsp.BackendOutput(lsp.BackendOutputType.FunctionVerified, name = concerning.name)
+          task.progress.updateProgress(output)
+          val progressPercentage = task.progress.toPercent
+          val params = lsp.StateChangeParams(VerificationRunning.id, progress = progressPercentage, filename = task.filename)
+          coordinator.sendStateChangeNotification(params, Some(task))
+        }
+      case EntityFailureMessage(_, _, _, res, _) =>
+        coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] EntityFailureMessage")
+        markErrorsAsReported(res.errors)
+        task.processErrors(backendClassName, res.errors)
+      case OverallSuccessMessage(_, verificationTime) =>
+        coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] OverallSuccessMessage")
+        task.state = VerificationReporting
+        task.timeMs = verificationTime
+      case OverallFailureMessage(_, verificationTime, failure) =>
+        coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] OverallFailureMessage")
+        task.state = VerificationReporting
+        task.timeMs = verificationTime
+        // we filter `failure.errors` such that only new errors are reported
+        // this is important since Silicon provides errors as part of EntityFailureMessages and the OverallFailureMessage
+        // where else Carbon does not produce EntityFailureMessages (except for cached members in which case
+        // ViperServer produces EntitySuccessMessage and EntityFailureMessages)
+        val newErrors = failure.errors.filterNot(hasAlreadyBeenReported)
+        markErrorsAsReported(newErrors)
+        task.processErrors(backendClassName, newErrors)
+      case WarningsDuringParsing(warnings) =>
+        markErrorsAsReported(warnings)
+        task.processErrors(backendClassName, warnings)
+      case WarningsDuringTypechecking(warnings) =>
+        markErrorsAsReported(warnings)
+        task.processErrors(backendClassName, warnings)
+      case WarningsDuringVerification(warnings) =>
+        markErrorsAsReported(warnings)
+        task.processErrors(backendClassName, warnings)
+      case QuantifierChosenTriggersMessage(qexp, triggers, oldTriggers) =>
+        coordinator.logger.trace(s"[receive@${task.filename}/${backendClassName.isDefined}] QuantifierChosenTriggersMessage")
+        task.handleQuantifierChosenTriggers(qexp, triggers, oldTriggers)
+      case QuantifierInstantiationsMessage(quantifier, instantiations, magGen, maxCost) =>
+        coordinator.logger.trace(s"[receive@${task.filename}/${backendClassName.isDefined}] QuantifierInstantiationsMessage")
+        task.handleQuantifierInstantiations(quantifier, instantiations, magGen, maxCost)
+      case other =>
+        coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] Message")
+        coordinator.client.map{_.notifyUnhandledViperServerMessage(lsp.UnhandledViperServerMessageTypeParams(other.name, other.toString, lsp.LogLevel.Info.id))}
+    }
+  }
+
+  def onStreamSuccess(): Unit = {
+    coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] stream success")
+    if (backendClassName.isDefined) task.completionHandler(0)
+  }
+
+  def onStreamFailure(cause: Throwable): Unit = {
+    coordinator.logger.info(s"[receive@${task.filename}/${backendClassName.isDefined}] stream failed: $cause")
+    if (backendClassName.isDefined) task.completionHandler(-1)
   }
 }

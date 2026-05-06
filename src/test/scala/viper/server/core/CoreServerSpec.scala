@@ -31,7 +31,6 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, Future, Promise}
 import scala.util.{Failure, Success}
 import scala.language.postfixOps
-import viper.server.frontends.lsp.file.RelayActor
 
 /**
   * Although the withServer fixture deals with futures, AnyWordSpec as been purposely chosen over AsyncFlatSpec:
@@ -406,10 +405,9 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       coordinator.setClient(new MockClient())
       val fileManager = FileManager(Paths.get(file).toAbsolutePath.toUri.toString, coordinator, None)
       val jid = verifyCarbonWithCaching(core, file)
-      val relayActorRef = context.actorSystem.actorOf(fileManager.props(Some("carbon")))
-      implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-      core.streamMessages(jid, relayActorRef, include_ast = true).getOrElse(Future.failed(JobNotFoundException))
-        .flatMap(_ => (relayActorRef ? RelayActor.GetReportedErrors()).mapTo[Seq[AbstractError]])
+      val handler = fileManager.newRelayHandler(Some("carbon"))
+      core.startStreaming(jid, handler).getOrElse(Future.failed(JobNotFoundException))
+        .map(_ => handler.getReportedErrors)
         .map(actualErrors => {
           val lineNrsOfActualVerificationErrors = actualErrors
             .map(_.pos match {
