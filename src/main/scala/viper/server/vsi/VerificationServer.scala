@@ -60,15 +60,13 @@ trait VerificationServer extends Post {
       (pool: JobPool[S, T],
       task_maybe_fut: Future[Option[MessageStreamingTask[_]]],
       discardOnCompletion: Boolean,
-      prev_job_id_maybe: Option[AstJobId] = None): S = {
+      prev_job_id_maybe: Option[AstJobId] = None): Option[S] = {
 
     if (!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
 
-    require(pool.newJobsAllowed)
-
-    pool.bookNewJob((new_jid: S) => task_maybe_fut.flatMap((task_maybe: Option[MessageStreamingTask[_]]) => {
+    pool.tryBook((new_jid: S) => task_maybe_fut.flatMap((task_maybe: Option[MessageStreamingTask[_]]) => {
       task_maybe match {
         case None =>
           /** No task means a prerequisite produced no usable artifact; the placeholder
@@ -123,12 +121,7 @@ trait VerificationServer extends Post {
     if (!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
-
-    if (ast_jobs.newJobsAllowed) {
-      initializeProcess(ast_jobs, Future.successful(Some(task)), false)
-    } else {
-      AstJobId(-1) // Process Management running  at max capacity.
-    }
+    initializeProcess(ast_jobs, Future.successful(Some(task)), false).getOrElse(AstJobId(-1))
   }
 
   protected def discardAstJob(jid: AstJobId): Unit = {
@@ -141,12 +134,7 @@ trait VerificationServer extends Post {
     if (!isRunning) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
-
-    if (ver_jobs.newJobsAllowed) {
-      initializeProcess(ver_jobs, task_maybe_fut, true, ast_job_id_maybe)
-    } else {
-      VerJobId(-1)  // Process Management running  at max capacity.
-    }
+    initializeProcess(ver_jobs, task_maybe_fut, true, ast_job_id_maybe).getOrElse(VerJobId(-1))
   }
 
   /** Combined envelope iterator for a verification job, optionally prepending

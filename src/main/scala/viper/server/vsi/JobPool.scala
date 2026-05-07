@@ -42,52 +42,44 @@ case class VerHandle(execution: JobExecution[_],
   def tag = "VER"
 }
 
+/** Bounded registry of active jobs. Single mutex guards all access; the API is
+  * compound-action-safe (capacity check + insert is one atomic step).
+  *
+  * `tryBook` registers the entry *before* invoking the start callback so that
+  * synchronous `discardJob` calls inside the callback (used to free the slot
+  * for placeholder/no-op jobs) find a live entry to remove.
+  */
 class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: Int = 3)
                                          (implicit val jid_fact: Int => S) {
 
-  private val _jobHandles: mutable.Map[S, Promise[T]] = mutable.Map()
-  private val _jobExecutors: mutable.Map[S, () => Future[T]] = mutable.Map()
-  private val _jobCache: mutable.Map[S, Future[T]] = mutable.Map()
-  def jobHandles: Map[S, Future[T]] = _jobHandles.map{ case (id, hand) => (id, hand.future) }.toMap
-
+  private val jobs: mutable.Map[S, Future[T]] = mutable.Map()
   private val _nextJobId: AtomicInteger = new AtomicInteger(0)
 
-  def newJobsAllowed: Boolean = jobHandles.size < MAX_ACTIVE_JOBS
+  def jobHandles: Map[S, Future[T]] = synchronized { jobs.toMap }
 
-  def bookNewJob(job_executor: S => Future[T]): S = {
-    require(newJobsAllowed)
-
-    val new_jid: S = jid_fact(_nextJobId.getAndIncrement())
-
-    _jobHandles(new_jid) = Promise()
-    _jobExecutors(new_jid) = () => {
-      if (_jobCache.contains(new_jid)) {
-        /** This prevents recomputing the same future multiple times. */
-        _jobCache(new_jid)
-      } else {
-        /** Create Future[JobHandle]. */
-        val t_fut = job_executor(new_jid)
-
-        /** Cache the newly created Future[JobHandle] for later reference. */
-        _jobCache(new_jid) = t_fut
-        t_fut
-      }
+  /** Atomically: check capacity, allocate a fresh id, register a placeholder
+    * Future, then invoke `buildStart` to obtain the real Future and wire it
+    * into the placeholder. Returns `None` if at capacity.
+    *
+    * `synchronized` is reentrant, so `buildStart` may call `discardJob` on
+    * this pool synchronously without deadlock.
+    */
+  def tryBook(buildStart: S => Future[T]): Option[S] = synchronized {
+    if (jobs.size >= MAX_ACTIVE_JOBS) None
+    else {
+      val jid: S = jid_fact(_nextJobId.getAndIncrement())
+      val promise = Promise[T]()
+      jobs(jid) = promise.future
+      promise.completeWith(buildStart(jid))
+      Some(jid)
     }
-    new_jid
   }
 
-  def discardJob(jid: S): Unit = {
-    _jobHandles -= jid
-    _jobExecutors -= jid
-    _jobCache -= jid
+  def discardJob(jid: S): Unit = synchronized {
+    jobs -= jid
   }
 
-  def lookupJob(jid: S): Option[Future[T]] = {
-    _jobHandles.get(jid).map((promise: Promise[T]) => {
-      /** 1. Execute the job and get the result's future OR get the priorly cached result's future.
-        * 2. Complete the promise with this future. */
-      promise.completeWith(_jobExecutors(jid)())
-      promise.future
-    })
+  def lookupJob(jid: S): Option[Future[T]] = synchronized {
+    jobs.get(jid)
   }
 }
