@@ -16,6 +16,13 @@ import scala.concurrent.{Future, Promise}
   *
   * `complete` enqueues a sentinel so the iterator terminates cleanly even if
   * the consumer is currently waiting on `take`.
+  *
+  * Note: cleanup that must be observable to consumers before they wake up
+  * from the iterator should be registered on the owning task via
+  * `MessageStreamingTask.onSettled`, not here. The task's finalize
+  * sequence runs hooks BEFORE calling `complete()`, which gives a single
+  * canonical "fully settled" signal (`task.settled`) without coupling
+  * cleanup to the stream itself.
   */
 final class EnvelopeStream(capacity: Int = EnvelopeStream.DefaultCapacity) {
   import EnvelopeStream._
@@ -38,7 +45,10 @@ final class EnvelopeStream(capacity: Int = EnvelopeStream.DefaultCapacity) {
     queue.put(Msg(e))
   }
 
-  /** Mark the stream complete. Idempotent. */
+  /** Mark the stream complete. Idempotent. Wakes any iterator waiting on
+    * `take` (via the `Done` sentinel) and any subscriber to
+    * `watchCompletion`.
+    */
   def complete(): Unit = this.synchronized {
     if (!completed) {
       completed = true
@@ -47,7 +57,11 @@ final class EnvelopeStream(capacity: Int = EnvelopeStream.DefaultCapacity) {
     }
   }
 
-  /** Future that resolves when `complete` is called. */
+  /** Future that resolves when `complete` is called. Note: this resolves as
+    * soon as the stream itself is closed and may fire concurrently with
+    * other producer-side cleanup. For "everything is finalized" semantics,
+    * await `MessageStreamingTask.settled` instead.
+    */
   def watchCompletion: Future[Unit] = completionPromise.future
 
   def isCompleted: Boolean = completed

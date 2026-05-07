@@ -80,11 +80,15 @@ trait VerificationServer extends Post {
         case Some(task) =>
           val execution = new JobExecution(task.futureTask)
 
-          task.stream.watchCompletion.onComplete(_ => {
-            if (discardOnCompletion) {
-              pool.discardJob(new_jid)
-            }
-          })
+          if (discardOnCompletion) {
+            // Free the slot as part of the task's finalize sequence: hooks
+            // registered via `onSettled` run before the stream's Done
+            // sentinel is enqueued, so any iterator drainer is guaranteed
+            // to observe `markCompleted` before its `take()` can return.
+            // The entry stays retrievable via `lookupJob` until an
+            // explicit `discardJob` removes it.
+            task.onSettled(() => pool.markCompleted(new_jid))
+          }
 
           execution.start(executor.executorService)
 

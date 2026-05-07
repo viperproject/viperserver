@@ -43,43 +43,61 @@ case class VerHandle(execution: JobExecution[_],
 }
 
 /** Bounded registry of active jobs. Single mutex guards all access; the API is
-  * compound-action-safe (capacity check + insert is one atomic step).
+  * compound-action-safe.
   *
-  * `tryBook` registers the entry *before* invoking the start callback so that
-  * synchronous `discardJob` calls inside the callback (used to free the slot
-  * for placeholder/no-op jobs) find a live entry to remove.
+  * Two maps separate **slot accounting** from **entry visibility**:
+  *  - `active` counts toward `MAX_ACTIVE_JOBS`. Booked jobs land here.
+  *  - `completed` does not. `markCompleted` moves an entry from `active` to
+  *    `completed` so the slot is freed but `lookupJob` still finds it.
+  *
+  * `markCompleted` is invoked synchronously from `EnvelopeStream.complete`'s
+  * sync-hook list, so a consumer awaiting the stream's iterator-drain Future
+  * is guaranteed to see `active.size` decremented before its continuation
+  * runs. Without this, the iterator's `take()` could unblock before the
+  * (async) discard fired, and the next `tryBook` would race-fail.
   */
 class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: Int = 3)
                                          (implicit val jid_fact: Int => S) {
 
-  private val jobs: mutable.Map[S, Future[T]] = mutable.Map()
+  private val active: mutable.Map[S, Future[T]] = mutable.Map()
+  private val completed: mutable.Map[S, Future[T]] = mutable.Map()
   private val _nextJobId: AtomicInteger = new AtomicInteger(0)
 
-  def jobHandles: Map[S, Future[T]] = synchronized { jobs.toMap }
+  /** Active job handles (used at shutdown to interrupt running work). */
+  def jobHandles: Map[S, Future[T]] = synchronized { active.toMap }
 
-  /** Atomically: check capacity, allocate a fresh id, register a placeholder
-    * Future, then invoke `buildStart` to obtain the real Future and wire it
-    * into the placeholder. Returns `None` if at capacity.
+  /** Atomically check capacity, allocate a fresh id, register a placeholder
+    * Future, and start work eagerly via `buildStart`. Returns `None` if at
+    * capacity.
     *
     * `synchronized` is reentrant, so `buildStart` may call `discardJob` on
-    * this pool synchronously without deadlock.
+    * this pool synchronously (used by the placeholder/no-task path).
     */
   def tryBook(buildStart: S => Future[T]): Option[S] = synchronized {
-    if (jobs.size >= MAX_ACTIVE_JOBS) None
+    if (active.size >= MAX_ACTIVE_JOBS) None
     else {
       val jid: S = jid_fact(_nextJobId.getAndIncrement())
       val promise = Promise[T]()
-      jobs(jid) = promise.future
+      active(jid) = promise.future
       promise.completeWith(buildStart(jid))
       Some(jid)
     }
   }
 
+  /** Move the entry from `active` to `completed`. Slot freed; `lookupJob`
+    * still finds the entry until an explicit `discardJob` removes it.
+    */
+  def markCompleted(jid: S): Unit = synchronized {
+    active.remove(jid).foreach { fut => completed(jid) = fut }
+  }
+
+  /** Remove the entry from both maps. Used on explicit cancellation/cleanup. */
   def discardJob(jid: S): Unit = synchronized {
-    jobs -= jid
+    active -= jid
+    completed -= jid
   }
 
   def lookupJob(jid: S): Option[Future[T]] = synchronized {
-    jobs.get(jid)
+    active.get(jid).orElse(completed.get(jid))
   }
 }
