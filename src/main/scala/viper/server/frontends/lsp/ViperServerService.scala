@@ -10,17 +10,16 @@ import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
 import viper.server.frontends.lsp.file.RelayHandler
-import viper.server.utility.ReformatterAstGenerator
-import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.utility.Helpers.validateViperFile
-import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
-import viper.silver.parser.ReformatPrettyPrinter
+import viper.server.utility.ReformatterAstGenerator
+import viper.server.vsi.{AstJobId, VerHandle, VerJobId}
 import viper.silver.ast.utility.FileLoader
+import viper.silver.parser.ReformatPrettyPrinter
 
 import scala.concurrent.Future
 
 class ViperServerService(config: ViperConfig)(override implicit val executor: VerificationExecutionContext)
-  extends ViperCoreServer(config)(executor) with DefaultVerificationServerStart {
+  extends ViperCoreServer(config)(executor) {
 
   def constructAst(file: String, backend: ViperBackendConfig, localLogger: Option[Logger] = None, loader: Option[FileLoader]): AstJobId = {
     val logger = combineLoggers(localLogger)

@@ -33,23 +33,16 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
   override def start(): Future[Unit] = {
     port = config.port.toOption.getOrElse(0)
     super.start().map { _ =>
+      undertow = Undertow.builder()
+        .addHttpListener(port, "localhost")
+        .setHandler(routes.defaultHandler)
+        .build()
+      undertow.start()
+      val boundAddr = undertow.getListenerInfo.get(0).getAddress.asInstanceOf[InetSocketAddress]
+      port = boundAddr.getPort
       println(s"ViperServer online at http://localhost:$port")
       ()
     }(executor)
-  }
-
-  override def start(active_jobs: Int): Future[Unit] = {
-    ast_jobs = new JobPool("AST-pool", active_jobs)
-    ver_jobs = new JobPool("Verification-pool", active_jobs)
-    undertow = Undertow.builder()
-      .addHttpListener(port, "localhost")
-      .setHandler(routes.defaultHandler)
-      .build()
-    undertow.start()
-    val boundAddr = undertow.getListenerInfo.get(0).getAddress.asInstanceOf[InetSocketAddress]
-    port = boundAddr.getPort
-    isRunning = true
-    Future.unit
   }
 
   override protected def onExit(): Future[Unit] = {

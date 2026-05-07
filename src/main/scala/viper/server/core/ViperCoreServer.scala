@@ -8,7 +8,7 @@ package viper.server.core
 
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
-import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
+import viper.server.vsi.{AstHandle, AstJobId, JobPool, VerHandle, VerJobId, VerificationServer}
 import viper.silver.ast.Program
 import viper.silver.ast.utility.FileLoader
 import viper.silver.logger.ViperLogger
@@ -39,18 +39,17 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     }
   }
 
-  /** Configures an instance of ViperCoreServer.
-    *
-    * This function must be called before any other. Calling any other function before this one
-    * will result in an IllegalStateException.
-    */
-  def start(): Future[Unit] = {
-    ViperCache.initialize(globalLogger, config.backendSpecificCache(), config.cacheFile.toOption)
-    start(config.maximumActiveJobs()) map { _ =>
-      globalLogger.info(s"ViperCoreServer has started.")
-      ()
-    }
-  }
+  override protected val ast_jobs: JobPool[AstJobId, AstHandle[Option[Program]]] =
+    new JobPool("AST-pool", config.maximumActiveJobs())
+  override protected val ver_jobs: JobPool[VerJobId, VerHandle] =
+    new JobPool("Verification-pool", config.maximumActiveJobs())
+
+  ViperCache.initialize(globalLogger, config.backendSpecificCache(), config.cacheFile.toOption)
+
+  override def start(): Future[Unit] = super.start().map { _ =>
+    globalLogger.info(s"ViperCoreServer has started.")
+    ()
+  }(executor)
 
   def requestAst(file: String, backend_config: ViperBackendConfig, localLogger: Option[Logger] = None, loader: Option[FileLoader] = None): AstJobId = {
     require(config != null)

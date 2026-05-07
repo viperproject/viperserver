@@ -6,6 +6,8 @@
 
 package viper.server.vsi
 
+import java.util.concurrent.atomic.AtomicBoolean
+
 import viper.server.core.VerificationExecutionContext
 
 import scala.concurrent.Future
@@ -22,6 +24,11 @@ abstract class AstConstructionException extends VerificationServerException
   * Each booked job owns a `JobExecution` (cancellable Future-task wrapper) and an
   * `EnvelopeStream` over which the backend streams messages back to consumers.
   * Two pools (AST construction, verification) are managed in parallel.
+  *
+  * Pools are constructor-initialised by the implementing class, so an instance
+  * is ready as soon as it is constructed. `start()` is a hook for subclass
+  * startup work (e.g. binding an HTTP listener); `stop()` flips the running
+  * flag idempotently.
   */
 trait VerificationServer extends Post {
 
@@ -37,19 +44,17 @@ trait VerificationServer extends Post {
   implicit val ast_id_fact: Int => AstJobId = AstJobId.apply
   implicit val ver_id_fact: Int => VerJobId = VerJobId.apply
 
-  protected var ast_jobs: JobPool[AstJobId, AstHandle[Option[AST]]] = _
-  protected var ver_jobs: JobPool[VerJobId, VerHandle] = _
+  protected val ast_jobs: JobPool[AstJobId, AstHandle[Option[AST]]]
+  protected val ver_jobs: JobPool[VerJobId, VerHandle]
 
-  var isRunning: Boolean = false
+  private val _running: AtomicBoolean = new AtomicBoolean(true)
+  def isRunning: Boolean = _running.get()
 
-  /** Configures an instance of VerificationServer.
-    *
-    * Calling any other function before this one will result in an
-    * IllegalStateException. The returned future resolves when the server has
-    * been started. A default implementation is provided in
-    * `DefaultVerificationServerStart`.
+  /** Hook for subclasses to perform startup work after construction (e.g. bind
+    * an HTTP listener). Default is a no-op. Pools and running state are
+    * already established by the constructor.
     */
-  def start(active_jobs: Int): Future[Unit]
+  def start(): Future[Unit] = Future.unit
 
   protected def initializeProcess[S <: JobId, T <: JobHandle : ClassTag]
       (pool: JobPool[S, T],
@@ -203,13 +208,12 @@ trait VerificationServer extends Post {
   /** Stops an instance of VerificationServer from running.
     *
     * Should be the last method called. Calling any other function after `stop`
-    * will result in an IllegalStateException.
+    * will result in an IllegalStateException. Idempotent: a second call throws.
     */
   def stop(): Future[List[String]] = {
-    if(!isRunning) {
+    if (!_running.compareAndSet(true, false)) {
       throw new IllegalStateException("Instance of VerificationServer already stopped")
     }
-    isRunning = false
     getInterruptFutureList().transform(r => {
       onExit()
       r match {
@@ -233,14 +237,5 @@ trait VerificationServer extends Post {
   protected def formatInterruptResult(jid: JobId, interrupted: Boolean): String = {
     if (interrupted) s"$jid has been successfully interrupted."
     else s"$jid has already been finalized."
-  }
-}
-
-trait DefaultVerificationServerStart extends VerificationServer {
-  override def start(active_jobs: Int): Future[Unit] = {
-    ast_jobs = new JobPool("VSI-AST-pool", active_jobs)
-    ver_jobs = new JobPool("VSI-Verification-pool", active_jobs)
-    isRunning = true
-    Future.unit
   }
 }
