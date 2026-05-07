@@ -44,11 +44,19 @@ trait ManagesLeaf {
   def getInFuture[T](f: => T): Future[T]
 }
 
+/** Per-file state, serialized via the instance's intrinsic monitor.
+  *
+  * The FileManager's `synchronized` is the per-file mutex. RelayHandler
+  * methods, lifecycle methods (`close`), and verification mutators
+  * (`startVerification`, `stop`, …) all acquire it. Reads of multi-field
+  * snapshot state should also synchronize. The lock is reentrant, so
+  * methods that call into each other don't deadlock.
+  */
 case class FileManager(root: LeafManager)(implicit executor: VerificationExecutionContext) extends MessageHandler {
   override val ec: VerificationExecutionContext = executor
   var isOpen: Boolean = true
 
-  def close(): Unit = {
+  def close(): Unit = synchronized {
     teardownProject()
     stopRunningVerification()
   }

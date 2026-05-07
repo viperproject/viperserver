@@ -83,6 +83,13 @@ trait MessageHandler extends ProjectManager with VerificationManager with Quanti
   }
 }
 
+/** Drains backend messages into the owning `MessageHandler` (FileManager).
+  *
+  * All public methods acquire the FileManager's intrinsic monitor (`task`) so
+  * message handling is serialized with respect to LSP request handlers and the
+  * other relay (AST vs. verification streams that share the same FileManager).
+  * This restores the per-file serialization the previous Akka actor provided.
+  */
 class RelayHandler(task: MessageHandler, backendClassName: Option[String]) {
   val coordinator = task.coordinator
 
@@ -90,6 +97,9 @@ class RelayHandler(task: MessageHandler, backendClassName: Option[String]) {
     * errors together with the offending node's position (only for errors that have an offending node (i.e. implement
     * `ErrorMessage`). Storing the position along with the error fixes the issue that two errors with offending nodes
     * at different position just get dropped.
+    *
+    * Accessed only under `task.synchronized` (entered by `handleMessage` /
+    * `getReportedErrors`).
     */
   private var reportedErrors: Set[(AbstractError, Option[ast.Position])] = Set.empty
   /** helper function to add an error to `reportedErrors` */
@@ -105,9 +115,9 @@ class RelayHandler(task: MessageHandler, backendClassName: Option[String]) {
     case _ => reportedErrors.contains((err, None))
   }
 
-  def getReportedErrors: Seq[AbstractError] = reportedErrors.toSeq.map(_._1)
+  def getReportedErrors: Seq[AbstractError] = task.synchronized { reportedErrors.toSeq.map(_._1) }
 
-  def handleMessage(m: Message): Unit = {
+  def handleMessage(m: Message): Unit = task.synchronized {
     if (task.is_aborting) {
       coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] ignoring message because we are aborting: $m")
       return
@@ -206,12 +216,12 @@ class RelayHandler(task: MessageHandler, backendClassName: Option[String]) {
     }
   }
 
-  def onStreamSuccess(): Unit = {
+  def onStreamSuccess(): Unit = task.synchronized {
     coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] stream success")
     if (backendClassName.isDefined) task.completionHandler(0)
   }
 
-  def onStreamFailure(cause: Throwable): Unit = {
+  def onStreamFailure(cause: Throwable): Unit = task.synchronized {
     coordinator.logger.info(s"[receive@${task.filename}/${backendClassName.isDefined}] stream failed: $cause")
     if (backendClassName.isDefined) task.completionHandler(-1)
   }

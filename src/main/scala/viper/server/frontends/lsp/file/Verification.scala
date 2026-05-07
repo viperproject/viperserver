@@ -79,9 +79,9 @@ object VerificationPhase {
 }
 
 trait VerificationManager extends ManagesLeaf {
-  def stopRunningVerification(): Future[Boolean] = {
+  def stopRunningVerification(): Future[Boolean] = synchronized {
     stop()
-      .map(_ => {
+      .map(_ => synchronized {
         coordinator.logger.trace(s"stopVerification has completed for ${file_uri}")
         val params = lsp.StateChangeParams(Ready.id, verificationCompleted = 0, verificationNeeded = 0, uri = file_uri)
         coordinator.sendStateChangeNotification(params, Some(this))
@@ -146,7 +146,7 @@ trait VerificationManager extends ManagesLeaf {
   var lastCustomArgs: Option[String] = None
   var lastBackendClassName: Option[String] = None
 
-  def prepareVerification(mt: Boolean): Unit = {
+  def prepareVerification(mt: Boolean): Unit = synchronized {
     manuallyTriggered = mt
 
     is_verifying = true
@@ -159,7 +159,7 @@ trait VerificationManager extends ManagesLeaf {
     internalErrorMessage = ""
   }
 
-  def stop(): Future[Unit] = {
+  def stop(): Future[Unit] = synchronized {
     coordinator.logger.trace(s"stop verification of $file_uri")
     handler.verHandle match {
       case None => {
@@ -170,7 +170,7 @@ trait VerificationManager extends ManagesLeaf {
         coordinator.logger.info("Aborting running verification.")
         is_aborting = true
         val stop = coordinator.server.stopVerification(verJob, Some(coordinator.localLogger)).transform(
-          _ => {
+          _ => synchronized {
             is_verifying = false
             lastSuccess = Aborted
           },
@@ -187,7 +187,7 @@ trait VerificationManager extends ManagesLeaf {
   }
 
   /** Run parsing and typechecking but no verification */
-  def runParseTypecheck(loader: FileContent): Boolean = {
+  def runParseTypecheck(loader: FileContent): Boolean = synchronized {
     coordinator.logger.info(s"construct AST for $filename")
     if (anyFutureRunning) {
       coordinator.logger.debug(s"Already running parse/typecheck or verification")
@@ -210,13 +210,16 @@ trait VerificationManager extends ManagesLeaf {
 
   /** Do full parsing, type checking and verification */
   def startVerification(backendClassName: String, customArgs: String, loader: FileContent, mt: Boolean): Future[Boolean] = {
-    lastBackendClassName = Some(backendClassName)
-    lastCustomArgs = Some(customArgs)
+    val pendingCancel = synchronized {
+      lastBackendClassName = Some(backendClassName)
+      lastCustomArgs = Some(customArgs)
+      coordinator.logger.info(s"verify $filename ($backendClassName $customArgs)")
+      if (handler.isVerifying) stop()
+      futureCancel.getOrElse(Future.unit)
+    }
     val backend = ViperBackendConfig(backendClassName, customArgs)
 
-    coordinator.logger.info(s"verify $filename ($backendClassName $customArgs)")
-    if (handler.isVerifying) stop()
-    futureCancel.getOrElse(Future.unit).map(_ => {
+    pendingCancel.map(_ => synchronized {
       lastPhase = None
 
 
