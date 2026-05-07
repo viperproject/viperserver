@@ -65,7 +65,7 @@ trait ProjectManager extends ProjectAware {
       case Right(li) =>
         li.addRoot(newRoot)
     }
-    if (getContents) Some(root.content.fileContent.mkString("\n")) else None
+    if (getContents) Some(root.content.text) else None
   }
 
   def addToThisProject(uri: String): LeafManager = {
