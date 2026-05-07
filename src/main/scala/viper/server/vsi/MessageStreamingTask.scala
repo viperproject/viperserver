@@ -17,8 +17,13 @@ import scala.util.Try
 /** Generic wrapper for any task a VerificationServer might work on.
   *
   * Implements Callable and provides an artifact future that completes when the
-  * task terminates. Holds a reference to an `EnvelopeStream` used to push
-  * backend messages to downstream consumers.
+  * task terminates. Owns the `EnvelopeStream` it pushes backend messages to —
+  * created at construction so it's a `final val`, removing the prior
+  * post-construction `setStream` indirection and its visibility concerns.
+  *
+  * `enqueueMessage` and `registerTaskEnd` are both expected to be invoked from
+  * the same producer (the worker thread). The stream's own synchronization
+  * keeps things safe even if that contract is violated.
   * */
 abstract class MessageStreamingTask[T] extends Callable[T] with Post {
 
@@ -28,24 +33,12 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
     override def done(): Unit = artifactPromise.complete(Try(get()))
   }
 
-  private var stream: EnvelopeStream = _
-  private var hasEnded: Boolean = false
-
-  final def setStream(s: EnvelopeStream): Unit = {
-    if (stream != null) {
-      throw new IllegalStateException("cannot set stream - a stream has already been set")
-    }
-    stream = s
-  }
+  val stream: EnvelopeStream = new EnvelopeStream()
 
   /** Offers `msg` to the downstream stream, blocking until queue space is available
     * (natural backpressure when consumers are slow).
     */
   protected def enqueueMessage(msg: Envelope, logger: Logger): Unit = {
-    if (hasEnded) {
-      throw new IllegalStateException("cannot enqueue message - message streaming task's end has already been registered")
-    }
-
     logger.trace(s"enqueueMessage: $msg")
     try {
       stream.offer(msg)
@@ -59,14 +52,10 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
   /** Closes the downstream stream, signalling the end of the message stream.
     *
     * @param success retained for API compatibility; stream completion is the same
-    *                regardless of success/failure outcome.
+    *                regardless of success/failure outcome. Idempotent (a second
+    *                call is a no-op).
     */
   protected def registerTaskEnd(success: Boolean, logger: Logger): Unit = {
-    if (hasEnded) {
-      throw new IllegalStateException("cannot register task end - message streaming task's end has already been registered")
-    }
-
-    hasEnded = true
     logger.trace(s"registerTaskEnd: $success")
     stream.complete()
   }

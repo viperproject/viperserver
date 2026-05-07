@@ -24,8 +24,14 @@ final class EnvelopeStream(capacity: Int = EnvelopeStream.DefaultCapacity) {
   private val completionPromise: Promise[Unit] = Promise()
   @volatile private var completed: Boolean = false
 
-  /** Block until `e` can be enqueued. Throws if the stream is already complete. */
-  def offer(e: Envelope): Unit = {
+  /** Block until `e` can be enqueued. Throws if the stream is already complete.
+    *
+    * `synchronized` makes the read of `completed` and the put of `Msg(e)`
+    * atomic with respect to `complete()`, so a concurrent completion cannot
+    * insert the `Done` sentinel between this check and put — which would
+    * strand `e` after end-of-stream.
+    */
+  def offer(e: Envelope): Unit = this.synchronized {
     if (completed) {
       throw new IllegalStateException("EnvelopeStream is already complete")
     }
@@ -43,6 +49,8 @@ final class EnvelopeStream(capacity: Int = EnvelopeStream.DefaultCapacity) {
 
   /** Future that resolves when `complete` is called. */
   def watchCompletion: Future[Unit] = completionPromise.future
+
+  def isCompleted: Boolean = completed
 
   /** Single-shot iterator over the stream. Blocks on `hasNext`/`next` until
     * envelopes are available. Returns false from `hasNext` once the

@@ -78,12 +78,9 @@ trait VerificationServer extends Post {
               Future.successful(VerHandle(null, null, prev_job_id_maybe))
           }
         case Some(task) =>
-          val stream = new EnvelopeStream()
-          task.setStream(stream)
-
           val execution = new JobExecution(task.futureTask)
 
-          stream.watchCompletion.onComplete(_ => {
+          task.stream.watchCompletion.onComplete(_ => {
             if (discardOnCompletion) {
               pool.discardJob(new_jid)
             }
@@ -93,9 +90,9 @@ trait VerificationServer extends Post {
 
           val handle: JobHandle = new_jid match {
             case _: AstJobId =>
-              AstHandle(execution, stream, task.artifact)
+              AstHandle(execution, task.stream, task.artifact)
             case _: VerJobId =>
-              VerHandle(execution, stream,
+              VerHandle(execution, task.stream,
                 prev_job_id_maybe match {
                   case Some(prev_job_id: AstJobId) =>
                     Some(prev_job_id)

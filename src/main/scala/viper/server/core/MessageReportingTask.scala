@@ -8,8 +8,7 @@ package viper.server.core
 
 import ch.qos.logback.classic.Logger
 import viper.server.vsi.MessageStreamingTask
-import viper.silver.reporter.{Entity, EntityFailureMessage, EntitySuccessMessage, Message, PluginAwareReporter, Time, VerificationResultMessage}
-import viper.silver.verifier.{Success, VerificationResult}
+import viper.silver.reporter.{EntityFailureMessage, EntitySuccessMessage, Message, PluginAwareReporter}
 
 trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
 
