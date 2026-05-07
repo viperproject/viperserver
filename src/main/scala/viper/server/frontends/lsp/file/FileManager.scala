@@ -56,7 +56,11 @@ case class FileManager(root: LeafManager)(implicit executor: VerificationExecuti
   override val ec: VerificationExecutionContext = executor
   var isOpen: Boolean = true
 
-  def close(): Unit = synchronized {
+  def close(): Unit = {
+    // Both callees manage their own locking. We deliberately do NOT wrap
+    // them in `synchronized(this)` — `teardownProject` makes cross-instance
+    // calls and would deadlock against a leaf doing `handleContentChange`
+    // if we held our monitor across them.
     teardownProject()
     stopRunningVerification()
   }
