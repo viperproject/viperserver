@@ -23,6 +23,7 @@ object ViperServerRunner {
   var viperServerHttp: ViperHttpServer = _
 
   def main(args: Array[String]): Unit = {
+    // Banner emitted before the server (and thus its logger) is constructed.
     println(s"${BuildInfo.projectName} ${BuildInfo.projectVersionExtended}")
     val config = new ViperConfig(args.toIndexedSeq)
     val executor = new DefaultVerificationExecutionContext(threadPoolSize = Some(config.nThreads()))
@@ -43,9 +44,9 @@ object ViperServerRunner {
     viperServerHttp.start()
     // wait until server has been stopped:
     Await.ready(viperServerHttp.stopped(), Duration.Inf)
-    println("HTTP server has been stopped")
+    viperServerHttp.globalLogger.info("HTTP server has been stopped")
     executor.terminate()
-    println("executor service has been shut down")
+    viperServerHttp.globalLogger.info("executor service has been shut down")
     // the following `exit` call is required such that the server eventually terminates for `longDuration.vpr` in the
     // test suite of viper-ide
     System.exit(0)
@@ -55,26 +56,29 @@ object ViperServerRunner {
     * Run VCS in LSP mode.
     */
   private def runLspServer(config: ViperConfig)(implicit executor: VerificationExecutionContext): Unit = {
+    var serverOpt: Option[ViperServerService] = None
     try {
       val done = startServer(config)
         .flatMap { case (serverSocket, server) =>
+          serverOpt = Some(server)
           val url = serverSocket.getInetAddress.getHostAddress
           val port = serverSocket.getLocalPort
           val serverUrl = s"$url:$port"
           announcePort(port)
-          println(s"going to listen on port $port for LSP")
+          server.globalLogger.info(s"going to listen on port $port for LSP")
           processRequests(config, serverSocket, server, serverUrl)
         }
 
       // wait until server is done:
       Await.result(done, Duration.Inf)
-      println("all clients have been processed")
+      serverOpt.foreach(_.globalLogger.info("all clients have been processed"))
       executor.terminate()
-      println("executor service has been shut down")
+      serverOpt.foreach(_.globalLogger.info("executor service has been shut down"))
       System.exit(0)
     } catch {
       case e: IOException =>
-        println(s"IOException occurred: ${e.toString}")
+        // Logger may not exist yet if startup itself failed; use stderr.
+        System.err.println(s"IOException occurred: ${e.toString}")
         System.exit(1)
     }
   }
@@ -87,9 +91,8 @@ object ViperServerRunner {
   }
 
   private def announcePort(port: Int): Unit = {
-    // write port number in a predefined format to standard output such that clients can parse it
-    // do not change this format without adapting clients such as the Viper-IDE client
-    // regex for parsing: "<ViperServerPort:(\d+)>"
+    // Machine-parsed contract — must stay on stdout in this exact format.
+    // Clients (e.g. Viper-IDE) match the regex "<ViperServerPort:(\d+)>".
     println(s"<ViperServerPort:$port>")
   }
 
@@ -110,14 +113,14 @@ object ViperServerRunner {
     * The returned future completes when stream is closed.
     */
   private def handleClient(config: ViperConfig, server: ViperServerService, socket: Socket, serverUrl: String)(implicit executor: VerificationExecutionContext): Future[Unit] = {
-    println(s"client connected: ${socket.toString}")
+    server.globalLogger.info(s"client connected: ${socket.toString}")
     val receiver: CustomReceiver = new CustomReceiver(config, server, serverUrl)
     val launcher = createLauncher(receiver, socket)(executor)
     receiver.connect(launcher.getRemoteProxy)
     // convert Java Future to Scala Future:
     Future {
       launcher.startListening().get()
-      println(s"client disconnected: ${socket.toString}")
+      server.globalLogger.info(s"client disconnected: ${socket.toString}")
       receiver.disconnected()
       socket.close()
     }

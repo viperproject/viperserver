@@ -27,7 +27,7 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
   /** allows subclasses to return their own global logger */
   def getGlobalLogger(config: ViperConfig): Logger = {
     val logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
-    println(s"Writing [level:${config.logLevel()}] logs into " +
+    logger.get.info(s"Writing [level:${config.logLevel()}] logs into " +
       s"${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
     logger.get
   }

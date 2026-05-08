@@ -6,21 +6,15 @@
 
 package viper.server.core
 
-import ch.qos.logback.classic.Logger
 import viper.server.vsi.MessageStreamingTask
 import viper.silver.reporter.{EntityFailureMessage, EntitySuccessMessage, Message, PluginAwareReporter}
 
 trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
 
   def executor: VerificationExecutionContext
-  def logger: Logger
 
   protected def enqueueMessage(msg: Message): Unit = {
-    super.enqueueMessage(pack(msg), logger)
-  }
-
-  protected def registerTaskEnd(success: Boolean): Unit = {
-    super.registerTaskEnd(success, logger)
+    super.enqueueMessage(pack(msg))
   }
 
   // Implementation of the Reporter interface used by the backend.

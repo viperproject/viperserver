@@ -37,6 +37,12 @@ import scala.util.Try
   * */
 abstract class MessageStreamingTask[T] extends Callable[T] with Post {
 
+  /** The logger used for trace/error output from the streaming machinery.
+    * Subclasses must provide this; it is also the canonical logger for
+    * hook failures and similar diagnostics.
+    */
+  def logger: Logger
+
   private lazy val artifactPromise = Promise[T]()
   lazy val artifact: Future[T] = artifactPromise.future
 
@@ -56,8 +62,8 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
     *
     * If the task is already finalized, the hook runs inline.
     *
-    * Hook exceptions are swallowed so a faulty hook cannot block
-    * subsequent hooks or signaling.
+    * Hook exceptions are logged and swallowed so a faulty hook cannot
+    * block subsequent hooks or signaling.
     */
   def onSettled(hook: () => Unit): Unit = {
     val runNow = this.synchronized {
@@ -65,7 +71,7 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
       else { cleanupHooks += hook; false }
     }
     if (runNow) {
-      try hook() catch { case _: Throwable => /* swallow */ }
+      try hook() catch { case e: Throwable => logger.warn(s"onSettled hook failed: $e") }
     }
   }
 
@@ -85,7 +91,7 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
   /** Offers `msg` to the downstream stream, blocking until queue space is available
     * (natural backpressure when consumers are slow).
     */
-  protected def enqueueMessage(msg: Envelope, logger: Logger): Unit = {
+  protected def enqueueMessage(msg: Envelope): Unit = {
     logger.trace(s"enqueueMessage: $msg")
     try {
       stream.offer(msg)
@@ -97,8 +103,10 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
   }
 
   /** Run cleanup hooks, complete the stream, then signal `settled`.
-    * Idempotent. Order matters: hooks run BEFORE `stream.complete()` so
-    * any iterator waking on the Done sentinel observes post-hook state.
+    * Idempotent. Order matters: hooks run BEFORE `stream.complete()` and
+    * BEFORE `settledPromise` resolves so any consumer awaiting `settled`
+    * (or any iterator waking on the Done sentinel) observes post-hook
+    * state.
     */
   private def finalizeOnce(): Unit = {
     val hooks = this.synchronized {
@@ -108,7 +116,9 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
       cleanupHooks.clear()
       h
     }
-    hooks.foreach { h => try h() catch { case _: Throwable => /* swallow */ } }
+    hooks.foreach { h =>
+      try h() catch { case e: Throwable => logger.warn(s"onSettled hook failed: $e") }
+    }
     stream.complete()
     settledPromise.trySuccess(())
   }
@@ -119,7 +129,7 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
     *                regardless of success/failure outcome. Idempotent (a second
     *                call is a no-op).
     */
-  protected def registerTaskEnd(success: Boolean, logger: Logger): Unit = {
+  protected def registerTaskEnd(success: Boolean): Unit = {
     logger.trace(s"registerTaskEnd: $success")
     finalizeOnce()
   }

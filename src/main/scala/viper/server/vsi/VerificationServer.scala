@@ -8,6 +8,7 @@ package viper.server.vsi
 
 import java.util.concurrent.atomic.AtomicBoolean
 
+import ch.qos.logback.classic.Logger
 import viper.server.core.VerificationExecutionContext
 
 import scala.concurrent.Future
@@ -35,6 +36,12 @@ trait VerificationServer extends Post {
   type AST
 
   implicit val executor: VerificationExecutionContext
+
+  /** Logger used by lifecycle and error paths in this trait. Implementing
+    * classes already maintain a server-wide logger; expose it here so the
+    * trait doesn't fall back to `println` when it needs to report.
+    */
+  def globalLogger: Logger
 
   /** Hook invoked from `stop()` after all jobs have been interrupted. Default
     * is a no-op. The HTTP frontend overrides this to unbind its server port.
@@ -112,8 +119,7 @@ trait VerificationServer extends Post {
     }).recover({
       case e: AstConstructionException =>
         // If the AST construction phase failed, drop the verification job handle.
-        val msg = s"AST construction job ${prev_job_id_maybe.get} resulted in a failure: $e"
-        println(msg)
+        globalLogger.error(s"AST construction job ${prev_job_id_maybe.get} resulted in a failure: $e")
         pool.discardJob(new_jid)
     }).mapTo[T])
   }
@@ -206,8 +212,8 @@ trait VerificationServer extends Post {
     getInterruptFutureList().transform(r => {
       onExit()
       r match {
-        case Success(_) => println(s"shutting down...")
-        case Failure(_) => println(s"forcibly shutting down...")
+        case Success(_) => globalLogger.info("shutting down...")
+        case Failure(e) => globalLogger.warn(s"forcibly shutting down: $e")
       }
       r
     })
