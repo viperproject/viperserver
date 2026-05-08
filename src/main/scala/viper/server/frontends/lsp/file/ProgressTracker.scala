@@ -8,7 +8,7 @@ package viper.server.frontends.lsp.file
 
 import viper.server.frontends.lsp.{BackendOutput, BackendOutputType, ClientCoordinator}
 
-class ProgressCoordinator(coordinator: ClientCoordinator, val nofPredicates: Int, val nofFunctions: Int, val nofMethods: Int) {
+class ProgressTracker(coordinator: ClientCoordinator, val nofPredicates: Int, val nofFunctions: Int, val nofMethods: Int) {
 
   var currentFunctions = 0
   var currentMethods = 0

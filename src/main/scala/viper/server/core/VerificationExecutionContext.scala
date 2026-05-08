@@ -6,45 +6,33 @@
 
 package viper.server.core
 
-import java.util.concurrent.{ExecutorService, Executors, ThreadFactory, TimeUnit}
+import java.util.concurrent.{ExecutorService, Executors, ScheduledExecutorService, ThreadFactory, TimeUnit}
 import java.util.{concurrent => java_concurrent}
 
-import akka.actor.ActorSystem
-
-import scala.concurrent.duration.FiniteDuration
-import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService}
 
 trait VerificationExecutionContext extends ExecutionContext {
   def executorService: ExecutorService
-  def actorSystem: ActorSystem
+  def scheduler: ScheduledExecutorService
   def submit(r: Runnable): java_concurrent.Future[_]
-  /** terminate executor and actor system */
+  /** Terminate executor and scheduler. */
   def terminate(timeoutMSec: Long = 1000): Unit
-  /** restart actor system */
-  def restart(): Future[Unit]
 }
 
 object DefaultVerificationExecutionContext {
-  // at least 3 threads seem to be needed if the actor system is also using the same thread pool. Otherwise, if the actor
-  // system is started using its own (default) executor, a different number of thread might be sufficient.
-  // actor system with the default executor like `ActorSystem(actorSystemName)`)
-  /** minimum number of threads needed for the thread pool in the DefaultVerificationExecutionContext */
+  /** Minimum number of threads needed for the thread pool. */
   val minNumberOfThreads: Int = 3
 }
 
 /**
-  * This class provides a default verification execution context based on a fixed thread pool. The actor system is
-  * not using that thread pool but is using akka's default executor. (There have been issues starting the (default)
-  * akka logger in the unit tests because of some blocking behavior of the thread pool when sharing the same thread
-  * pool.)
-  * The thread pool uses as many threads as there are processors available (but at least 2). Each started thread
-  * gets a stack of 128MB.
-  * The purpose of a verification execution context is that it can be passed to ViperServer and ViperServer will
-  * use the provided verification execution context whenever an actor or any task requiring a separate thread is
-  * executed.
+  * Default verification execution context backed by a fixed thread pool.
+  *
+  * The pool uses as many threads as there are processors available (but at
+  * least 2). Each started thread gets a stack of 128MB. A separate
+  * single-threaded daemon `ScheduledExecutorService` handles delayed
+  * callbacks (used to be Akka schedulers).
   */
-class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_System",
-                                          threadNamePrefix: String = "thread",
+class DefaultVerificationExecutionContext(threadNamePrefix: String = "thread",
                                           threadPoolSize: Option[Int] = None) extends VerificationExecutionContext {
   protected lazy val nThreads: Int = threadPoolSize.getOrElse(
     Math.max(DefaultVerificationExecutionContext.minNumberOfThreads, Runtime.getRuntime.availableProcessors()))
@@ -62,33 +50,28 @@ class DefaultVerificationExecutionContext(actorSystemName: String = "Actor_Syste
     })
   override def executorService: ExecutorService = service
 
+  private lazy val schedulerService: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactory {
+    private val mCount = new java.util.concurrent.atomic.AtomicInteger(1)
+    override def newThread(runnable: Runnable): Thread = {
+      val t = new Thread(runnable, s"$threadNamePrefix-scheduler-${mCount.getAndIncrement()}")
+      t.setDaemon(true)
+      t
+    }
+  })
+  override def scheduler: ScheduledExecutorService = schedulerService
+
   private lazy val context: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(executorService)
 
   override def execute(runnable: Runnable): Unit = context.execute(runnable)
 
   override def reportFailure(cause: Throwable): Unit = context.reportFailure(cause)
 
-  private var system: Option[ActorSystem] = Some(ActorSystem(actorSystemName))
-  override def actorSystem: ActorSystem = system.getOrElse(throw new IllegalStateException(s"actor system has been terminated"))
-
   override def submit(r: Runnable): java_concurrent.Future[_] = context.submit(r)
 
   @throws(classOf[InterruptedException])
   override def terminate(timeoutMSec: Long = 1000): Unit = {
-    val oldSystem = actorSystem
-    system = None
-    Await.ready(oldSystem.terminate(), FiniteDuration(timeoutMSec, TimeUnit.MILLISECONDS))
+    schedulerService.shutdownNow()
     executorService.shutdown()
     executorService.awaitTermination(timeoutMSec, TimeUnit.MILLISECONDS)
-  }
-
-  override def restart(): Future[Unit] = {
-    // the executor service stays untouched, i.e. only the actor system is restarted
-    val oldSystem = actorSystem
-    system = None
-    oldSystem.terminate().map(_ => {
-      // set new actor system:
-      system = Some(ActorSystem(actorSystemName))
-    })(this)
   }
 }

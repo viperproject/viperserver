@@ -6,7 +6,6 @@
 
 package viper.server.core
 
-import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.Assertion
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
@@ -18,7 +17,7 @@ import viper.silver.parser.ReformatPrettyPrinter
 import java.nio.file.Path
 
 
-class ReformatterTest extends AnyWordSpec with Matchers with ScalatestRouteTest {
+class ReformatterTest extends AnyWordSpec with Matchers {
   private val console_logger = ViperStdOutLogger("parsingTest logger", "ALL")
 
   "ReformatterAstGenerator" should {

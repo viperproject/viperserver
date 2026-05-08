@@ -8,7 +8,6 @@ package viper.server.core
 
 import java.nio.file.NoSuchFileException
 
-import akka.http.scaladsl.testkit.ScalatestRouteTest
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import viper.server.utility.ViperAstGenerator
@@ -16,7 +15,7 @@ import viper.silver.ast.Program
 import viper.silver.logger.ViperStdOutLogger
 
 
-class AstGenerationTests extends AnyWordSpec with Matchers with ScalatestRouteTest {
+class AstGenerationTests extends AnyWordSpec with Matchers {
 
   private val verifiableFile = "src/test/resources/viper/let.vpr"
   private val emptyFile = "src/test/resources/viper/empty.vpr"

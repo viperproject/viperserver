@@ -7,90 +7,130 @@
 package viper.server.vsi
 
 import java.util.concurrent.{Callable, FutureTask}
-import scala.language.postfixOps
-import akka.actor.ActorRef
-import akka.pattern.ask
-import akka.stream.QueueOfferResult
-import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 
-import scala.concurrent.{Await, Future, Promise}
-import scala.concurrent.duration._
+import scala.collection.mutable
+import scala.concurrent.{Future, Promise}
 import scala.util.Try
 
 
 
-/** This class is a generic wrapper for a any sort of task a VerificationServer might
-  * work on.
+/** Generic wrapper for any task a VerificationServer might work on.
   *
-  * It has the following properties:
-  *  - implements callable and provides an artifact future that completes when the task terminates
-  *  - provides a reference to a queue actor.
+  * Implements Callable and provides an artifact future that completes when the
+  * task terminates. Owns the `EnvelopeStream` it pushes backend messages to —
+  * created at construction so it's a `final val`, removing the prior
+  * post-construction `setStream` indirection and its visibility concerns.
   *
-  *  The first serves the purpose of running the task concurrently. The second allows to
-  *  communicate from the verification process to the server.
+  * `enqueueMessage` and `registerTaskEnd` are both expected to be invoked from
+  * the same producer (the worker thread). The stream's own synchronization
+  * keeps things safe even if that contract is violated.
+  *
+  * Completion model: `settled` is the canonical "all internal cleanup is
+  * done" signal. Consumers chaining post-completion logic should await
+  * `settled` rather than `stream.watchCompletion` or `artifact`, because
+  * cleanup hooks registered via `onSettled` are guaranteed to have run
+  * before `settled` resolves AND before the stream's Done sentinel can
+  * unblock any iterator. This eliminates the multi-signal fanout race
+  * where a consumer wakes up on one signal while side-effects registered
+  * on another haven't run yet.
   * */
 abstract class MessageStreamingTask[T] extends Callable[T] with Post {
 
+  /** The logger used for trace/error output from the streaming machinery.
+    * Subclasses must provide this; it is also the canonical logger for
+    * hook failures and similar diagnostics.
+    */
+  def logger: Logger
+
   private lazy val artifactPromise = Promise[T]()
   lazy val artifact: Future[T] = artifactPromise.future
-  lazy val futureTask: FutureTask[T] = new FutureTask(this) {
-    override def done(): Unit = artifactPromise.complete(Try(get()))
-  }
 
-  private var q_actor: ActorRef = _
-  private var hasEnded: Boolean = false
+  private val settledPromise = Promise[Unit]()
+  /** Resolves after the producer has finished and every `onSettled` hook
+    * has run. Always resolves with `Success(())` — task failures are
+    * surfaced through `artifact`, not here.
+    */
+  def settled: Future[Unit] = settledPromise.future
 
-  final def setQueueActor(actor: ActorRef): Unit = {
-    if (q_actor != null) {
-      throw new IllegalStateException("cannot set queue actor - a queue actor has already been set")
-    }
+  private val cleanupHooks = mutable.ArrayBuffer.empty[() => Unit]
+  private var finalized = false
 
-    q_actor = actor
-  }
-
-  /** Sends massage to the attached actor.
+  /** Register cleanup to run inside the finalize sequence, BEFORE
+    * `stream.complete()` and BEFORE `settled` resolves. Hooks run
+    * synchronously on the producer's thread in registration order.
     *
-    * The actor receiving this message offers it to a queue. This offering returns a Future,
-    * which  will eventually indicate whether or not the offer was successful. This method is
-    * blocking, as it waits for the successful completion of such an offer.
-    * */
-  protected def enqueueMessage(msg: Envelope, logger: Logger): Unit = {
-    if (hasEnded) {
-      throw new IllegalStateException("cannot enqueue message - message streaming task's end has already been registered")
+    * If the task is already finalized, the hook runs inline.
+    *
+    * Hook exceptions are logged and swallowed so a faulty hook cannot
+    * block subsequent hooks or signaling.
+    */
+  def onSettled(hook: () => Unit): Unit = {
+    val runNow = this.synchronized {
+      if (finalized) true
+      else { cleanupHooks += hook; false }
     }
+    if (runNow) {
+      try hook() catch { case e: Throwable => logger.warn(s"onSettled hook failed: $e") }
+    }
+  }
 
+  lazy val futureTask: FutureTask[T] = new FutureTask(this) {
+    override def done(): Unit = {
+      // Backstop: if the task body threw before calling registerTaskEnd,
+      // we still need the stream to complete and `settled` to resolve so
+      // consumers don't hang. Idempotent — a normal completion already
+      // ran finalize and this is a no-op.
+      finalizeOnce()
+      artifactPromise.complete(Try(get()))
+    }
+  }
+
+  val stream: EnvelopeStream = new EnvelopeStream()
+
+  /** Offers `msg` to the downstream stream, blocking until queue space is available
+    * (natural backpressure when consumers are slow).
+    */
+  protected def enqueueMessage(msg: Envelope): Unit = {
     logger.trace(s"enqueueMessage: $msg")
-    implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-    // answer is a future that will resolve with the actor's response to the BackendReport request
-    val answer = (q_actor ? TaskProtocol.BackendReport(msg)).mapTo[Future[QueueOfferResult]]
-    // currentOffer is the future that the actor will send in its response (assuming that no timeout occurred requesting it from the actor)
-    // currentOffer will resolve when the message is dequeued from the queue
-    val currentOffer = answer.flatten
     try {
-      // note that an exception is thrown if the currentOffer future fails, e.g. because the askTimeout occurred
-      Await.result(currentOffer, Duration.Inf)
+      stream.offer(msg)
     } catch {
       case ex: Exception =>
         logger.error(s"exception in enqueueMessage occurred: $ex")
-        // rethrow exception:
         throw ex
     }
   }
 
-  /** Notify the queue actor that the task has come to an end
-    *
-    * The actor receiving this message will close the queue.
-    *
-    * @param success indicates whether or not the task has ended as successfully.
-    * */
-  protected def registerTaskEnd(success: Boolean, logger: Logger): Unit = {
-    if (hasEnded) {
-      throw new IllegalStateException("cannot register task end - message streaming task's end has already been registered")
+  /** Run cleanup hooks, complete the stream, then signal `settled`.
+    * Idempotent. Order matters: hooks run BEFORE `stream.complete()` and
+    * BEFORE `settledPromise` resolves so any consumer awaiting `settled`
+    * (or any iterator waking on the Done sentinel) observes post-hook
+    * state.
+    */
+  private def finalizeOnce(): Unit = {
+    val hooks = this.synchronized {
+      if (finalized) return
+      finalized = true
+      val h = cleanupHooks.toList
+      cleanupHooks.clear()
+      h
     }
+    hooks.foreach { h =>
+      try h() catch { case e: Throwable => logger.warn(s"onSettled hook failed: $e") }
+    }
+    stream.complete()
+    settledPromise.trySuccess(())
+  }
 
-    hasEnded = true
+  /** Closes the downstream stream, signalling the end of the message stream.
+    *
+    * @param success retained for API compatibility; stream completion is the same
+    *                regardless of success/failure outcome. Idempotent (a second
+    *                call is a no-op).
+    */
+  protected def registerTaskEnd(success: Boolean): Unit = {
     logger.trace(s"registerTaskEnd: $success")
-    q_actor ! TaskProtocol.FinalBackendReport(success)
+    finalizeOnce()
   }
 }

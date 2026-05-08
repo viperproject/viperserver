@@ -119,15 +119,6 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
     noshort = false,
     hidden = false)
 
-  val actorCommunicationTimeout: ScallopOption[Int] = opt[Int]("actorCommunicationTimeout", 'a',
-    descr = ("Specifies the maximal amount of time that actors will wait when communicating requesting messages from other actors."
-      + s"The number is of unit milliseconds and must be positive integer."
-      + "If the option is omitted, a default timeout of 5000 milliseconds will be set."),
-    default = Some(5000),
-    noshort = false,
-    hidden = true
-  )
-
   val maximumActiveJobs: ScallopOption[Int] = opt[Int]("maximumActiveJobs", 'm',
     descr = ("Specifies the maximal amount of jobs that may run concurrently."
       + s"The number must be positive integer."

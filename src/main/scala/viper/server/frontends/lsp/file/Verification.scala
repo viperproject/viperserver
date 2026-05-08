@@ -9,10 +9,8 @@ package viper.server.frontends.lsp.file
 import ch.qos.logback.classic.Logger
 import viper.server.frontends.lsp
 import scala.concurrent.Future
-import viper.server.core.ViperBackendConfig
+import viper.server.core.{ViperBackendConfig, VerificationExecutionContext}
 import viper.server.vsi.{AstJobId, VerJobId}
-import scala.concurrent.ExecutionContext
-import akka.actor.Props
 
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.server.frontends.lsp.VerificationState._
@@ -79,9 +77,9 @@ object VerificationPhase {
 }
 
 trait VerificationManager extends ManagesLeaf {
-  def stopRunningVerification(): Future[Boolean] = {
+  def stopRunningVerification(): Future[Boolean] = synchronized {
     stop()
-      .map(_ => {
+      .map(_ => synchronized {
         coordinator.logger.trace(s"stopVerification has completed for ${file_uri}")
         val params = lsp.StateChangeParams(Ready.id, verificationCompleted = 0, verificationNeeded = 0, uri = file_uri)
         coordinator.sendStateChangeNotification(params, Some(this))
@@ -90,7 +88,7 @@ trait VerificationManager extends ManagesLeaf {
       .recover(_ => false)
   }
 
-  implicit def ec: ExecutionContext
+  implicit def ec: VerificationExecutionContext
   var lastPhase: Option[VerificationPhase.VerificationPhase] = None
 
   private var futureAst: Option[Future[Unit]] = None
@@ -106,18 +104,14 @@ trait VerificationManager extends ManagesLeaf {
     if (neverParsed) {
       runParseTypecheck(content)
     }
-    // Delay the future since `futureAst` returns a future from `watchCompletion` which states:
-    // "Note that this only means the elements have been passed downstream, not that downstream has successfully processed them."
-    val future = futureAst.map(_.andThen(delay(10)(_))).getOrElse(Future.successful(()))
+    // `futureAst` resolves only after `drainIteratorTo` has finished iterating
+    // the AST stream, which itself happens only after the producer's
+    // finalize sequence (`MessageStreamingTask.finalizeOnce`) has run all
+    // `onSettled` hooks and enqueued the Done sentinel. So by the time we
+    // observe completion here, every backend message has already been
+    // processed under the per-file monitor.
+    val future = futureAst.getOrElse(Future.successful(()))
     future.map(_ => this.synchronized(f))
-  }
-
-  private val system = akka.actor.ActorSystem("delayer")
-  def delay[T](ms: Int)(block: => T): Future[T] = {
-    import scala.concurrent.duration._
-    akka.pattern.after(ms.millis, system.scheduler) {
-      Future(block)
-    }
   }
 
   //other
@@ -146,7 +140,7 @@ trait VerificationManager extends ManagesLeaf {
   var lastCustomArgs: Option[String] = None
   var lastBackendClassName: Option[String] = None
 
-  def prepareVerification(mt: Boolean): Unit = {
+  def prepareVerification(mt: Boolean): Unit = synchronized {
     manuallyTriggered = mt
 
     is_verifying = true
@@ -159,7 +153,7 @@ trait VerificationManager extends ManagesLeaf {
     internalErrorMessage = ""
   }
 
-  def stop(): Future[Unit] = {
+  def stop(): Future[Unit] = synchronized {
     coordinator.logger.trace(s"stop verification of $file_uri")
     handler.verHandle match {
       case None => {
@@ -170,7 +164,7 @@ trait VerificationManager extends ManagesLeaf {
         coordinator.logger.info("Aborting running verification.")
         is_aborting = true
         val stop = coordinator.server.stopVerification(verJob, Some(coordinator.localLogger)).transform(
-          _ => {
+          _ => synchronized {
             is_verifying = false
             lastSuccess = Aborted
           },
@@ -187,7 +181,7 @@ trait VerificationManager extends ManagesLeaf {
   }
 
   /** Run parsing and typechecking but no verification */
-  def runParseTypecheck(loader: FileContent): Boolean = {
+  def runParseTypecheck(loader: FileContent): Boolean = synchronized {
     coordinator.logger.info(s"construct AST for $filename")
     if (anyFutureRunning) {
       coordinator.logger.debug(s"Already running parse/typecheck or verification")
@@ -210,46 +204,49 @@ trait VerificationManager extends ManagesLeaf {
 
   /** Do full parsing, type checking and verification */
   def startVerification(backendClassName: String, customArgs: String, loader: FileContent, mt: Boolean): Future[Boolean] = {
-    lastBackendClassName = Some(backendClassName)
-    lastCustomArgs = Some(customArgs)
+    val pendingCancel = synchronized {
+      lastBackendClassName = Some(backendClassName)
+      lastCustomArgs = Some(customArgs)
+      coordinator.logger.info(s"verify $filename ($backendClassName $customArgs)")
+      if (handler.isVerifying) stop()
+      futureCancel.getOrElse(Future.unit)
+    }
     val backend = ViperBackendConfig(backendClassName, customArgs)
 
-    coordinator.logger.info(s"verify $filename ($backendClassName $customArgs)")
-    if (handler.isVerifying) stop()
-    futureCancel.getOrElse(Future.unit).map(_ => {
+    pendingCancel.map(_ => synchronized {
       lastPhase = None
 
-
-      val astJob = handler.astHandle match {
+      val astJobOpt: Option[AstJobId] = handler.astHandle match {
         // If an AST job is already running (due file edit or LSP features), reuse it instead of cancelling and rebuilding.
         case Some(existingAst) =>
           coordinator.logger.info(s"Reusing existing AST job ${existingAst.id} for verification")
           manuallyTriggered = mt
-          existingAst
+          Some(existingAst)
         // Otherwise, start a new AST job for verification.
         case None =>
           handler.clearWaitingOn()
-          startConstructAst(backend, loader, mt) match {
-            case None => return Future.successful(false)
-            case Some(ast) => ast
-          }
+          startConstructAst(backend, loader, mt)
       }
 
-      val verJob = coordinator.server.verifyAst(astJob, file.toString(), backend, Some(coordinator.localLogger))
-      if (verJob.id >= 0) {
-        // Execute all handles
-        this.resetContainers(false)
-        this.resetDiagnostics(false)
-        errorCount = 0
-        diagnosticCount = 0
-        handler.waitOn(verJob)
-        val receiver = props(Some(backendClassName))
-        futureVer = coordinator.server.startStreamingVer(verJob, receiver, Some(coordinator.localLogger))
-        true
-      } else {
-        // Ver pool full — free the orphaned AST slot
-        coordinator.server.discardAstJobLookup(astJob)
-        false
+      astJobOpt match {
+        case None => false
+        case Some(astJob) =>
+          val verJob = coordinator.server.verifyAst(astJob, file.toString(), backend, Some(coordinator.localLogger))
+          if (verJob.id >= 0) {
+            // Execute all handles
+            this.resetContainers(false)
+            this.resetDiagnostics(false)
+            errorCount = 0
+            diagnosticCount = 0
+            handler.waitOn(verJob)
+            val receiver = newRelayHandler(Some(backendClassName))
+            futureVer = coordinator.server.startStreamingVer(verJob, receiver, Some(coordinator.localLogger))
+            true
+          } else {
+            // Ver pool full — free the orphaned AST slot
+            coordinator.server.discardAstJobLookup(astJob)
+            false
+          }
       }
     })
   }
@@ -265,7 +262,7 @@ trait VerificationManager extends ManagesLeaf {
     if (astJob.id >= 0) {
       this.resetDiagnostics(true)
       // Execute all handles
-      val newFut = coordinator.server.startStreamingAst(astJob, props(None), Some(coordinator.localLogger))
+      val newFut = coordinator.server.startStreamingAst(astJob, newRelayHandler(None), Some(coordinator.localLogger))
       futureAst = newFut
       handler.waitOn(astJob)
       Some(astJob)
@@ -274,7 +271,7 @@ trait VerificationManager extends ManagesLeaf {
     }
   }
 
-  def props(backendClassName: Option[String]): Props
+  def newRelayHandler(backendClassName: Option[String]): RelayHandler
 
   def processErrors(backendClassName: Option[String], errors: Seq[AbstractError], errorMsgPrefix: Option[String] = None): Unit = {
     val errMsgPrefixWithWhitespace = errorMsgPrefix.map(s => s"$s ").getOrElse("")

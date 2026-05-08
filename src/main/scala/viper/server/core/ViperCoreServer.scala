@@ -6,19 +6,14 @@
 
 package viper.server.core
 
-import akka.Done
-import akka.actor.ActorRef
-import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
-import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
+import viper.server.vsi.{AstHandle, AstJobId, JobPool, VerHandle, VerJobId, VerificationServer}
 import viper.silver.ast.Program
 import viper.silver.ast.utility.FileLoader
 import viper.silver.logger.ViperLogger
 
-import scala.concurrent.duration._
 import scala.concurrent.Future
-import scala.language.postfixOps
 
 abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: VerificationExecutionContext) extends VerificationServer with ViperPost {
 
@@ -26,15 +21,13 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
 
   // --- VCS : Configuration ---
 
-  override lazy val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-
   /** global logger that should be used for the server's entire lifetime. Log messages are reported to the global logger as well as local one (if they exist) */
   val globalLogger: Logger = getGlobalLogger(config)
 
   /** allows subclasses to return their own global logger */
   def getGlobalLogger(config: ViperConfig): Logger = {
     val logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
-    println(s"Writing [level:${config.logLevel()}] logs into " +
+    logger.get.info(s"Writing [level:${config.logLevel()}] logs into " +
       s"${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
     logger.get
   }
@@ -46,18 +39,17 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     }
   }
 
-  /** Configures an instance of ViperCoreServer.
-    *
-    * This function must be called before any other. Calling any other function before this one
-    * will result in an IllegalStateException.
-    */
-  def start(): Future[Done] = {
-    ViperCache.initialize(globalLogger, config.backendSpecificCache(), config.cacheFile.toOption)
-    start(config.maximumActiveJobs()) map { _ =>
-      globalLogger.info(s"ViperCoreServer has started.")
-      Done
-    }
-  }
+  override protected val ast_jobs: JobPool[AstJobId, AstHandle[Option[Program]]] =
+    new JobPool("AST-pool", config.maximumActiveJobs())
+  override protected val ver_jobs: JobPool[VerJobId, VerHandle] =
+    new JobPool("Verification-pool", config.maximumActiveJobs())
+
+  ViperCache.initialize(globalLogger, config.backendSpecificCache(), config.cacheFile.toOption)
+
+  override def start(): Future[Unit] = super.start().map { _ =>
+    globalLogger.info(s"ViperCoreServer has started.")
+    ()
+  }(executor)
 
   def requestAst(file: String, backend_config: ViperBackendConfig, localLogger: Option[Logger] = None, loader: Option[FileLoader] = None): AstJobId = {
     require(config != null)
@@ -123,15 +115,6 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
         s"The maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
     }
     ver_id
-  }
-
-  override def streamMessages(jid: VerJobId, clientActor: ActorRef, include_ast: Boolean): Option[Future[Done]] = {
-    globalLogger.info(s"Streaming results for job #${jid.id}.")
-    super.streamMessages(jid, clientActor, include_ast)
-  }
-  override def streamMessages(jid: AstJobId, clientActor: ActorRef): Option[Future[Done]] = {
-    globalLogger.info(s"Streaming results for job #${jid.id}.")
-    super.streamMessages(jid, clientActor)
   }
 
   def flushCache(localLogger: Option[Logger] = None): Boolean = {

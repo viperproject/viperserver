@@ -14,10 +14,13 @@ import java.nio.file.Path
 import org.eclipse.lsp4j.Position
 import viper.server.frontends.lsp.Common
 
+// All public methods that read or mutate `fileContent` synchronize on the
+// FileContent instance. The buffer is otherwise not thread-safe and the LSP
+// dispatcher can call us from multiple worker threads concurrently.
 case class FileContent(path: Path) extends DiskLoader {
   case class FileContentIter(fc: FileContent, delta: Int, var currPos: Option[Position]) extends Iterator[(Char, Position)] {
     override def hasNext: Boolean = currPos.isDefined
-    override def next(): (Char, Position) = {
+    override def next(): (Char, Position) = fc.synchronized {
       val pos = currPos.get
       val char = fc.getCharAt(pos)
       pos.setCharacter(pos.getCharacter + delta)
@@ -28,15 +31,17 @@ case class FileContent(path: Path) extends DiskLoader {
 
   val fileContent = new ArrayBuffer[String]
 
-  def set(newContent: String): Unit = {
+  def set(newContent: String): Unit = synchronized {
     fileContent.clear()
     fileContent.addAll(newContent.split("\n", -1))
   }
 
-  override def loadContent(path: Path): Try[String] =
-    if (this.path == path) Success(fileContent.mkString("\n")) else super.loadContent(path)
+  def text: String = synchronized { fileContent.mkString("\n") }
 
-  def handleChange(range: Range, text: String): Unit = {
+  override def loadContent(path: Path): Try[String] =
+    if (this.path == path) Success(text) else super.loadContent(path)
+
+  def handleChange(range: Range, text: String): Unit = synchronized {
     val startLine = range.getStart.getLine
     val startStr = fileContent(startLine).slice(0, range.getStart.getCharacter)
     val endLine = range.getEnd.getLine
@@ -46,10 +51,14 @@ case class FileContent(path: Path) extends DiskLoader {
     fileContent.patchInPlace(startLine, lines, endLine - startLine + 1)
   }
 
-  def iterForward(pos: Position): FileContentIter = FileContentIter(this, 1, normalize(pos))
-  def iterBackward(pos: Position): FileContentIter = FileContentIter(this, -1, normalize(pos))
+  def iterForward(pos: Position): FileContentIter = synchronized {
+    FileContentIter(this, 1, normalize(pos))
+  }
+  def iterBackward(pos: Position): FileContentIter = synchronized {
+    FileContentIter(this, -1, normalize(pos))
+  }
 
-  def normalize(pos: Position): Option[Position] = {
+  def normalize(pos: Position): Option[Position] = synchronized {
     if (pos.getLine < 0 || pos.getLine >= fileContent.length) return None
     if (pos.getCharacter < 0) {
       val newPos = new Position(pos.getLine - 1, pos.getCharacter)
@@ -70,12 +79,12 @@ case class FileContent(path: Path) extends DiskLoader {
       return Some(new Position(pos.getLine, pos.getCharacter))
     }
   }
-  def getCharAt(pos: Position): Char = {
+  def getCharAt(pos: Position): Char = synchronized {
     val line = fileContent(pos.getLine)
     if (pos.getCharacter == line.length) '\n' else line(pos.getCharacter)
   }
 
-  def getIdentAtPos(pos: Position): Option[(String, Range)] = {
+  def getIdentAtPos(pos: Position): Option[(String, Range)] = synchronized {
     normalize(pos).flatMap(nPos => {
       val start = iterBackward(nPos).drop(1).takeWhile { case (c, _) => Common.isIdentChar(c) }.length
       val startPos = new Position(nPos.getLine, nPos.getCharacter - start)
@@ -88,7 +97,7 @@ case class FileContent(path: Path) extends DiskLoader {
       }
     })
   }
-  def inComment(pos: Position): Boolean = {
+  def inComment(pos: Position): Boolean = synchronized {
     normalize(pos).map(nPos => {
       var isComment = false
       var noComment = false

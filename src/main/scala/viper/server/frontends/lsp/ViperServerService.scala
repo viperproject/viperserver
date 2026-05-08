@@ -6,26 +6,20 @@
 
 package viper.server.frontends.lsp
 
-import scala.language.postfixOps
-import akka.actor.{PoisonPill, Props}
-import akka.pattern.ask
-import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
-import viper.server.utility.ReformatterAstGenerator
-import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
+import viper.server.frontends.lsp.file.RelayHandler
 import viper.server.utility.Helpers.validateViperFile
-import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
-import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
-import viper.silver.parser.ReformatPrettyPrinter
+import viper.server.utility.ReformatterAstGenerator
+import viper.server.vsi.{AstJobId, VerHandle, VerJobId}
 import viper.silver.ast.utility.FileLoader
+import viper.silver.parser.ReformatPrettyPrinter
 
 import scala.concurrent.Future
-import scala.concurrent.duration._
 
 class ViperServerService(config: ViperConfig)(override implicit val executor: VerificationExecutionContext)
-  extends ViperCoreServer(config)(executor) with DefaultVerificationServerStart {
+  extends ViperCoreServer(config)(executor) {
 
   def constructAst(file: String, backend: ViperBackendConfig, localLogger: Option[Logger] = None, loader: Option[FileLoader]): AstJobId = {
     val logger = combineLoggers(localLogger)
@@ -70,26 +64,48 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     }
   }
 
-  def startStreaming(jid: VerJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
+  def startStreaming(jid: VerJobId, handler: RelayHandler, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
     val logger = combineLoggers(localLogger)
     logger.debug("Sending verification request to ViperServer...")
-    val relay_actor = system.actorOf(relayActor_props)
-    streamMessages(jid, relay_actor, include_ast = true).map(_.map(_ => ()))
+    runStreamWithHandler(jid, handler, include_ast = true)
   }
-  def startStreamingAst(jid: AstJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
+  def startStreamingAst(jid: AstJobId, handler: RelayHandler, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
     val logger = combineLoggers(localLogger)
-    val relay_actor = system.actorOf(relayActor_props)
-    logger.debug(s"Sending ast construct request to ViperServer... (${relay_actor.toString()})")
-    streamMessages(jid, relay_actor).map(_.map(_ => ()))
+    logger.debug(s"Sending ast construct request to ViperServer...")
+    messageEnvelopes(jid).map(_.flatMap { case (_, iter) =>
+      drainIteratorTo(iter, handler)
+    })
   }
-  def startStreamingVer(jid: VerJobId, relayActor_props: Props, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
+  def startStreamingVer(jid: VerJobId, handler: RelayHandler, localLogger: Option[Logger] = None): Option[Future[Unit]] = {
     val logger = combineLoggers(localLogger)
-    val relay_actor = system.actorOf(relayActor_props)
-    logger.debug(s"Sending verification request to ViperServer... (${relay_actor.toString()})")
-    streamMessages(jid, relay_actor, include_ast = false).map(_.map(_ => {
+    logger.debug(s"Sending verification request to ViperServer...")
+    runStreamWithHandler(jid, handler, include_ast = false).map(_.map(r => {
       logger.debug("Done verification request to ViperServer...")
-      ()
+      r
     }))
+  }
+
+  private def runStreamWithHandler(jid: VerJobId, handler: RelayHandler, include_ast: Boolean): Option[Future[Unit]] = {
+    messageEnvelopes(jid, include_ast).map(_.flatMap { case (_, iter) =>
+      drainIteratorTo(iter, handler)
+    })
+  }
+
+  /** Drains `iter` on the executor's thread pool, dispatching messages to
+    * `handler`. The returned future completes when the iterator is exhausted
+    * or fails, after the corresponding terminal handler callback has run.
+    */
+  private def drainIteratorTo(iter: Iterator[viper.server.vsi.Envelope], handler: RelayHandler): Future[Unit] = {
+    Future {
+      try {
+        for (env <- iter) handler.handleMessage(unpack(env))
+        handler.onStreamSuccess()
+      } catch {
+        case e: Throwable =>
+          handler.onStreamFailure(e)
+          throw e
+      }
+    }(executor)
   }
 
   def stopVerification(jid: VerJobId, localLogger: Option[Logger] = None): Future[Boolean] = {
@@ -116,17 +132,12 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
 
   private def stopOnlyVerification(handle: VerHandle, combinedLogger: Logger): Future[Boolean] = {
     handle match {
-      // If AST construction failed, a verification handle will be returned where the actor field is null.
-      case VerHandle(null, _, _, _) => Future.successful(false)
-      case _ => {
-        implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-        val interrupt: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
-        handle.job_actor ! PoisonPill // the actor played its part.
-        interrupt.map(msg => {
-          combinedLogger.info(msg)
-          true
-        })
-      }
+      // If AST construction failed, a verification handle will be returned where the execution field is null.
+      case VerHandle(null, _, _) => Future.successful(false)
+      case _ =>
+        val interrupted = handle.execution.cancel()
+        combinedLogger.info(formatInterruptResult(VerJobId(-1), interrupted))
+        Future.successful(true)
     }
   }
 
@@ -134,9 +145,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
   def discardAstJobLookup(jid: AstJobId): Unit = {
     ast_jobs.lookupJob(jid).map({job =>
       ast_jobs.discardJob(jid)
-      job.map(astHandle => astHandle.queue.watchCompletion().onComplete(_ => {
-        astHandle.job_actor ! PoisonPill
-      }))
+      job
     })
   }
 
@@ -151,8 +160,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     ast_jobs.lookupJob(jid) match {
       case Some(handle_future) =>
         handle_future.map { handle =>
-          handle.job_actor ! StopAstConstruction
-          handle.job_actor ! PoisonPill // the actor played its part.
+          handle.execution.cancel()
           combinedLogger.info(s"ast construction stopped for job #$jid")
           true
         }

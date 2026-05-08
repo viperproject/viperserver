@@ -11,14 +11,12 @@ import scala.collection.mutable.HashMap
 import viper.silver.ast.utility.lsp._
 import viper.silver.ast.LineColumnPosition
 import java.nio.file.Paths
-import akka.actor.ActorSystem
 import scala.collection.mutable.HashSet
-import scala.concurrent.duration.Duration
 import java.util.concurrent.TimeUnit
-import scala.concurrent.ExecutionContext
+import viper.server.core.VerificationExecutionContext
 
 trait QuantifierCodeLens extends ProjectAware {
-  implicit val ec: ExecutionContext
+  implicit val ec: VerificationExecutionContext
 
   // Quantifier chosen triggers
   private val quantifierMap: HashMap[RangePosition, ((Int, Int), Int, Int, Int)] = HashMap()
@@ -68,7 +66,6 @@ trait QuantifierCodeLens extends ProjectAware {
     }
   }
 
-  private val system = ActorSystem("codeLensRefresher")
   private def doRefresh(): Unit = {
     Locker.synchronized {
       changed.foreach(uri => getInProject(uri).codeLensContainer.onUpdate())
@@ -87,7 +84,9 @@ trait QuantifierCodeLens extends ProjectAware {
       if (delta > refreshRate) {
         doRefresh()
       } else {
-        system.scheduler.scheduleOnce(Duration(refreshRate - delta, TimeUnit.MILLISECONDS))(doRefresh())
+        ec.scheduler.schedule(new Runnable {
+          override def run(): Unit = doRefresh()
+        }, refreshRate - delta, TimeUnit.MILLISECONDS)
       }
     }
   }

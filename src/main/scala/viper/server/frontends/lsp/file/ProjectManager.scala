@@ -41,7 +41,27 @@ trait ProjectAware extends ManagesLeaf {
 
 /** Manages a Viper project consisting of the root file and all imported files.
  * Note that any Viper file can be either of the two: a root of a project or as
- * a leaf in other project(s). See documentation of `ClientCoordinator`. */
+ * a leaf in other project(s). See documentation of `ClientCoordinator`.
+ *
+ * Concurrency: reads and writes of `project` (and the inner `Map` /
+ * `LeafInfo`) are guarded by the FileManager's intrinsic monitor (the same
+ * lock used by `Verification` mutators per S3). Methods that fan out to
+ * other FileManagers via `coordinator.{addToOther,removeFromOther,handleChangeInLeaf}`
+ * release the lock before making those cross-instance calls — otherwise
+ * concurrent root↔leaf interactions (e.g. `setupProject` on a root vs.
+ * `handleContentChange` on one of its leaves) would deadlock through
+ * inverted lock acquisition.
+ *
+ * The protocol is:
+ *  1. Read or mutate `project` under `synchronized(this)`.
+ *  2. Capture any plan that requires cross-instance calls (a list of leaves
+ *     to notify, etc.).
+ *  3. Release the lock and execute the cross-instance calls.
+ *  4. If a follow-up local mutation depends on the result, re-acquire the
+ *     lock and double-check before installing.
+ *
+ * This protects against torn reads/writes; it does not by itself make
+ * compound updates atomic across cross-instance call windows. */
 trait ProjectManager extends ProjectAware {
   /** The current project for which this is a root (Left), or the set of project
    * roots for which this file is a leaf (Right). If this is a leaf, this
@@ -50,7 +70,7 @@ trait ProjectManager extends ProjectAware {
   var project: Either[Map[String, LeafManager], LeafInfo] = Left(Map())
   private def getRootOpt: Option[Map[String, LeafManager]] = project.left.toOption
 
-  def removeFromOtherProject(toRemove: String): Boolean = {
+  def removeFromOtherProject(toRemove: String): Boolean = synchronized {
     val becomeRoot = project.map(li => li.removeRoot(toRemove)).getOrElse(false);
     if (becomeRoot) {
       project = Left(Map())
@@ -58,59 +78,79 @@ trait ProjectManager extends ProjectAware {
     becomeRoot
   }
   def addToOtherProject(newRoot: String, getContents: Boolean): Option[String] = {
+    // teardownProject performs cross-instance calls and manages its own
+    // locking; do it before we reacquire to install the new leaf state.
     teardownProject()
-    project match {
-      case Left(_) =>
-        project = Right(LeafInfo(newRoot))
-      case Right(li) =>
-        li.addRoot(newRoot)
+    synchronized {
+      project match {
+        case Left(_) =>
+          project = Right(LeafInfo(newRoot))
+        case Right(li) =>
+          li.addRoot(newRoot)
+      }
     }
-    if (getContents) Some(root.content.fileContent.mkString("\n")) else None
+    if (getContents) Some(root.content.text) else None
   }
 
   def addToThisProject(uri: String): LeafManager = {
-    val project = getRootOpt.get
-    val existing = project.get(uri)
-    // We need to call this even if `existing` is defined to set ourselves as
-    // the `lastRoot` in the `LeafInfo` of the leaf.
+    val existing = synchronized { getRootOpt.get.get(uri) }
+    // Cross-instance call without holding our lock: the leaf may want its
+    // own monitor, and one of its callbacks could otherwise deadlock with
+    // ours.
     val file = coordinator.addToOtherProject(uri, file_uri, existing.isEmpty)
-    existing.getOrElse({
-      coordinator.logger.error("Creating new LeafManager for " + uri)
-      val l = LeafManager(uri, file.get, coordinator)
-      project.put(uri, l)
-      l
-    })
+    existing.getOrElse {
+      synchronized {
+        // Re-read in case `project` was replaced or another thread already
+        // installed a manager for this uri while we were unlocked.
+        val pm = getRootOpt.get
+        pm.get(uri).getOrElse {
+          coordinator.logger.error("Creating new LeafManager for " + uri)
+          val l = LeafManager(uri, file.get, coordinator)
+          pm.put(uri, l)
+          l
+        }
+      }
+    }
   }
 
-  def teardownProject() = {
-    removeDiagnostics()
-    for (p <- projectLeaves; leaf <- p) {
-      coordinator.removeFromOtherProject(leaf, file_uri)
+  def teardownProject(): Unit = {
+    val leaves = synchronized {
+      removeDiagnostics()
+      projectLeaves.getOrElse(Set.empty).toList
     }
+    leaves.foreach(leaf => coordinator.removeFromOtherProject(leaf, file_uri))
   }
-  def setupProject(imports: Set[String]) = {
-    val oldProject = getRootOpt.getOrElse(Map())
-    val toRemove = oldProject.keySet.diff(imports)
-    for (p <- toRemove) {
-      oldProject.remove(p)
-      coordinator.removeFromOtherProject(p, file_uri)
+  def setupProject(imports: Set[String]): Unit = {
+    // Phase 1: under the lock, compute the diff, mutate the inner map, and
+    // republish `project`. We do NOT make cross-instance calls here.
+    val toRemove = synchronized {
+      val oldProject = getRootOpt.getOrElse(Map())
+      val tr = oldProject.keySet.diff(imports).toList
+      tr.foreach(oldProject.remove)
+      project = Left(oldProject)
+      tr
     }
-    project = Left(oldProject)
+    // Phase 2: notify removed leaves outside the lock.
+    toRemove.foreach(coordinator.removeFromOtherProject(_, file_uri))
+    // Phase 3: addToThisProject manages its own locking.
     for (p <- imports) {
       addToThisProject(p)
     }
-
-    val setupProject = SetupProjectParams(file_uri, imports.toArray)
-    coordinator.client.map{_.requestSetupProject(setupProject)}
+    coordinator.client.map(_.requestSetupProject(SetupProjectParams(file_uri, imports.toArray)))
   }
 
-  def projectRoot: Option[String] = project.toOption.map(_.lastRoot)
-  def projectLeaves: Option[Set[String]] = getRootOpt.map(_.keySet)
-  def projectManagers: Option[Iterator[LeafManager]] = getRootOpt.map(p => Iterator(root) ++ p.valuesIterator)
-  def isRoot: Boolean = project.isLeft
+  def projectRoot: Option[String] = synchronized { project.toOption.map(_.lastRoot) }
+  def projectLeaves: Option[Set[String]] = synchronized { getRootOpt.map(_.keySet.toSet) }
+  def projectManagers: Option[Iterator[LeafManager]] = synchronized {
+    // Materialize the iterator under the lock so callers iterate a stable
+    // snapshot rather than a live view of the mutable map.
+    getRootOpt.map(p => (Iterator(root) ++ p.valuesIterator).toList.iterator)
+  }
+  def isRoot: Boolean = synchronized { project.isLeft }
 
-  override def getInProjectOpt(uri: String): Option[LeafManager] =
+  override def getInProjectOpt(uri: String): Option[LeafManager] = synchronized {
     if (unescape(uri) == unescape(file_uri)) Some(root) else getRootOpt.get.get(uri)
+  }
   /** Gets a file in the current project, or adds it if missing. The latter can
    * happen when, e.g. we get errors in imported files before we get the
    * `PProgram` itself (to setup the project).
@@ -219,20 +259,28 @@ trait ProjectManager extends ProjectAware {
    * of, so that they can update their local `LeafManager`s for this file */
   def handleContentChange(range: Range, text: String): Unit = {
     root.handleContentChange(range, text)
-    project.foreach(_.rootsIter.foreach(root => {
-      coordinator.handleChangeInLeaf(root, file_uri, range, text)
-    }))
+    val rootsToNotify = synchronized {
+      project.toOption.fold(List.empty[String])(_.rootsIter.toList)
+    }
+    rootsToNotify.foreach(r => coordinator.handleChangeInLeaf(r, file_uri, range, text))
   }
 
   /** The `ProjectManager` of one of my leaves received a content change
    * message, update my local `LeafManager` instance to reflect that. */
   def handleChangeInLeaf(leaf: String, range: Range, text: String): Unit = {
-    project match {
-      case Left(project) => project.get(leaf) match {
-        case None => coordinator.logger.error(s"handleChangeInLeaf called on project without leaf (${leaf})")
-        case Some(v) => v.handleContentChange(range, text)
+    val target = synchronized {
+      project match {
+        case Left(p) => Right(p.get(leaf))
+        case Right(_) => Left(())
       }
-      case _ => coordinator.logger.error("handleChangeInLeaf called on non-root")
+    }
+    target match {
+      case Left(_) =>
+        coordinator.logger.error("handleChangeInLeaf called on non-root")
+      case Right(None) =>
+        coordinator.logger.error(s"handleChangeInLeaf called on project without leaf (${leaf})")
+      case Right(Some(v)) =>
+        v.handleContentChange(range, text)
     }
   }
 
