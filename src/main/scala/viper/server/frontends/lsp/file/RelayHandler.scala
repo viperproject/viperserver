@@ -12,13 +12,13 @@ import viper.server.frontends.lsp.VerificationSuccess._
 import viper.silver.ast
 import viper.silver.reporter._
 import viper.silver.verifier.{AbortedExceptionally, AbstractError, ErrorMessage}
-import viper.server.frontends.lsp.file.ProgressCoordinator
+import viper.server.frontends.lsp.file.ProgressTracker
 import viper.silver.parser._
 
 trait MessageHandler extends ProjectManager with VerificationManager with QuantifierCodeLens with QuantifierInlayHints with SignatureHelp {
   override def newRelayHandler(backendClassName: Option[String]): RelayHandler = new RelayHandler(this, backendClassName)
 
-  var progress: ProgressCoordinator = null
+  var progress: ProgressTracker = null
 
   private def determineSuccess(code: Int): VerificationSuccess = {
     if (code != 0) {
@@ -151,7 +151,7 @@ class RelayHandler(task: MessageHandler, backendClassName: Option[String]) {
         }
       case StatisticsReport(m, f, p, _, _) =>
         coordinator.logger.debug(s"[receive@${task.filename}/${backendClassName.isDefined}] StatisticsReport")
-        task.progress = new ProgressCoordinator(coordinator, p, f, m)
+        task.progress = new ProgressTracker(coordinator, p, f, m)
         val params = lsp.StateChangeParams(VerificationRunning.id, progress = 0, filename = task.filename)
         coordinator.sendStateChangeNotification(params, Some(task))
       case AstConstructionFailureMessage(_, res) =>

@@ -391,7 +391,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
     })
 
     s"verification errors do not get filtered - Viper-IDE Issue #326" in withServer[ViperServerService]({ (core, context) =>
-      // this unit test checks that both errors are correctly collected by the RelayActor
+      // this unit test checks that both errors are correctly collected by the RelayHandler
       // The reported errors are equal according to the standard equality on AbstractError even though they occur
       // on different lines.
       implicit val ctx: VerificationExecutionContext = context

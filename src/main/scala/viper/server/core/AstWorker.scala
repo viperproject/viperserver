@@ -34,7 +34,7 @@ class AstWorker(val file: String,
 
   private def constructAst(args: Seq[String]): Option[Program] = {
 
-    val reporter = new ActorReporter("AstGenerationReporter")
+    val reporter = new StreamingReporter("AstGenerationReporter")
     val astGen = new ViperAstGenerator(logger, reporter, args, disablePlugins = config.disablePlugins())
 
     val ast_option: Option[Program] = try {

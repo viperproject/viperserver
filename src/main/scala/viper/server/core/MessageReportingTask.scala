@@ -18,11 +18,11 @@ trait MessageReportingTask[T] extends MessageStreamingTask[T] with ViperPost {
   }
 
   // Implementation of the Reporter interface used by the backend.
-  class ActorReporter(tag: String) extends PluginAwareReporter {
+  class StreamingReporter(tag: String) extends PluginAwareReporter {
     val name = s"ViperServer_$tag"
 
     def doReport(msg: Message): Unit = {
-      logger.trace(s"ActorReport received msg $msg")
+      logger.trace(s"StreamingReporter received msg $msg")
       msg match {
         case m: EntityFailureMessage if m.concerning.info.isCached =>
         case m: EntitySuccessMessage if m.concerning.info.isCached =>

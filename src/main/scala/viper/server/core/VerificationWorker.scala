@@ -65,17 +65,17 @@ class VerificationWorker(private val command: List[String],
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
-          backend = new ViperBackend("silicon", new SiliconFrontend(new ActorReporter("silicon"), logger), programId, program, disablePlugins = config.disablePlugins())
+          backend = new ViperBackend("silicon", new SiliconFrontend(new StreamingReporter("silicon"), logger), programId, program, disablePlugins = config.disablePlugins())
           backend.execute(args)
           success = true
         case "carbon" :: args =>
           logger.info("Creating new Carbon verification backend.")
-          backend = new ViperBackend("carbon", new CarbonFrontend(new ActorReporter("carbon"), logger), programId, program, disablePlugins = config.disablePlugins())
+          backend = new ViperBackend("carbon", new CarbonFrontend(new StreamingReporter("carbon"), logger), programId, program, disablePlugins = config.disablePlugins())
           backend.execute(args)
           success = true
         case "custom" :: custom :: args =>
           logger.info(s"Creating new verification backend based on class $custom.")
-          backend = new ViperBackend(custom, resolveCustomBackend(custom, new ActorReporter(custom)).get, programId, program, disablePlugins = config.disablePlugins())
+          backend = new ViperBackend(custom, resolveCustomBackend(custom, new StreamingReporter(custom)).get, programId, program, disablePlugins = config.disablePlugins())
           backend.execute(args)
           success = true
         case args =>
