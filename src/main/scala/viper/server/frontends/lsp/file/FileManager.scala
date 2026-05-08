@@ -54,7 +54,7 @@ trait ManagesLeaf {
   */
 case class FileManager(root: LeafManager)(implicit executor: VerificationExecutionContext) extends MessageHandler {
   override val ec: VerificationExecutionContext = executor
-  var isOpen: Boolean = true
+  @volatile var isOpen: Boolean = true
 
   def close(): Unit = {
     // Both callees manage their own locking. We deliberately do NOT wrap

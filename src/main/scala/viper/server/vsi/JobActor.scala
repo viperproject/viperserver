@@ -16,14 +16,7 @@ final class JobExecution[T](task: FutureTask[T]) {
   def start(executor: Executor): Unit = executor.execute(task)
 
   /** Returns true iff this call actually interrupted a still-running task. */
-  def cancel(): Boolean = {
-    if (task != null && !task.isDone) {
-      task.cancel(true)
-      true
-    } else {
-      false
-    }
-  }
+  def cancel(): Boolean = task.cancel(true)
 
   def isDone: Boolean = task.isDone
 }
