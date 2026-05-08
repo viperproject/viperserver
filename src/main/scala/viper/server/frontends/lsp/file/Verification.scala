@@ -11,8 +11,6 @@ import viper.server.frontends.lsp
 import scala.concurrent.Future
 import viper.server.core.{ViperBackendConfig, VerificationExecutionContext}
 import viper.server.vsi.{AstJobId, VerJobId}
-import scala.concurrent.Promise
-import java.util.concurrent.TimeUnit
 
 import viper.server.frontends.lsp.VerificationSuccess._
 import viper.server.frontends.lsp.VerificationState._
@@ -106,18 +104,14 @@ trait VerificationManager extends ManagesLeaf {
     if (neverParsed) {
       runParseTypecheck(content)
     }
-    // Delay the future since `futureAst` returns a future from `watchCompletion` which states:
-    // "Note that this only means the elements have been passed downstream, not that downstream has successfully processed them."
-    val future = futureAst.map(_.andThen(delay(10)(_))).getOrElse(Future.successful(()))
+    // `futureAst` resolves only after `drainIteratorTo` has finished iterating
+    // the AST stream, which itself happens only after the producer's
+    // finalize sequence (`MessageStreamingTask.finalizeOnce`) has run all
+    // `onSettled` hooks and enqueued the Done sentinel. So by the time we
+    // observe completion here, every backend message has already been
+    // processed under the per-file monitor.
+    val future = futureAst.getOrElse(Future.successful(()))
     future.map(_ => this.synchronized(f))
-  }
-
-  def delay[T](ms: Int)(block: => T): Future[T] = {
-    val promise = Promise[T]()
-    ec.scheduler.schedule(new Runnable {
-      override def run(): Unit = promise.completeWith(Future(block))
-    }, ms.toLong, TimeUnit.MILLISECONDS)
-    promise.future
   }
 
   //other
@@ -222,37 +216,37 @@ trait VerificationManager extends ManagesLeaf {
     pendingCancel.map(_ => synchronized {
       lastPhase = None
 
-
-      val astJob = handler.astHandle match {
+      val astJobOpt: Option[AstJobId] = handler.astHandle match {
         // If an AST job is already running (due file edit or LSP features), reuse it instead of cancelling and rebuilding.
         case Some(existingAst) =>
           coordinator.logger.info(s"Reusing existing AST job ${existingAst.id} for verification")
           manuallyTriggered = mt
-          existingAst
+          Some(existingAst)
         // Otherwise, start a new AST job for verification.
         case None =>
           handler.clearWaitingOn()
-          startConstructAst(backend, loader, mt) match {
-            case None => return Future.successful(false)
-            case Some(ast) => ast
-          }
+          startConstructAst(backend, loader, mt)
       }
 
-      val verJob = coordinator.server.verifyAst(astJob, file.toString(), backend, Some(coordinator.localLogger))
-      if (verJob.id >= 0) {
-        // Execute all handles
-        this.resetContainers(false)
-        this.resetDiagnostics(false)
-        errorCount = 0
-        diagnosticCount = 0
-        handler.waitOn(verJob)
-        val receiver = newRelayHandler(Some(backendClassName))
-        futureVer = coordinator.server.startStreamingVer(verJob, receiver, Some(coordinator.localLogger))
-        true
-      } else {
-        // Ver pool full — free the orphaned AST slot
-        coordinator.server.discardAstJobLookup(astJob)
-        false
+      astJobOpt match {
+        case None => false
+        case Some(astJob) =>
+          val verJob = coordinator.server.verifyAst(astJob, file.toString(), backend, Some(coordinator.localLogger))
+          if (verJob.id >= 0) {
+            // Execute all handles
+            this.resetContainers(false)
+            this.resetDiagnostics(false)
+            errorCount = 0
+            diagnosticCount = 0
+            handler.waitOn(verJob)
+            val receiver = newRelayHandler(Some(backendClassName))
+            futureVer = coordinator.server.startStreamingVer(verJob, receiver, Some(coordinator.localLogger))
+            true
+          } else {
+            // Ver pool full — free the orphaned AST slot
+            coordinator.server.discardAstJobLookup(astJob)
+            false
+          }
       }
     })
   }
