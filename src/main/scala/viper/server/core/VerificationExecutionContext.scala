@@ -9,7 +9,7 @@ package viper.server.core
 import java.util.concurrent.{ExecutorService, Executors, ScheduledExecutorService, ThreadFactory, TimeUnit}
 import java.util.{concurrent => java_concurrent}
 
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService}
 
 trait VerificationExecutionContext extends ExecutionContext {
   def executorService: ExecutorService
@@ -17,10 +17,6 @@ trait VerificationExecutionContext extends ExecutionContext {
   def submit(r: Runnable): java_concurrent.Future[_]
   /** Terminate executor and scheduler. */
   def terminate(timeoutMSec: Long = 1000): Unit
-  /** Restart (no-op now that the actor system is gone; retained for API
-    * compatibility with prior consumers).
-    */
-  def restart(): Future[Unit]
 }
 
 object DefaultVerificationExecutionContext {
@@ -78,6 +74,4 @@ class DefaultVerificationExecutionContext(threadNamePrefix: String = "thread",
     executorService.shutdown()
     executorService.awaitTermination(timeoutMSec, TimeUnit.MILLISECONDS)
   }
-
-  override def restart(): Future[Unit] = Future.unit
 }
