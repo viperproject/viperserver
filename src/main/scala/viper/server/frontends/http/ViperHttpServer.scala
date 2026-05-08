@@ -18,11 +18,24 @@ import viper.server.frontends.http.jsonWriters.ViperIDEProtocol._
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.vsi._
 
-import scala.concurrent.{Future, Promise}
+import scala.concurrent.{Await, Future, Promise, TimeoutException}
+import scala.concurrent.duration.{Duration, DurationInt}
 import scala.util.{Failure, Success}
 
 class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContext)
   extends ViperCoreServer(config)(executor) {
+
+  /** Bounded timeout for waiting on internal job handles in HTTP routes.
+    * Handle futures normally resolve in microseconds (AST) or as fast as
+    * AST construction (verification). Anything longer means a wedged job
+    * that should not be allowed to permanently steal an HTTP worker thread.
+    */
+  private val handleAwaitTimeout: Duration = 60.seconds
+
+  /** Bounded timeout for the synchronous shutdown path. Job interrupts
+    * should resolve well within this window.
+    */
+  private val stopAwaitTimeout: Duration = 30.seconds
 
   var port: Int = 0
   private var undertow: Undertow = _
@@ -40,7 +53,7 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
       undertow.start()
       val boundAddr = undertow.getListenerInfo.get(0).getAddress.asInstanceOf[InetSocketAddress]
       port = boundAddr.getPort
-      println(s"ViperServer online at http://localhost:$port")
+      globalLogger.info(s"ViperServer online at http://localhost:$port")
       ()
     }(executor)
   }
@@ -64,15 +77,14 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
     * completes the `stopped()` future.
     */
   private[http] def handleExit(): String = {
-    val confirmation = scala.util.Try(scala.concurrent.Await.result(
-      stop(), scala.concurrent.duration.Duration.Inf))
+    val confirmation = scala.util.Try(Await.result(stop(), stopAwaitTimeout))
     val msg = confirmation match {
       case Success(_) =>
-        println("shutting down...")
+        globalLogger.info("shutting down...")
         "shutting down..."
       case Failure(err_msg) =>
         globalLogger.error(s"Interrupting one of the verification threads timed out: $err_msg")
-        println("forcibly shutting down...")
+        globalLogger.warn("forcibly shutting down...")
         "forcibly shutting down..."
     }
     stoppedPromise.complete(confirmation.map(_ => ()))
@@ -106,8 +118,13 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
     val ast_id = AstJobId(id)
     ast_jobs.lookupJob(ast_id) match {
       case Some(handle_future) =>
-        val handle = scala.concurrent.Await.result(handle_future, scala.concurrent.duration.Duration.Inf)
-        jsonLineResponse(handle.stream.iterator)
+        scala.util.Try(Await.result(handle_future, handleAwaitTimeout)) match {
+          case Success(handle) => jsonLineResponse(handle.stream.iterator)
+          case Failure(_: TimeoutException) =>
+            textJsonResponse(VerificationRequestReject(s"Timed out waiting for AST job #$id handle.").toJson.compactPrint)
+          case Failure(e) =>
+            textJsonResponse(VerificationRequestReject(s"AST job #$id failed: $e").toJson.compactPrint)
+        }
       case None =>
         textJsonResponse(VerificationRequestReject(s"The verification job #$id does not exist.").toJson.compactPrint)
     }
@@ -119,19 +136,27 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
       case None =>
         textJsonResponse(verificationRequestRejectionString(id, JobNotFoundException))
       case Some(handle_future) =>
-        val ver_handle = scala.concurrent.Await.result(handle_future, scala.concurrent.duration.Duration.Inf)
-        val ast_id = ver_handle.prev_job_id
-        val ast_iter: Iterator[Envelope] = ast_id.flatMap(id => ast_jobs.lookupJob(id)) match {
-          case Some(astFut) =>
-            val astHandle = scala.concurrent.Await.result(astFut, scala.concurrent.duration.Duration.Inf)
-            astHandle.stream.iterator
-          case None => Iterator.empty
+        scala.util.Try(Await.result(handle_future, handleAwaitTimeout)) match {
+          case Failure(_: TimeoutException) =>
+            textJsonResponse(VerificationRequestReject(s"Timed out waiting for verification job #$id handle.").toJson.compactPrint)
+          case Failure(e) =>
+            textJsonResponse(verificationRequestRejectionString(id, e))
+          case Success(ver_handle) =>
+            val ast_id = ver_handle.prev_job_id
+            val ast_iter: Iterator[Envelope] = ast_id.flatMap(jid => ast_jobs.lookupJob(jid)) match {
+              case Some(astFut) =>
+                scala.util.Try(Await.result(astFut, handleAwaitTimeout)) match {
+                  case Success(astHandle) => astHandle.stream.iterator
+                  case Failure(_) => Iterator.empty
+                }
+              case None => Iterator.empty
+            }
+            val ver_iter: Iterator[Envelope] = ver_handle match {
+              case VerHandle(null, null, _) => Iterator.empty
+              case _ => ver_handle.stream.iterator
+            }
+            jsonLineResponse(ast_iter ++ ver_iter)
         }
-        val ver_iter: Iterator[Envelope] = ver_handle match {
-          case VerHandle(null, null, _) => Iterator.empty
-          case _ => ver_handle.stream.iterator
-        }
-        jsonLineResponse(ast_iter ++ ver_iter)
     }
   }
 
@@ -139,11 +164,13 @@ class ViperHttpServer(config: ViperConfig)(executor: VerificationExecutionContex
     val ver_id = VerJobId(id)
     ver_jobs.lookupJob(ver_id) match {
       case Some(handle_future) =>
-        scala.util.Try(scala.concurrent.Await.result(handle_future, scala.concurrent.duration.Duration.Inf)) match {
+        scala.util.Try(Await.result(handle_future, handleAwaitTimeout)) match {
           case Success(handle) =>
             val msg = formatInterruptResult(ver_id, handle.execution.cancel())
             globalLogger.info(s"The verification job #$id was successfully stopped.")
             JobDiscardAccept(msg).toJson.compactPrint
+          case Failure(_: TimeoutException) =>
+            JobDiscardReject(s"Timed out waiting for verification job #$id handle.").toJson.compactPrint
           case Failure(_) =>
             JobDiscardReject(s"The verification job #$id does not exist.").toJson.compactPrint
         }
