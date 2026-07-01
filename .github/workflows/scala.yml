@@ -55,7 +55,7 @@ jobs:
     container: viperproject/viperserver:v4_z3_4.8.7
     steps:
       - name: Checkout ViperServer
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: viperserver
           submodules: recursive
@@ -97,7 +97,7 @@ jobs:
         # note that the cache path is relative to the directory in which sbt is invoked.
 
       - name: Cache SBT
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             viperserver/sbt-cache/.sbtboot
@@ -171,14 +171,14 @@ jobs:
     steps:
       # we need to checkout the repo to have access to the test files
       - name: Checkout ViperServer
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: viperserver
 
       # we need to checkout the silicon repo to have access to the logback configuration file
       # as we do not use anything else except the logback config, we simply take the latest master branch (in all configurations)
       - name: Checkout Silicon
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: viperproject/silicon
           path: silicon
