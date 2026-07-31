@@ -12,12 +12,13 @@ import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
+import viper.silicon.Silicon
 import viper.silver.ast.Program
 import viper.silver.ast.utility.FileLoader
 import viper.silver.logger.ViperLogger
 
 import scala.concurrent.duration._
-import scala.concurrent.Future
+import scala.concurrent.{Future, Promise}
 import scala.language.postfixOps
 
 abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: VerificationExecutionContext) extends VerificationServer with ViperPost {
@@ -123,6 +124,38 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
         s"The maximum number of active verification jobs are currently running (${ver_jobs.MAX_ACTIVE_JOBS}).")
     }
     ver_id
+  }
+
+  /**
+    * Verifies a Viper AST with Silicon, keeping the verifier alive afterwards so that its debug session can be
+    * used. The returned future yields the Silicon instance that ran the verification; the caller becomes
+    * responsible for stopping it.
+    */
+  def verifyForDebugging(programId: String, backend_config: ViperBackendConfig, program: Program,
+                         localLogger: Option[Logger] = None): (VerJobId, Future[Either[String, Silicon]]) = {
+    require(program != null && backend_config != null)
+
+    val logger = combineLoggers(localLogger)
+    val promise = Promise[Either[String, Silicon]]()
+
+    val task_backend = new VerificationWorker(backend_config.toList, programId, program, logger, config,
+      keepVerifierAlive = true,
+      onFinished = {
+        case Some(backend) =>
+          backend.frontend.verifier match {
+            case silicon: Silicon => promise.trySuccess(Right(silicon))
+            case other =>
+              promise.trySuccess(Left(s"The backend '${if (other == null) "<none>" else other.name}' does not support debugging."))
+          }
+        case None =>
+          promise.trySuccess(Left("The verification backend could not be started."))
+      })(executor)
+
+    val ver_id = initializeVerificationProcess(Future.successful(Some(task_backend)), None)
+    if (ver_id.id < 0) {
+      promise.trySuccess(Left("Could not start a verification process; too many jobs are running."))
+    }
+    (ver_id, promise.future)
   }
 
   override def streamMessages(jid: VerJobId, clientActor: ActorRef, include_ast: Boolean): Option[Future[Done]] = {

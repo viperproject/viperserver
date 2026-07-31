@@ -17,14 +17,25 @@ object C2S_Commands {
   final val Verify = "Verify"
   final val StopVerification = "StopVerification"
   final val GetLanguageServerUrl = "GetLanguageServerUrl"
-  // final val ShowHeap = "ShowHeap"
-  // final val GetExecutionTrace = "GetExecutionTrace"
   final val RemoveDiagnostics = "RemoveDiagnostics"
   final val GetViperFileEndings = "GetViperFileEndings"
   final val SetupProject = "SetupProject"
   final val FlushCache = "FlushCache"
   final val GetIdentifier = "GetIdentifier"
   final val GetRange = "GetRange"
+
+  /* The verification debugger (Silicon only). */
+  final val StartDebugSession = "StartDebugSession"
+  final val StopDebugSession = "StopDebugSession"
+  final val DebugSelectFailure = "DebugSelectFailure"
+  final val DebugExpandNode = "DebugExpandNode"
+  final val DebugAddAssumption = "DebugAddAssumption"
+  final val DebugRemoveAssumptions = "DebugRemoveAssumptions"
+  final val DebugProve = "DebugProve"
+  final val DebugReset = "DebugReset"
+  final val DebugSetPrintConfig = "DebugSetPrintConfig"
+  final val DebugSetProver = "DebugSetProver"
+  final val DebugSetTimeout = "DebugSetTimeout"
 }
 
 object S2C_Commands {
@@ -32,8 +43,9 @@ object S2C_Commands {
   final val Log = "Log"
   final val Hint = "Hint"
   final val VerificationNotStarted = "VerificationNotStarted"
-  // final val StopDebugging = "StopDebugging"
-  // final val StepsAsDecorationOptions = "StepsAsDecorationOptions"
-  // final val HeapGraph = "HeapGraph"
   final val UnhandledViperServerMessageType = "UnhandledViperServerMessageType"
+
+  /* The verification debugger (Silicon only). */
+  final val DebugSessionState = "DebugSessionState"
+  final val DebugSessionClosed = "DebugSessionClosed"
 }

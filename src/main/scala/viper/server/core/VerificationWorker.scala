@@ -30,11 +30,21 @@ case class ViperServerBackendNotFoundException(name: String) extends ViperServer
 
 case class ViperEnvelope(m: Message) extends Envelope
 
+/**
+  * @param keepVerifierAlive if set, the backend's verifier is not stopped after the verification. This is used
+  *                          for debug runs, where the symbolic state and the prover have to survive the
+  *                          verification so that a [[viper.silicon.debugger.SiliconDebugSession]] can use
+  *                          them. The caller then becomes responsible for stopping the verifier.
+  * @param onFinished        called exactly once when the verification has finished (also on failure), with the
+  *                          backend that ran it, if one could be created.
+  */
 class VerificationWorker(private val command: List[String],
                          private val programId: String,
                          private val program: Program,
                          override val logger: Logger,
-                         private val config: ViperConfig)
+                         private val config: ViperConfig,
+                         private val keepVerifierAlive: Boolean = false,
+                         private val onFinished: Option[ViperBackend] => Unit = _ => ())
                         (override val executor: VerificationExecutionContext)
   extends MessageReportingTask[Unit] {
 
@@ -60,12 +70,23 @@ class VerificationWorker(private val command: List[String],
   }
 
   def run(): Unit = {
+    try {
+      runBackend()
+    } finally {
+      // The caller may be waiting for the backend (e.g. to obtain a debug session), so notify it in any case.
+      try onFinished(Option(backend)) catch {
+        case e: Throwable => logger.error("An exception occurred while notifying about a finished verification.", e)
+      }
+    }
+  }
+
+  private def runBackend(): Unit = {
     var success: Boolean = false
     try {
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
-          backend = new ViperBackend("silicon", new SiliconFrontend(new ActorReporter("silicon"), logger), programId, program, disablePlugins = config.disablePlugins())
+          backend = new ViperBackend("silicon", new SiliconFrontend(new ActorReporter("silicon"), logger), programId, program, disablePlugins = config.disablePlugins(), keepVerifierAlive = keepVerifierAlive)
           backend.execute(args)
           success = true
         case "carbon" :: args =>
@@ -110,7 +131,10 @@ class VerificationWorker(private val command: List[String],
   * ViperBackend that verifies `_ast` using `_frontend` when calling `execute`.
   * Note that we wrap `_frontend` in this way to support custom backends (which are instances of `SilFrontend`).
   */
-class ViperBackend(val backendName: String, private val _frontend: SilFrontend, private val programId: String, private val _ast: Program, private val disablePlugins: Boolean = false) {
+class ViperBackend(val backendName: String, private val _frontend: SilFrontend, private val programId: String, private val _ast: Program, private val disablePlugins: Boolean = false, private val keepVerifierAlive: Boolean = false) {
+
+  /** The frontend that ran the verification; used to obtain a debug session from a debug run. */
+  def frontend: SilFrontend = _frontend
 
   // ProgramSubmitter that sends program to viper-data-collection API if _frontend.config.submitForEvaluation enabled
   private val submitter: ViperProgramSubmitter = initSubmitter
@@ -164,7 +188,8 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       } yield mappedVerificationResult
       turnEitherIntoVerificationResult(res)
     } finally {
-      stop()
+      // For debug runs, the verifier (and thus the symbolic state and the prover) must outlive this call.
+      if (!keepVerifierAlive) stop()
       submitter.submit()
     }
 
@@ -180,6 +205,10 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     _frontend.setVerifier( _frontend.createVerifier(argsWithDummyFilename.mkString(" ")) )
 
     if (!_frontend.prepare(argsWithDummyFilename)) {
+      // Without this, a rejected command line leads to a verification that silently reports nothing.
+      val reason = Option(_frontend.config).flatMap(_.error).getOrElse("unknown reason")
+      _frontend.logger.error(s"$backendName rejected the command line " +
+        s"`${argsWithDummyFilename.mkString(" ")}`: $reason")
       return
     }
     // Initialize plugins based on the configuration that was just created from the passed arguments.

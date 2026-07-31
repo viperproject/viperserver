@@ -1,0 +1,13 @@
+field f: Int
+
+method test(x: Ref, i: Int)
+  requires acc(x.f)
+  requires i > 0
+{
+  if (i > 5) {
+    x.f := i
+  } else {
+    x.f := 0
+  }
+  assert x.f > 5
+}

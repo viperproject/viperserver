@@ -14,6 +14,7 @@ import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters._
 import scala.jdk.FutureConverters._
+import viper.server.frontends.lsp.debug.DebugSessionRegistry
 import viper.server.frontends.lsp.file.FileManager
 import viper.server.frontends.lsp.file.VerificationManager
 
@@ -72,8 +73,13 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     _client = Some(c)
   }
 
+  /** The debug sessions of this client. Debugging keeps a whole Silicon instance alive, so at most one
+    * session exists at a time and it is closed whenever a verification starts or the client goes away. */
+  val debug: DebugSessionRegistry = new DebugSessionRegistry(this)
+
   /** called when client disconnects; the server should however remain running */
   def exit(): Unit = {
+    debug.closeAll("the client disconnected")
     _client = None
     _files.clear()
   }
@@ -229,6 +235,9 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
   def hint(message: String, showSettingsButton: Boolean = false, showViperToolsUpdateButton: Boolean = false): Unit = {
     client.map{_.notifyHint(HintMessage(message, showSettingsButton, showViperToolsUpdateButton ))}
   }
+
+  /** The (possibly unsaved) content of a file, used as the loader of a debug run. */
+  def fileContent(uri: String): viper.server.frontends.lsp.file.FileContent = getFileManager(uri).content
 
   private def getFileManager(uri: String, content: Option[String] = None): FileManager = {
     var createdNew = false

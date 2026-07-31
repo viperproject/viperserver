@@ -12,13 +12,17 @@ import akka.pattern.ask
 import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
-import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
+import viper.server.core.{SiliconConfig, VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
+import viper.server.frontends.lsp.debug.DebugDrainActor
 import viper.server.utility.ReformatterAstGenerator
 import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.utility.Helpers.validateViperFile
 import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
 import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
+import viper.silicon.Silicon
+import viper.silicon.debugger.SiliconDebugSession
 import viper.silver.parser.ReformatPrettyPrinter
+import viper.silver.ast.{AbstractSourcePosition, Method, Program}
 import viper.silver.ast.utility.FileLoader
 
 import scala.concurrent.Future
@@ -161,6 +165,141 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
         combinedLogger.warn(s"stopVerification - The AST construction job #$jid does not exist and can thus not be stopped.")
         Future.successful(false)
     }
+  }
+
+  /**
+    * Runs a verification with debugging enabled and returns the resulting debug session together with the
+    * Silicon instance that produced it. The caller owns both and must stop the Silicon instance when done
+    * (see [[viper.server.frontends.lsp.debug.ServerDebugSession]]).
+    *
+    * Since debugging requires the whole symbolic execution to be tracked, this is a separate verification run
+    * rather than a reuse of the one whose diagnostics the user clicked on. Caching is disabled for it, because
+    * a cache hit would replace the failing method by an abstract one and no debug information would be
+    * produced.
+    *
+    * @param selectMemberAt if given, a (1-based) position; the member containing it is verified on its own,
+    *                       which is much faster. If that run does not reproduce a debuggable failure, the
+    *                       whole file is verified instead.
+    */
+  def startDebugVerification(file: String,
+                             customArgs: String,
+                             selectMemberAt: Option[(Int, Int)],
+                             withCounterexample: Boolean,
+                             loader: Option[FileLoader],
+                             onProgress: String => Unit,
+                             localLogger: Option[Logger] = None): Future[Either[String, (Silicon, SiliconDebugSession)]] = {
+    val logger = combineLoggers(localLogger)
+    val baseArgs = getArgListFromArgString(customArgs)
+
+    onProgress("Constructing the AST...")
+    val astJob = constructAst(file, SiliconConfig(baseArgs), localLogger, loader)
+    if (astJob.id < 0) {
+      return Future.successful(Left("Could not start AST construction; too many jobs are running."))
+    }
+    startStreamingAst(astJob, DebugDrainActor.props(onProgress), localLogger)
+
+    val programFut: Future[Option[Program]] = ast_jobs.lookupJob(astJob) match {
+      case Some(handleFut) => handleFut.flatMap(_.artifact)
+      case None => Future.successful(None)
+    }
+
+    programFut.flatMap { programOpt =>
+      discardAstJobLookup(astJob)
+      programOpt match {
+        case None =>
+          Future.successful(Left("The file could not be parsed or type-checked."))
+        case Some(program) =>
+          val member = selectMemberAt.flatMap(pos => memberAt(program, pos))
+          runDebugVerification(file, baseArgs, program, member, withCounterexample, onProgress, localLogger).flatMap {
+            case Left(err) if member.isDefined =>
+              logger.info(s"Debugging only member '${member.get}' did not work ($err); verifying the whole file.")
+              onProgress(s"Verifying only ${member.get} did not reproduce the error; verifying the whole file...")
+              runDebugVerification(file, baseArgs, program, None, withCounterexample, onProgress, localLogger)
+            case other =>
+              Future.successful(other)
+          }
+      }
+    }
+  }
+
+  private def runDebugVerification(file: String,
+                                   baseArgs: List[String],
+                                   program: Program,
+                                   member: Option[String],
+                                   withCounterexample: Boolean,
+                                   onProgress: String => Unit,
+                                   localLogger: Option[Logger]): Future[Either[String, (Silicon, SiliconDebugSession)]] = {
+    val args = debugArgs(baseArgs, member, withCounterexample)
+    combineLoggers(localLogger).info(s"Starting a debug verification: silicon ${args.mkString(" ")}")
+    onProgress(member match {
+      case Some(m) => s"Verifying $m with debugging enabled..."
+      case None => "Verifying with debugging enabled..."
+    })
+
+    val (verId, siliconFut) = verifyForDebugging(file, SiliconConfig(args), program, localLogger)
+    if (verId.id < 0) {
+      return Future.successful(Left("Could not start a verification process; too many jobs are running."))
+    }
+    startStreamingVer(verId, DebugDrainActor.props(onProgress), localLogger)
+
+    siliconFut.map {
+      case Left(err) => Left(err)
+      case Right(silicon) =>
+        silicon.debugSession.filter(_.hasDebuggableFailure) match {
+          case Some(session) =>
+            Right((silicon, session))
+          case None =>
+            val reason = silicon.debugSession match {
+              case Some(s) if s.failures.nonEmpty =>
+                s"the verification reported ${s.failures.size} error(s), but none of them carry debug information"
+              case Some(_) => "the verification succeeded this time, so there is nothing to debug"
+              case None => "the verification did not run with debugging enabled"
+            }
+            silicon.stop()
+            Left(s"No proof obligation is available: $reason.")
+        }
+    }
+  }
+
+  /**
+    * The command line of a debug run.
+    *
+    * The IDE's custom arguments end with the file to verify, and Silicon's argument parser ignores options
+    * that follow that positional argument — so the flags of the debug run have to come first. They also must
+    * not be passed twice, hence the flags we set ourselves are removed from the user's arguments.
+    */
+  private def debugArgs(baseArgs: List[String], member: Option[String], withCounterexample: Boolean): List[String] = {
+    val ownFlags = Set("--enableDebugging", "--disableCaching")
+    val cleaned = List("--select", "--counterexample", "--exhaleMode")
+      .foldLeft(baseArgs.filterNot(ownFlags.contains))(withoutOption)
+    // Counterexamples need the prover to keep its models, and are far more informative with the more complete
+    // exhale mode, which keeps the permissions of the heap around.
+    val counterexampleArgs =
+      if (withCounterexample) List("--counterexample", "mapped", "--exhaleMode", "1") else Nil
+    List("--enableDebugging", "--disableCaching") ++
+      counterexampleArgs ++
+      member.map(m => List("--select", m)).getOrElse(Nil) ++
+      cleaned
+  }
+
+  /** Drops every occurrence of the given option together with its value. */
+  private def withoutOption(args: List[String], name: String): List[String] = args match {
+    case `name` :: _ :: rest => withoutOption(rest, name)
+    case arg :: rest => arg :: withoutOption(rest, name)
+    case Nil => Nil
+  }
+
+  /** The name of the method that contains the given (1-based) position, if any. */
+  private def memberAt(program: Program, pos: (Int, Int)): Option[String] = {
+    val (line, _) = pos
+    program.methods.collectFirst {
+      case m if m.body.isDefined && containsLine(m, line) => m.name
+    }
+  }
+
+  private def containsLine(m: Method, line: Int): Boolean = m.pos match {
+    case sp: AbstractSourcePosition => sp.start.line <= line && line <= sp.end.getOrElse(sp.start).line
+    case _ => false
   }
 
   def isSupportedType(t: String): Boolean = {
