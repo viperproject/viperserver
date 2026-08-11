@@ -59,7 +59,7 @@ sealed trait CustomizableHttp extends BasicHttp {
   *
   * The VerificationServer-specific functionality will need to be implemented for each individual
   * server. In particular, this means providing a protocol that returns the VerificationServer's
-  * responses as type [[ToResponseMarshallable]].
+  * responses as type `akka.http.scaladsl.marshalling.ToResponseMarshallable`.
   * */
 trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
   import scala.language.postfixOps
