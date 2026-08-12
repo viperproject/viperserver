@@ -225,6 +225,13 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       "cached" -> obj.cached.toJson)
   })
 
+  /** `CachedEntityMessage` is not sealed, so backends may provide their own implementations for
+    * which only the fields of `VerificationResultMessage` are known. */
+  implicit val cachedEntityMessage_writer: RootJsonFormat[CachedEntityMessage] = lift(new RootJsonWriter[CachedEntityMessage] {
+    override def write(obj: CachedEntityMessage): JsValue = JsObject(
+      "result" -> obj.result.toJson)
+  })
+
   implicit val astConstructionMessage_writer: RootJsonFormat[AstConstructionResultMessage] = lift(new RootJsonWriter[AstConstructionResultMessage] {
     override def write(obj: AstConstructionResultMessage): JsValue = JsObject(
       "status" -> (obj match {
@@ -295,9 +302,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
           case c: EntityFailureMessage => c.toJson
           case d: EntitySuccessMessage => d.toJson
           case e: BranchFailureMessage => e.toJson
-          // `CachedEntityMessage` is not sealed, so backends may provide their own implementations
-          // for which only the fields of `VerificationResultMessage` are known.
-          case f: CachedEntityMessage => JsObject("result" -> f.result.toJson)
+          case f: CachedEntityMessage => f.toJson
         }))
     }
   })
