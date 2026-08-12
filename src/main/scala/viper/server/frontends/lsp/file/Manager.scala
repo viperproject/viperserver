@@ -7,6 +7,7 @@
 package viper.server.frontends.lsp.file
 
 import java.nio.file.Path
+import ch.qos.logback.classic.Logger
 import org.eclipse.lsp4j.{PublishDiagnosticsParams, Range}
 import viper.server.frontends.lsp.ClientCoordinator
 
@@ -28,7 +29,7 @@ trait Manager {
   val file: PathInfo
   val content: FileContent
   val coordinator: ClientCoordinator
-  implicit def logger = coordinator.logger
+  implicit def logger: Logger = coordinator.logger
 
   def addContainer(c: utility.LspContainer[_, _, _, _, _]): Unit
   def resetContainers(first: Boolean): Unit

@@ -83,6 +83,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       case NoPosition => JsString(obj.toString)
       case sp: AbstractSourcePosition => sp.toJson
       case hlc: HasLineColumn => JsString(s"${hlc.line}:${hlc.column}")
+      case vp: VirtualPosition => JsString(vp.toString)
     }
   })
 
@@ -133,6 +134,11 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         JsObject(
           "type" -> JsString("application_entry"),
           "value" -> a.toJson
+        )
+      case UnspecifiedEntry =>
+        JsObject(
+          "type" -> JsString("unspecified_entry"),
+          "value" -> JsString(UnspecifiedEntry.toString)
         )
     }
   })
@@ -212,6 +218,20 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       "cached" -> obj.cached.toJson)
   })
 
+  implicit val branchFailureMessage_writer: RootJsonFormat[BranchFailureMessage] = lift(new RootJsonWriter[BranchFailureMessage] {
+    override def write(obj: BranchFailureMessage): JsValue = JsObject(
+      "entity" -> obj.concerning.toJson,
+      "result" -> obj.result.toJson,
+      "cached" -> obj.cached.toJson)
+  })
+
+  /** `CachedEntityMessage` is not sealed, so backends may provide their own implementations for
+    * which only the fields of `VerificationResultMessage` are known. */
+  implicit val cachedEntityMessage_writer: RootJsonFormat[CachedEntityMessage] = lift(new RootJsonWriter[CachedEntityMessage] {
+    override def write(obj: CachedEntityMessage): JsValue = JsObject(
+      "result" -> obj.result.toJson)
+  })
+
   implicit val astConstructionMessage_writer: RootJsonFormat[AstConstructionResultMessage] = lift(new RootJsonWriter[AstConstructionResultMessage] {
     override def write(obj: AstConstructionResultMessage): JsValue = JsObject(
       "status" -> (obj match {
@@ -281,6 +301,8 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
           case b: OverallSuccessMessage => b.toJson
           case c: EntityFailureMessage => c.toJson
           case d: EntitySuccessMessage => d.toJson
+          case e: BranchFailureMessage => e.toJson
+          case f: CachedEntityMessage => f.toJson
         }))
     }
   })
@@ -473,6 +495,33 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       )
   })
 
+  implicit val benchmarkingMessage_writer: RootJsonFormat[BenchmarkingMessage] = lift(new RootJsonWriter[BenchmarkingMessage] {
+    override def write(obj: BenchmarkingMessage): JsObject = JsObject(
+      "category" -> JsString(obj.category),
+      "payload" -> JsString(obj.payload))
+  })
+
+  implicit val blockReachedMessage_writer: RootJsonFormat[BlockReachedMessage] = lift(new RootJsonWriter[BlockReachedMessage] {
+    override def write(obj: BlockReachedMessage): JsObject = JsObject(
+      "method_name" -> JsString(obj.methodName),
+      "label" -> JsString(obj.label),
+      "path_id" -> JsNumber(obj.pathId))
+  })
+
+  implicit val blockFailureMessage_writer: RootJsonFormat[BlockFailureMessage] = lift(new RootJsonWriter[BlockFailureMessage] {
+    override def write(obj: BlockFailureMessage): JsObject = JsObject(
+      "method_name" -> JsString(obj.methodName),
+      "label" -> JsString(obj.label),
+      "path_id" -> JsNumber(obj.pathId))
+  })
+
+  implicit val pathProcessedMessage_writer: RootJsonFormat[PathProcessedMessage] = lift(new RootJsonWriter[PathProcessedMessage] {
+    override def write(obj: PathProcessedMessage): JsObject = JsObject(
+      "method_name" -> JsString(obj.methodName),
+      "path_id" -> JsNumber(obj.pathId),
+      "result" -> JsString(obj.result))
+  })
+
   implicit val message_writer: RootJsonFormat[Message] = lift(new RootJsonWriter[Message] {
     override def write(obj: Message): JsValue = JsObject(
       "msg_type" -> JsString(obj.name),
@@ -495,6 +544,10 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case v: VerificationTerminationMessage => v.toJson
         case p: PProgramReport => p.semanticAnalysisSuccess.toJson
         case w: WarningsDuringVerification => w.toJson
+        case n: BenchmarkingMessage => n.toJson
+        case l: BlockReachedMessage => l.toJson
+        case k: BlockFailureMessage => k.toJson
+        case t: PathProcessedMessage => t.toJson
       }))
   })
 
