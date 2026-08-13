@@ -398,6 +398,8 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       case AbortedExceptionally(cause) =>
         _frontend.logger.debug(s"Backend aborted exceptionally - this error is not attributed to any program member", cause)
         return None
+      case _: TimeoutOccurred =>
+        return None
       case e =>
         throw new Exception("Error with unexpected type found: " + e)
     }
