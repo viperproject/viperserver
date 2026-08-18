@@ -185,9 +185,10 @@ trait VerificationServer extends Post {
   /** Discards the AST job identified by `jid` (if it exists), freeing its slot while the job
     * keeps running, and stops the job's actor once the job's message queue has completed. This
     * exists because AST jobs, unlike verification jobs, have no completion-triggered cleanup
-    * (see `initializeProcess`).
+    * (see `initializeProcess`): their lifetime is managed by the frontend, which is why this
+    * method is public.
     */
-  protected def discardAstJobOnCompletion(jid: AstJobId): Unit = {
+  def discardAstJobOnCompletion(jid: AstJobId): Unit = {
     ast_jobs.lookupJob(jid).foreach(handle_future => {
       ast_jobs.discardJob(jid)
       handle_future.foreach(astHandle => astHandle.queue.watchCompletion().onComplete(_ => {

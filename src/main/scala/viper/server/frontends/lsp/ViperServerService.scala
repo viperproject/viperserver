@@ -110,11 +110,6 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     }
   }
 
-  // Discards an AST job if it exists, the job will keep running but frees up a slot in the allowed number of jobs.
-  def discardAstJobLookup(jid: AstJobId): Unit = {
-    discardAstJobOnCompletion(jid)
-  }
-
   def stopAstConstruction(jid: AstJobId, localLogger: Option[Logger] = None): Unit = {
     stopOnlyAstConstruction(jid, localLogger).map { found =>
       if (found) discardAstJob(jid)
