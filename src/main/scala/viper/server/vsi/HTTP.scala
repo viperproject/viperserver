@@ -7,7 +7,7 @@
 package viper.server.vsi
 
 import akka.{Done, NotUsed}
-import akka.actor.PoisonPill
+
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.marshalling.ToResponseMarshallable
@@ -226,7 +226,8 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
               val interrupt_done: Future[String] =
                 (handle.job_actor ? StopVerification).mapTo[VerificationProtocol.StopProcessReply].map(_.message)
               onSuccess(interrupt_done) { msg =>
-                handle.job_actor ! PoisonPill // the actor played its part.
+                // note that the job's actor is stopped as soon as the job's message queue
+                // completes (see `initializeProcess`), i.e. it must not be stopped here:
                 complete(discardJobConfirmation(id, msg))
               }
             case Failure(_) =>

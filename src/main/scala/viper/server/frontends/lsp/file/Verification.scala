@@ -48,7 +48,7 @@ case class VerificationHandler(server: lsp.ViperServerService, logger: Logger) {
     waitingOn match {
       case Some(Left(jid)) =>
         logger.warn(s"Discarding uncompleted AST job $jid (though it will keep running), only keeping handle to verification job.")
-        server.discardAstJobOnCompletion(jid)
+        server.discardAstJob(jid)
       case _ =>
     }
     waitingOn = Some(Right(ver))
@@ -248,7 +248,7 @@ trait VerificationManager extends ManagesLeaf {
         true
       } else {
         // Ver pool full — free the orphaned AST slot
-        coordinator.server.discardAstJobOnCompletion(astJob)
+        coordinator.server.discardAstJob(astJob)
         false
       }
     })

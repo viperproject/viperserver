@@ -118,14 +118,19 @@ trait VerificationServer extends Post {
 
           val job_actor = system.actorOf(JobActor.props(new_jid), s"${pool.tag}_job_actor_${new_jid}")
 
-          /** Register cleanup task. */
+          /** Register cleanup task: the job's actor has played its part once the job's message
+            * queue has completed. Whether the job's slot is freed at that point as well is a
+            * per-job-kind policy (`discardOnCompletion`): verification jobs are cleaned up
+            * automatically, whereas AST jobs remain in the pool -- their artifact may still be
+            * consumed by later verifications, i.e. their lifetime is managed by the frontend
+            * (see `discardAstJob`). */
           queue.watchCompletion().onComplete(_ => {
             if (discardOnCompletion) {
                 pool.discardJob(new_jid)
-                /** FIXME: if the job actors are meant to be reused from one phase to another (only partially implemented),
-                  * FIXME: then they should be stopped only after the **last** job is completed in the pipeline. */
-                job_actor ! PoisonPill
             }
+            /** FIXME: if the job actors are meant to be reused from one phase to another (only partially implemented),
+              * FIXME: then they should be stopped only after the **last** job is completed in the pipeline. */
+            job_actor ! PoisonPill
           })
 
           (job_actor ? (new_jid match {
@@ -178,31 +183,21 @@ trait VerificationServer extends Post {
     }
   }
 
-  protected def discardAstJob(jid: AstJobId): Unit = {
+  /** Discards the AST job identified by `jid`, freeing its slot while the job keeps running.
+    * Since AST jobs, unlike verification jobs, do not free their slot when their message queue
+    * completes -- their artifact may still be consumed by later verifications -- their lifetime
+    * is managed by the frontend via this function. The job's actor requires no attention here:
+    * every job's actor is stopped once the job's message queue completes (see
+    * `initializeProcess`).
+    */
+  def discardAstJob(jid: AstJobId): Unit = {
     ast_jobs.discardJob(jid)
   }
 
-  /** Discards the AST job identified by `jid` (if it exists), freeing its slot while the job
-    * keeps running, and stops the job's actor once the job's message queue has completed. This
-    * exists because AST jobs, unlike verification jobs, have no completion-triggered cleanup
-    * (see `initializeProcess`): their lifetime is managed by the frontend, which is why this
-    * method is public.
-    */
-  def discardAstJobOnCompletion(jid: AstJobId): Unit = {
-    ast_jobs.lookupJob(jid).foreach(handle_future => {
-      ast_jobs.discardJob(jid)
-      handle_future.foreach(astHandle => astHandle.queue.watchCompletion().onComplete(_ => {
-        astHandle.job_actor ! PoisonPill
-      }))
-    })
-  }
-
-  /** Frees the slot of the verification job identified by `jid` immediately, without waiting for
-    * the job to finish or tear down. This is a frontend policy decision with a documented cost:
-    * a new job admitted into the freed slot runs concurrently with the old job's remaining work
-    * or teardown (e.g. its backend processes). Callers that can afford to wait should instead
-    * rely on the completion-triggered cleanup (see `initializeProcess` and
-    * `interruptVerification`), which frees the slot exactly when the job's teardown has finished.
+  /** Frees the slot of the verification job identified by `jid` immediately, neither waiting for
+    * the job to finish or tear down nor interrupting the job.
+    * Note that new jobs will be admitted to the freed slot, which will contend with this
+    * verification job.
     */
   protected def discardVerificationJobEagerly(jid: VerJobId): Unit = {
     ver_jobs.discardJob(jid)

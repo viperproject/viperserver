@@ -6,7 +6,7 @@
 
 package viper.server.frontends.lsp
 
-import akka.actor.{PoisonPill, Props}
+import akka.actor.Props
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
@@ -122,7 +122,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
       case Some(handle_future) =>
         handle_future.map { handle =>
           handle.job_actor ! StopAstConstruction
-          handle.job_actor ! PoisonPill // the actor played its part.
+          // the job's actor is stopped as soon as the job's message queue completes (see `initializeProcess`)
           combinedLogger.info(s"ast construction stopped for job #$jid")
           true
         }
