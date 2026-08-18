@@ -118,8 +118,10 @@ class TaskInterruptionTests extends AnyWordSpec with Matchers {
           5 seconds)
         assert(handle.job_actor == jobActor)
 
-        val reply = Await.result((jobActor ? VerificationProtocol.StopVerification).mapTo[String], 5 seconds)
-        assert(JobActor.indicatesInterrupted(reply))
+        val reply = Await.result(
+          (jobActor ? VerificationProtocol.StopVerification).mapTo[VerificationProtocol.StopProcessReply],
+          5 seconds)
+        assert(reply.interrupted)
 
         // without the JobActor completing the queue on behalf of the never-started task, this
         // would hang forever (nobody else ever completes the queue):

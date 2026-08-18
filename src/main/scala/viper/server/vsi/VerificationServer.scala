@@ -182,6 +182,31 @@ trait VerificationServer extends Post {
     ast_jobs.discardJob(jid)
   }
 
+  /** Discards the AST job identified by `jid` (if it exists), freeing its slot while the job
+    * keeps running, and stops the job's actor once the job's message queue has completed. This
+    * exists because AST jobs, unlike verification jobs, have no completion-triggered cleanup
+    * (see `initializeProcess`).
+    */
+  protected def discardAstJobOnCompletion(jid: AstJobId): Unit = {
+    ast_jobs.lookupJob(jid).foreach(handle_future => {
+      ast_jobs.discardJob(jid)
+      handle_future.foreach(astHandle => astHandle.queue.watchCompletion().onComplete(_ => {
+        astHandle.job_actor ! PoisonPill
+      }))
+    })
+  }
+
+  /** Frees the slot of the verification job identified by `jid` immediately, without waiting for
+    * the job to finish or tear down. This is a frontend policy decision with a documented cost:
+    * a new job admitted into the freed slot runs concurrently with the old job's remaining work
+    * or teardown (e.g. its backend processes). Callers that can afford to wait should instead
+    * rely on the completion-triggered cleanup (see `initializeProcess` and
+    * `interruptVerification`), which frees the slot exactly when the job's teardown has finished.
+    */
+  protected def discardVerificationJobEagerly(jid: VerJobId): Unit = {
+    ver_jobs.discardJob(jid)
+  }
+
   /** This method starts a verification process.
     *
     * As such, it accepts an instance of a VerificationTask, which it will pass to the JobActor.
@@ -344,8 +369,8 @@ trait VerificationServer extends Post {
             /** the job failed before a task was submitted */
             Future.successful(false)
           } else {
-            (handle.job_actor ? msg).mapTo[String]
-              .map(JobActor.indicatesInterrupted)(dispatcher)
+            (handle.job_actor ? msg).mapTo[VerificationProtocol.StopProcessReply]
+              .map(_.interrupted)(dispatcher)
           }
         )(dispatcher).recover { case NonFatal(_) => false }(dispatcher)
         val timeoutFuture = akka.pattern.after(askTimeout.duration, system.scheduler)(Future.successful(false))(dispatcher)
@@ -387,11 +412,11 @@ trait VerificationServer extends Post {
       case (_, handle_future) =>
         handle_future.flatMap {
           case AstHandle(actor, _, _, _) =>
-            (actor ? VerificationProtocol.StopAstConstruction).mapTo[String]
+            (actor ? VerificationProtocol.StopAstConstruction).mapTo[VerificationProtocol.StopProcessReply].map(_.message)
           case VerHandle(null, _, _, _) =>
             Future.successful("Job had no actor.")
           case VerHandle(actor, _, _, _) =>
-            (actor ? VerificationProtocol.StopVerification).mapTo[String]
+            (actor ? VerificationProtocol.StopVerification).mapTo[VerificationProtocol.StopProcessReply].map(_.message)
         }.recover {
           case _: akka.pattern.AskTimeoutException =>
             "Job actor already terminated."

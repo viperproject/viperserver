@@ -13,13 +13,6 @@ import akka.actor.{Actor, Props}
 
 object JobActor {
   def props[T](id: JobId): Props = Props(new JobActor[T](id))
-
-  private def interruptedReply(id: JobId): String = s"$id has been successfully interrupted."
-  private def finalizedReply(id: JobId): String = s"$id has already been finalized."
-
-  /** whether a reply to a [[VerificationProtocol.StopProcessRequest]] indicates that an active
-    * task has been interrupted (as opposed to there being nothing left to interrupt) */
-  def indicatesInterrupted(reply: String): Boolean = reply.endsWith("interrupted.")
 }
 
 class JobActor[T](private val id: JobId) extends Actor {
@@ -102,10 +95,10 @@ class JobActor[T](private val id: JobId) extends Actor {
           interrupt(_verificationRequest)
       }
       if (did_I_interrupt) {
-        sender() ! JobActor.interruptedReply(id)
+        sender() ! StopProcessReply(interrupted = true, s"$id has been successfully interrupted.")
       } else {
         // FIXME: Saying this is a potential vulnerability
-        sender() ! JobActor.finalizedReply(id)
+        sender() ! StopProcessReply(interrupted = false, s"$id has already been finalized.")
       }
     case msg =>
       throw new Exception("JobActor: received unexpected message: " + msg)
