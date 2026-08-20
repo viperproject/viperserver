@@ -70,10 +70,6 @@ jobs:
             ${{ env.PR_BODY_LINE1 }}
             ${{ env.PR_BODY_LINE2 }}
 
-      # Note that this requires "Allow auto-merge" to be enabled in this repository's settings
-      # (Settings > General > Pull Requests). Squashing is used because it is the only merge
-      # method that this repository permits; when the base branch is governed by a merge queue,
-      # the queue's merge method takes precedence over this flag.
       - name: Enable auto-merge of PR
         if: (env.PREV_SILICON_REF != env.CUR_SILICON_REF) || (env.PREV_CARBON_REF != env.CUR_CARBON_REF)
         run: gh pr merge --squash --auto "${{ steps.pr.outputs.pull-request-number }}"
