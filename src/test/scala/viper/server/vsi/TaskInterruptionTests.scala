@@ -21,7 +21,8 @@ import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 import scala.util.control.NonFatal
 
-/** a minimal [[MessageStreamingTask]] recording whether its callable ever ran */
+/** a minimal `MessageStreamingTask` recording whether its callable ever ran.
+  */
 class ProbeTask extends MessageStreamingTask[Unit] {
   type A = String
   override def pack(m: String): Envelope = ProbeEnvelope(m)
