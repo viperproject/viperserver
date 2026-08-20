@@ -227,7 +227,7 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
                 (handle.job_actor ? StopVerification).mapTo[VerificationProtocol.StopProcessReply].map(_.message)
               onSuccess(interrupt_done) { msg =>
                 // note that the job's actor is stopped as soon as the job's message queue
-                // completes (see `initializeProcess`), i.e. it must not be stopped here:
+                // completes (see `initializeProcess`)
                 complete(discardJobConfirmation(id, msg))
               }
             case Failure(_) =>

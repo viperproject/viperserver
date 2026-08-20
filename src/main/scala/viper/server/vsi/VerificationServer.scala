@@ -128,8 +128,10 @@ trait VerificationServer extends Post {
             if (discardOnCompletion) {
                 pool.discardJob(new_jid)
             }
-            /** FIXME: if the job actors are meant to be reused from one phase to another (only partially implemented),
-              * FIXME: then they should be stopped only after the **last** job is completed in the pipeline. */
+            // we make sure that the job actor is killed, without leaving this up to clients that might forget
+            // about doing so and, thus, leak job actors.
+            /** FIXME: we don't support reusing job actors across phases. Implementing this feature would
+              * require killing the job actor only after the **last** job is completed in the pipeline. */
             job_actor ! PoisonPill
           })
 
@@ -185,10 +187,7 @@ trait VerificationServer extends Post {
 
   /** Discards the AST job identified by `jid`, freeing its slot while the job keeps running.
     * Since AST jobs, unlike verification jobs, do not free their slot when their message queue
-    * completes -- their artifact may still be consumed by later verifications -- their lifetime
-    * is managed by the frontend via this function. The job's actor requires no attention here:
-    * every job's actor is stopped once the job's message queue completes (see
-    * `initializeProcess`).
+    * completes, frontends must, thus, manage their lifetime by calling this function.
     */
   def discardAstJob(jid: AstJobId): Unit = {
     ast_jobs.discardJob(jid)
@@ -198,6 +197,8 @@ trait VerificationServer extends Post {
     * the job to finish or tear down nor interrupting the job.
     * Note that new jobs will be admitted to the freed slot, which will contend with this
     * verification job.
+    * Calling this function by frontends is however optional as verification jobs automatically
+    * free their slot when their message queue completes.
     */
   protected def discardVerificationJobEagerly(jid: VerJobId): Unit = {
     ver_jobs.discardJob(jid)
