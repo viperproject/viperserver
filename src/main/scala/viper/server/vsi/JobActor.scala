@@ -49,7 +49,9 @@ class JobActor[T](private val id: JobId) extends Actor {
   }
 
   override def receive: PartialFunction[Any, Unit] = {
-    case req: StartProcessRequest[T] =>
+    // The type argument cannot be checked at runtime because of erasure. This is safe because this
+    // actor only ever receives requests parameterized with its own type argument.
+    case req: StartProcessRequest[T @unchecked] =>
       req match {
         case _: ConstructAst[T] =>
           //println(">>> JobActor received request ConstructAst")

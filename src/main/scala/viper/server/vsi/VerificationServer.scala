@@ -92,6 +92,9 @@ trait VerificationServer extends Post {
           new_jid match {
             case _: VerJobId =>
               Future.successful(VerHandle(null, null, null, prev_job_id_maybe))
+            case _: AstJobId =>
+              /** AST construction jobs have no prerequisite tasks and thus always come with a task. */
+              Future.failed(new IllegalStateException(s"No task available for AST construction job $new_jid"))
           }
         case Some(task) =>
           /** What we really want here is SourceQueueWithComplete[Envelope]

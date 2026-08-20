@@ -14,7 +14,6 @@ import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
 import viper.server.utility.ReformatterAstGenerator
-import viper.server.utility.Helpers.{getArgListFromArgString, validateViperFile}
 import viper.server.utility.Helpers.validateViperFile
 import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
 import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
