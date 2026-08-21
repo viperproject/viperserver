@@ -19,6 +19,7 @@ import viper.silver.utility.ViperProgramSubmitter
 import viper.silver.verifier.{AbstractVerificationError, VerificationResult, _}
 
 import scala.collection.mutable.ListBuffer
+import scala.util.control.NonFatal
 
 class ViperServerException extends Exception
 case class ViperServerWrongTypeException(name: String) extends ViperServerException {
@@ -123,8 +124,6 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
 
   /** Run the backend verification functionality */
   def execute(args: Seq[String]): Unit = {
-    initialize(args)
-
     /**
       * the architecture is as follows:
       * First, plugins can transform the AST (via their `beforeVerify` methods).
@@ -148,6 +147,10 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
       * verification errors that were expected but did not occur.
       */
     val overallResult = try {
+      // `initialize` starts the verifier and thereby its prover processes. It runs inside this
+      // `try` such that the provers are stopped even if a later initialization step fails or the
+      // job is cancelled (i.e. this thread is interrupted) during initialization:
+      initialize(args)
       val res = for {
         filteredProgram <- filter(_ast)
         innerProgram <- beforeVerify(filteredProgram)
@@ -340,8 +343,39 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
   /**
     * LA Jan 5 2023: unclear whether this is necessary at all. SilFrontend neither calls start nor stop on the verifier and ViperBackend used to call only stop in the past.
     */
+  /** stops the verifier and thereby destroys its prover processes.
+    *
+    * The teardown must complete even for a cancelled job: cancellation interrupts this thread (see
+    * `JobActor.interrupt`), and a still-pending interrupt would make the first blocking teardown
+    * step (e.g. `Process.waitFor` on a destroyed prover, or awaiting the termination of Silicon's
+    * verifier pool) throw `InterruptedException` and abandon the teardown half-way, leaking the
+    * remaining prover processes. Hence, the interrupt flag is cleared for the duration of the
+    * teardown and restored afterwards; an interrupt arriving during the teardown itself is handled
+    * by retrying it once (the individual teardown steps are idempotent).
+    */
   private def stop(): Unit = {
-    _frontend.verifier.stop()
+    var interruptPending = Thread.interrupted()
+    try {
+      // `initialize` might have failed before creating a verifier:
+      val verifier = _frontend.verifier
+      if (verifier != null) {
+        try {
+          verifier.stop()
+        } catch {
+          case _: InterruptedException =>
+            interruptPending = true
+            Thread.interrupted() // clear the flag again before retrying
+            verifier.stop()
+        }
+      }
+    } catch {
+      case NonFatal(e) =>
+        _frontend.logger.error("stopping the verification backend failed; prover processes might have been leaked", e)
+    } finally {
+      if (interruptPending) {
+        Thread.currentThread().interrupt()
+      }
+    }
   }
 
   private def finish(verificationResult: VerificationResult): Unit = {

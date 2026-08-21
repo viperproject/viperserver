@@ -6,7 +6,7 @@
 
 package viper.server.vsi
 
-import java.util.concurrent.{Callable, FutureTask}
+import java.util.concurrent.{Callable, CancellationException, FutureTask}
 import scala.language.postfixOps
 import akka.actor.ActorRef
 import akka.pattern.ask
@@ -34,8 +34,35 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
 
   private lazy val artifactPromise = Promise[T]()
   lazy val artifact: Future[T] = artifactPromise.future
-  lazy val futureTask: FutureTask[T] = new FutureTask(this) {
+
+  /** guards `callableStarted` and thereby synchronizes starting the task against `cancelledBeforeStart` */
+  private val startSync = new Object
+  private var callableStarted: Boolean = false // guarded by `startSync`
+
+  lazy val futureTask: FutureTask[T] = new FutureTask[T](() => {
+    startSync.synchronized {
+      // a `FutureTask` remains in its initial state while the callable is executing, i.e. a
+      // successful `cancel` alone cannot tell a task that will never run apart from a task that is
+      // running right now. This handshake makes that distinction: `cancelledBeforeStart` observing
+      // a cancelled task without `callableStarted` under this lock guarantees that this check has
+      // not run yet and will fail once it does, i.e. that `call()` will never be invoked.
+      if (futureTask.isCancelled) {
+        throw new CancellationException()
+      }
+      callableStarted = true
+    }
+    call()
+  }) {
     override def done(): Unit = artifactPromise.complete(Try(get()))
+  }
+
+  /** Returns true iff this task has been cancelled without its callable ever starting. A positive
+    * answer is stable: the callable is then guaranteed to never run. Callers may hence take over
+    * the cancelled task's cleanup duties that the callable would otherwise have performed, such as
+    * completing the task's message queue (see `JobActor`).
+    */
+  final def cancelledBeforeStart: Boolean = startSync.synchronized {
+    futureTask.isCancelled && !callableStarted
   }
 
   private var q_actor: ActorRef = _
@@ -48,6 +75,9 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
 
     q_actor = actor
   }
+
+  /** the actor managing this task's message queue; null until `setQueueActor` has been called */
+  private[vsi] def queueActor: ActorRef = q_actor
 
   /** Sends massage to the attached actor.
     *
