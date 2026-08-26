@@ -44,7 +44,7 @@ on:
 # them. This only works on branch `release`.
 
 env:
-  Z3_VERSION: "4.8.7"
+  Z3_VERSION: "4.16.0"
 
 jobs:
   build:
@@ -52,7 +52,7 @@ jobs:
     # we enforce here that the nightly build job only runs in the main repo:
     if: (github.event_name == 'schedule' && github.repository == 'viperproject/viperserver') || (github.event_name != 'schedule')
     runs-on: ubuntu-latest
-    container: viperproject/viperserver:v4_z3_4.8.7
+    container: viperproject/viperserver:v5
     steps:
       - name: Checkout ViperServer
         uses: actions/checkout@v7
@@ -192,19 +192,19 @@ jobs:
       - name: Download Z3 (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
         run: |
-          curl -L --silent --show-error --fail https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-ubuntu-16.04.zip --output z3.zip
+          curl -L --silent --show-error --fail https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-glibc-2.39.zip --output z3.zip
           unzip z3.zip -d z3/
-          echo "$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-ubuntu-16.04/bin" >> $GITHUB_PATH
-          echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-ubuntu-16.04/bin/z3" >> $GITHUB_ENV
+          echo "$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-glibc-2.39/bin" >> $GITHUB_PATH
+          echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-glibc-2.39/bin/z3" >> $GITHUB_ENV
         shell: bash
 
       - name: Download Z3 (macOS)
         if: startsWith(matrix.os, 'macos')
         run: |
-          curl -L --silent --show-error --fail https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-osx-10.14.6.zip --output z3.zip
+          curl -L --silent --show-error --fail https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-arm64-osx-15.7.3.zip --output z3.zip
           unzip z3.zip -d z3/
-          echo "$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-osx-10.14.6/bin" >> $GITHUB_PATH
-          echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-x64-osx-10.14.6/bin/z3" >> $GITHUB_ENV
+          echo "$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-arm64-osx-15.7.3/bin" >> $GITHUB_PATH
+          echo "Z3_EXE=$GITHUB_WORKSPACE/z3/z3-${{ env.Z3_VERSION }}-arm64-osx-15.7.3/bin/z3" >> $GITHUB_ENV
         shell: bash
 
       - name: Download Z3 (Windows)
