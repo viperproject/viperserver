@@ -6,22 +6,18 @@
 
 package viper.server.frontends.lsp
 
-import scala.language.postfixOps
-import akka.actor.{PoisonPill, Props}
-import akka.pattern.ask
-import akka.util.Timeout
+import akka.actor.Props
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
 import viper.server.utility.ReformatterAstGenerator
 import viper.server.utility.Helpers.validateViperFile
-import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
-import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
+import viper.server.vsi.VerificationProtocol.StopAstConstruction
+import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerJobId}
 import viper.silver.parser.ReformatPrettyPrinter
 import viper.silver.ast.utility.FileLoader
 
 import scala.concurrent.Future
-import scala.concurrent.duration._
 
 class ViperServerService(config: ViperConfig)(override implicit val executor: VerificationExecutionContext)
   extends ViperCoreServer(config)(executor) with DefaultVerificationServerStart {
@@ -95,48 +91,23 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     val logger = combineLoggers(localLogger)
     ver_jobs.lookupJob(jid) match {
       case Some(handle_future) =>
-        // Free the ver slot so new jobs can be added immediately
-        ver_jobs.discardJob(jid)
-        handle_future.flatMap(handle => {
-          // Stop ast construction
-          handle.prev_job_id.foreach(astJobId => stopAstConstruction(astJobId, localLogger))
-          stopOnlyVerification(handle, logger)
-            .map(verResult => {
-              logger.info(s"verification stopped for job #$jid")
-              verResult
-            })
+        // the actual interrupt is delegated to `interruptVerification`. Note that the interrupted
+        // job's task completes its message queue once it finished tearing down, which discards the
+        // job and stops its actors (see `initializeProcess`)
+        val interrupted = interruptVerification(jid)
+        // Free the ver slot so new jobs can be added immediately:
+        discardVerificationJobEagerly(jid)
+        // Stop ast construction:
+        handle_future.foreach(handle => handle.prev_job_id.foreach(astJobId => stopAstConstruction(astJobId, localLogger)))
+        interrupted.map(verResult => {
+          logger.info(s"verification stopped for job #$jid")
+          verResult
         })
       case _ =>
         // Did not find a job with this jid.
         logger.warn(s"stopVerification - The verification job #$jid does not exist and can thus not be stopped.")
         Future.successful(false)
     }
-  }
-
-  private def stopOnlyVerification(handle: VerHandle, combinedLogger: Logger): Future[Boolean] = {
-    handle match {
-      // If AST construction failed, a verification handle will be returned where the actor field is null.
-      case VerHandle(null, _, _, _) => Future.successful(false)
-      case _ => {
-        implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-        val interrupt: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
-        handle.job_actor ! PoisonPill // the actor played its part.
-        interrupt.map(msg => {
-          combinedLogger.info(msg)
-          true
-        })
-      }
-    }
-  }
-
-  // Discards an AST job if it exists, the job will keep running but frees up a slot in the allowed number of jobs.
-  def discardAstJobLookup(jid: AstJobId): Unit = {
-    ast_jobs.lookupJob(jid).map({job =>
-      ast_jobs.discardJob(jid)
-      job.map(astHandle => astHandle.queue.watchCompletion().onComplete(_ => {
-        astHandle.job_actor ! PoisonPill
-      }))
-    })
   }
 
   def stopAstConstruction(jid: AstJobId, localLogger: Option[Logger] = None): Unit = {
@@ -151,7 +122,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
       case Some(handle_future) =>
         handle_future.map { handle =>
           handle.job_actor ! StopAstConstruction
-          handle.job_actor ! PoisonPill // the actor played its part.
+          // the job's actor is stopped as soon as the job's message queue completes (see `initializeProcess`)
           combinedLogger.info(s"ast construction stopped for job #$jid")
           true
         }
