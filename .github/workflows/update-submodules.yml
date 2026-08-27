@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -72,6 +72,6 @@ jobs:
 
       - name: Enable auto-merge of PR
         if: (env.PREV_SILICON_REF != env.CUR_SILICON_REF) || (env.PREV_CARBON_REF != env.CUR_CARBON_REF)
-        run: gh pr merge --merge --auto "${{ steps.pr.outputs.pull-request-number }}"
+        run: gh pr merge --squash --auto "${{ steps.pr.outputs.pull-request-number }}"
         env:
           GH_TOKEN: ${{ secrets.VIPER_ADMIN_TOKEN }}

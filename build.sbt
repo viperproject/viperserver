@@ -24,6 +24,12 @@ lazy val server = (project in file("."))
         // classpath used by Scala's reflection.
         fork := true,
 
+        // Compilation settings
+        // Note that the remaining scalac options (e.g. -deprecation, -feature, and -Wunused) are
+        // inherited from Silver's `ThisBuild / scalacOptions`. Treating warnings as errors is
+        // scoped to this project such that the backends remain unaffected.
+        scalacOptions += "-Xfatal-warnings", // Treat warnings as errors to guarantee code quality in future changes
+
         libraryDependencies += "net.liftweb" %% "lift-json" % "3.5.0",
         libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.6.10",
         libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json" % "10.2.1",
