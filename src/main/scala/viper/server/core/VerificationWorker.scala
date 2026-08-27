@@ -123,7 +123,15 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
 
   /** Run the backend verification functionality */
   def execute(args: Seq[String]): Unit = {
-    initialize(args)
+    if (!initialize(args)) {
+      // The command line was rejected; the frontend has reported an
+      // InvalidArgumentsReport and the verifier was never started. Fail the
+      // job with the parse error instead of verifying with an unstarted
+      // verifier.
+      val details = Option(_frontend.config).flatMap(_.error)
+        .getOrElse("see the reported invalid arguments")
+      throw new IllegalArgumentException(s"Invalid verification backend arguments: $details")
+    }
 
     /**
       * the architecture is as follows:
@@ -171,8 +179,10 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     finish(overallResult)
   }
 
-  /** initializes frontend such that the associated verifier is ready for verification */
-  private def initialize(args: Seq[String]): Unit = {
+  /** initializes frontend such that the associated verifier is ready for verification;
+    * returns false when the arguments were rejected (the frontend reports the errors
+    * and the verifier is not started) */
+  private def initialize(args: Seq[String]): Boolean = {
     // --ignoreFile is not enough as Silicon still tries to parse the provided filepath unless
     // the following dummy file is used instead (see Silicon issue #552):
     val argsWithDummyFilename = args ++ Seq("--ignoreFile", Silicon.dummyInputFilename)
@@ -180,13 +190,14 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     _frontend.setVerifier( _frontend.createVerifier(argsWithDummyFilename.mkString(" ")) )
 
     if (!_frontend.prepare(argsWithDummyFilename)) {
-      return
+      return false
     }
     // Initialize plugins based on the configuration that was just created from the passed arguments.
     _frontend.resetPlugins()
     _frontend.init( _frontend.verifier )
 
     submitter.setArgs(args.toArray)
+    true
   }
 
   private def filter(input: Program): Either[Seq[AbstractError], Program] = {
