@@ -522,6 +522,11 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
       "result" -> JsString(obj.result))
   })
 
+  implicit val verifierStateMessage_writer: RootJsonFormat[VerifierStateMessage] = lift(new RootJsonWriter[VerifierStateMessage] {
+    override def write(obj: VerifierStateMessage): JsObject = JsObject(
+      "verifier_state" -> JsString(obj.state.toString))
+  })
+
   implicit val message_writer: RootJsonFormat[Message] = lift(new RootJsonWriter[Message] {
     override def write(obj: Message): JsValue = JsObject(
       "msg_type" -> JsString(obj.name),
@@ -548,6 +553,7 @@ object ViperIDEProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJs
         case l: BlockReachedMessage => l.toJson
         case k: BlockFailureMessage => k.toJson
         case t: PathProcessedMessage => t.toJson
+        case v: VerifierStateMessage => v.toJson
       }))
   })
 
