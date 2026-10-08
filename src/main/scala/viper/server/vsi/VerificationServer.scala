@@ -193,6 +193,17 @@ trait VerificationServer extends Post {
     ast_jobs.discardJob(jid)
   }
 
+  /** Frees the slot of the verification job identified by `jid` immediately, neither waiting for
+    * the job to finish or tear down nor interrupting the job.
+    * Note that new jobs will be admitted to the freed slot, which will contend with this
+    * verification job.
+    * Calling this function by frontends is however optional as verification jobs automatically
+    * free their slot when their message queue completes.
+    */
+  protected def discardVerificationJobEagerly(jid: VerJobId): Unit = {
+    ver_jobs.discardJob(jid)
+  }
+
   /** This method starts a verification process.
     *
     * As such, it accepts an instance of a VerificationTask, which it will pass to the JobActor.
