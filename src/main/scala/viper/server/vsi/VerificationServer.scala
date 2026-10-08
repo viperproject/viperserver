@@ -18,6 +18,7 @@ import scala.concurrent.duration._
 import scala.concurrent.Future
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success}
+import scala.util.control.NonFatal
 import scala.language.postfixOps
 
 
@@ -274,6 +275,75 @@ trait VerificationServer extends Post {
     })
   }
 
+  /** Requests the AST construction identified by `jid` to stop, analogously to
+    * `interruptVerification` (which documents the detailed contract). Note that, unlike
+    * verification jobs, AST construction jobs are not discarded when their queue completes;
+    * interrupting one does not change how it is cleaned up (see `discardAstJob`).
+    */
+  def interruptAstConstruction(jid: AstJobId): Future[Boolean] = {
+    interruptJob(ast_jobs, jid, VerificationProtocol.StopAstConstruction)
+  }
+
+  /** Requests the verification identified by `jid` to stop, without waiting for its teardown: a
+    * running verification task is interrupted, and a task that has not started yet is prevented
+    * from ever starting.
+    *
+    * The returned future completes once the job's actor has acknowledged the interrupt (bounded
+    * by `askTimeout`), which is NOT when the verification's teardown has finished: an interrupted
+    * task cleans up asynchronously (e.g. stopping backend processes) before it completes its
+    * message queue. Consumers observe the end of the teardown through the job's message stream
+    * (see `streamMessages`), which completes only once the interrupted task is done cleaning up.
+    * The job is discarded from the job pool at that point (see `initializeProcess`); this method
+    * deliberately does not discard the job early, so that a new job's resources cannot race with
+    * the interrupted job's teardown.
+    *
+    * Returns true iff an active verification task has been interrupted. In particular, false is
+    * returned if the job id is unknown (e.g. because the job already finished and has been
+    * cleaned up), the job's task already completed, or this server is not running. Note that a
+    * verification job that waits for a separate AST construction job (see
+    * `initializeVerificationProcess`) has no verification task to interrupt yet -- this method
+    * then returns false and callers should interrupt the AST construction job, which they know
+    * by id, instead (see `interruptAstConstruction`).
+    */
+  def interruptVerification(jid: VerJobId): Future[Boolean] = {
+    interruptJob(ver_jobs, jid, VerificationProtocol.StopVerification)
+  }
+
+  /** Asks `jid`'s job actor to interrupt its task; false if there is no such active job, the ask
+    * is not answered, or the job's handle does not resolve in time.
+    *
+    * All future callbacks are deliberately scheduled on the actor system's dispatcher instead of
+    * on `executor`: the latter is the pool that executes the tasks themselves, i.e. exactly the
+    * pool that is saturated in the situation this method exists for -- callbacks scheduled there
+    * would wait in line behind the very tasks they are meant to interrupt. The actor system's
+    * dispatcher is the right liveness domain because the ask cannot be processed without it
+    * either. The overall wait is bounded by `askTimeout` because a job's handle future can take
+    * arbitrarily long to resolve (a verification job's handle only resolves once its prerequisite
+    * AST construction finished, see `initializeProcess`).
+    */
+  private def interruptJob[S <: JobId, T <: JobHandle](pool: JobPool[S, T], jid: S, msg: VerificationProtocol.StopProcessRequest): Future[Boolean] = {
+    val dispatcher = system.dispatcher
+    if (!isRunning) {
+      return Future.successful(false)
+    }
+    pool.lookupJob(jid) match {
+      case Some(handle_future) =>
+        val interruptFuture = handle_future.flatMap(handle =>
+          if (handle.job_actor == null) {
+            /** the job failed before a task was submitted */
+            Future.successful(false)
+          } else {
+            (handle.job_actor ? msg).mapTo[VerificationProtocol.StopProcessReply]
+              .map(_.interrupted)(dispatcher)
+          }
+        )(dispatcher).recover { case NonFatal(_) => false }(dispatcher)
+        val timeoutFuture = akka.pattern.after(askTimeout.duration, system.scheduler)(Future.successful(false))(dispatcher)
+        Future.firstCompletedOf(Seq(interruptFuture, timeoutFuture))(dispatcher)
+      case None =>
+        Future.successful(false)
+    }
+  }
+
   /** Stops an instance of VerificationServer from running.
     * The actor system and executor do not get terminated and are the responsibility of the caller
     *
@@ -306,11 +376,11 @@ trait VerificationServer extends Post {
       case (_, handle_future) =>
         handle_future.flatMap {
           case AstHandle(actor, _, _, _) =>
-            (actor ? VerificationProtocol.StopAstConstruction).mapTo[String]
+            (actor ? VerificationProtocol.StopAstConstruction).mapTo[VerificationProtocol.StopProcessReply].map(_.message)
           case VerHandle(null, _, _, _) =>
             Future.successful("Job had no actor.")
           case VerHandle(actor, _, _, _) =>
-            (actor ? VerificationProtocol.StopVerification).mapTo[String]
+            (actor ? VerificationProtocol.StopVerification).mapTo[VerificationProtocol.StopProcessReply].map(_.message)
         }.recover {
           case _: akka.pattern.AskTimeoutException =>
             "Job actor already terminated."

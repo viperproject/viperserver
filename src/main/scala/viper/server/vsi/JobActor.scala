@@ -75,10 +75,10 @@ class JobActor[T](private val id: JobId) extends Actor {
           interrupt(_verificationTask)
       }
       if (did_I_interrupt) {
-        sender() ! s"$id has been successfully interrupted."
+        sender() ! StopProcessReply(interrupted = true, s"$id has been successfully interrupted.")
       } else {
         // FIXME: Saying this is a potential vulnerability
-        sender() ! s"$id has already been finalized."
+        sender() ! StopProcessReply(interrupted = false, s"$id has already been finalized.")
       }
     case msg =>
       throw new Exception("JobActor: received unexpected message: " + msg)
