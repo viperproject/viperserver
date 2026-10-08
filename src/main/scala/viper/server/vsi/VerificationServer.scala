@@ -14,6 +14,7 @@ import akka.stream.OverflowStrategy
 import akka.util.Timeout
 import viper.server.core.VerificationExecutionContext
 
+import java.util.concurrent.CancellationException
 import scala.concurrent.duration._
 import scala.concurrent.Future
 import scala.reflect.ClassTag
@@ -117,14 +118,21 @@ trait VerificationServer extends Post {
 
           val job_actor = system.actorOf(JobActor.props(new_jid), s"${pool.tag}_job_actor_${new_jid}")
 
-          /** Register cleanup task. */
+          /** Register cleanup task: the job's actor has played its part once the job's message
+            * queue has completed. Whether the job's slot is freed at that point as well is a
+            * per-job-kind policy (`discardOnCompletion`): verification jobs are cleaned up
+            * automatically, whereas AST jobs remain in the pool -- their artifact may still be
+            * consumed by later verifications, i.e. their lifetime is managed by the frontend
+            * (see `discardAstJob`). */
           queue.watchCompletion().onComplete(_ => {
             if (discardOnCompletion) {
                 pool.discardJob(new_jid)
-                /** FIXME: if the job actors are meant to be reused from one phase to another (only partially implemented),
-                  * FIXME: then they should be stopped only after the **last** job is completed in the pipeline. */
-                job_actor ! PoisonPill
             }
+            // we make sure that the job actor is killed, without leaving this up to clients that might forget
+            // about doing so and, thus, leak job actors.
+            /** FIXME: we don't support reusing job actors across phases. Implementing this feature would
+              * require killing the job actor only after the **last** job is completed in the pipeline. */
+            job_actor ! PoisonPill
           })
 
           (job_actor ? (new_jid match {
@@ -154,6 +162,14 @@ trait VerificationServer extends Post {
         val msg = s"AST construction job ${prev_job_id_maybe.get} resulted in a failure: $e"
         println(msg)
         pool.discardJob(new_jid)
+      case e: CancellationException =>
+        // The AST construction task this job depends on has been cancelled (e.g. via
+        // `interruptAstConstruction`), which fails its artifact future with a
+        // CancellationException. The dependent job must be removed from the pool as well --
+        // otherwise its slot would leak forever (no task ever runs for it, i.e. its queue is
+        // never completed and the completion-triggered cleanup never fires):
+        println(s"AST construction job ${prev_job_id_maybe.get} has been cancelled: $e")
+        pool.discardJob(new_jid)
     }).mapTo[T])
   }
 
@@ -169,7 +185,11 @@ trait VerificationServer extends Post {
     }
   }
 
-  protected def discardAstJob(jid: AstJobId): Unit = {
+  /** Discards the AST job identified by `jid`, freeing its slot while the job keeps running.
+    * Since AST jobs, unlike verification jobs, do not free their slot when their message queue
+    * completes, frontends must, thus, manage their lifetime by calling this function.
+    */
+  def discardAstJob(jid: AstJobId): Unit = {
     ast_jobs.discardJob(jid)
   }
 
@@ -276,9 +296,11 @@ trait VerificationServer extends Post {
   }
 
   /** Requests the AST construction identified by `jid` to stop, analogously to
-    * `interruptVerification` (which documents the detailed contract). Note that, unlike
-    * verification jobs, AST construction jobs are not discarded when their queue completes;
-    * interrupting one does not change how it is cleaned up (see `discardAstJob`).
+    * `interruptVerification` (which documents the detailed contract). A verification job waiting
+    * for this AST construction job observes the cancellation as a failed AST artifact and is
+    * discarded from the job pool (see `initializeProcess`). Note that, unlike verification jobs,
+    * AST construction jobs are not discarded when their queue completes; interrupting one does
+    * not change how it is cleaned up (see `discardAstJob`).
     */
   def interruptAstConstruction(jid: AstJobId): Future[Boolean] = {
     interruptJob(ast_jobs, jid, VerificationProtocol.StopAstConstruction)
