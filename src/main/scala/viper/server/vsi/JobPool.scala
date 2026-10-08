@@ -83,7 +83,14 @@ class JobPool[S <: JobId, T <: JobHandle](val tag: String, val MAX_ACTIVE_JOBS: 
     new_jid
   }
 
-  def discardJob(jid: S): Unit = {
+  /** Removes the job from this pool, freeing its slot. This is deliberately not accessible
+    * outside the vsi layer: discarding at the wrong moment violates the job lifecycle's
+    * invariants (e.g. a job discarded before its message stream is attached can never be
+    * streamed, and an eagerly freed slot admits a new job that will contend with the old job
+    * about resources). Frontends express such policies through `VerificationServer`'s dedicated
+    * methods instead.
+    */
+  private[vsi] def discardJob(jid: S): Unit = {
     _jobHandles -= jid
     _jobExecutors -= jid
     _jobCache -= jid
