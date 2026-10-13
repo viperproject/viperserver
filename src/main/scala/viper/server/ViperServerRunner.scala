@@ -13,6 +13,7 @@ import org.eclipse.lsp4j.jsonrpc.Launcher.Builder
 import viper.server.core.{DefaultVerificationExecutionContext, VerificationExecutionContext}
 import viper.server.frontends.http.ViperHttpServer
 import viper.server.frontends.lsp.{CustomReceiver, IdeLanguageClient, ViperServerService}
+import viper.server.frontends.mcp.ViperMcpServer
 import viper.viperserver.BuildInfo
 
 import scala.concurrent.{Await, Future}
@@ -23,13 +24,16 @@ object ViperServerRunner {
   var viperServerHttp: ViperHttpServer = _
 
   def main(args: Array[String]): Unit = {
-    println(s"${BuildInfo.projectName} ${BuildInfo.projectVersionExtended}")
     val config = new ViperConfig(args.toIndexedSeq)
     val executor = new DefaultVerificationExecutionContext(threadPoolSize = Some(config.nThreads()))
     if (config.serverMode() == config.SERVER_MODE_LSP) {
+      println(s"${BuildInfo.projectName} ${BuildInfo.projectVersionExtended}")
       runLspServer(config)(executor)
     } else if (config.serverMode() == config.SERVER_MODE_HTTP) {
+      println(s"${BuildInfo.projectName} ${BuildInfo.projectVersionExtended}")
       runHttpServer(config)(executor)
+    } else if (config.serverMode() == config.SERVER_MODE_MCP) {
+      runMcpServer(config)(executor)
     } else {
       throw new RuntimeException(s"unknown server mode ${config.serverMode()}")
     }
@@ -48,6 +52,22 @@ object ViperServerRunner {
     println("executor service has been shut down")
     // the following `exit` call is required such that the server eventually terminates for `longDuration.vpr` in the
     // test suite of viper-ide
+    System.exit(0)
+  }
+
+  /**
+   * Run VCS in MCP mode.
+   */
+  def runMcpServer(config: ViperConfig)(executor: VerificationExecutionContext): Unit = {
+    val viperMcpServer = new ViperMcpServer(config)(executor)
+    Await.ready(viperMcpServer.start(), Duration.Inf)
+
+    // wait until the server is stopped (by client with stdin EOF or shutdown)
+    Await.ready(viperMcpServer.stopped(), Duration.Inf)
+
+    System.err.println("MCP server has been stopped")
+    executor.terminate()
+    System.err.println("executor service has been shut down")
     System.exit(0)
   }
 

@@ -34,8 +34,9 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
   /** allows subclasses to return their own global logger */
   def getGlobalLogger(config: ViperConfig): Logger = {
     val logger = ViperLogger("ViperServerLogger", config.getLogFileWithGuarantee, config.logLevel())
-    println(s"Writing [level:${config.logLevel()}] logs into " +
-      s"${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
+    if (config.serverMode() != config.SERVER_MODE_MCP) // no printing to stdout in MCP mode
+      println(s"Writing [level:${config.logLevel()}] logs into " +
+        s"${if (!config.logFile.isSupplied) "(default) " else ""}journal: ${logger.file.get}")
     logger.get
   }
 

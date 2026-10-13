@@ -288,8 +288,8 @@ trait VerificationServer extends Post {
     getInterruptFutureList().transform(r => {
       _termActor ! Terminator.Exit
       r match {
-        case Success(_) => println(s"shutting down...")
-        case Failure(_) => println(s"forcibly shutting down...")
+        case Success(_) => {} // println(s"shutting down...")
+        case Failure(_) => {} // println(s"forcibly shutting down...")
       }
       // delete termActor since we no longer need it. Otherwise, start() cannot be called
       _termActor = null

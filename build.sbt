@@ -37,6 +37,10 @@ lazy val server = (project in file("."))
         libraryDependencies += "com.typesafe.akka" %% "akka-stream-testkit" % "2.6.10" % Test,
         libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.2.1" % Test,
         libraryDependencies += "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.20.1", // Java implementation of language server protocol
+        libraryDependencies += "io.modelcontextprotocol.sdk" % "mcp" % "2.0.1", // java implementation of mcp server protocol
+        // the MCP SDK pulls in slf4j-api 2.x, which ignores logback 1.2.x (an slf4j 1.7 binding) and breaks ViperLogger
+        // so we force load the older version of slf4j-api which is still compatible with the MCP SDK code
+        dependencyOverrides += "org.slf4j" % "slf4j-api" % "1.7.36",
 
         silicon / excludeFilter := "logback.xml", /* Ignore Silicon's Logback configuration */
         carbon / excludeFilter := "logback.xml", /* Ignore Carbon's Logback configuration */
@@ -54,6 +58,7 @@ lazy val server = (project in file("."))
         assembly / assemblyMergeStrategy := {
             case LogbackConfigurationFilePattern() => MergeStrategy.first
             case PathList("viper", "silicon", "BuildInfo$.class") => MergeStrategy.first
+            case x if x.endsWith("module-info.class") => MergeStrategy.discard // not needed for .jar files
             case x =>
                 val fallbackStrategy = (assembly / assemblyMergeStrategy).value
                 fallbackStrategy(x)

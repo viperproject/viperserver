@@ -62,7 +62,8 @@ class ViperConfig(args: Seq[String]) extends ScallopConf(args) {
 
   val SERVER_MODE_LSP = "LSP"
   val SERVER_MODE_HTTP = "HTTP"
-  private val server_modes = Array(SERVER_MODE_LSP, SERVER_MODE_HTTP)
+  val SERVER_MODE_MCP = "MCP"
+  private val server_modes = Array(SERVER_MODE_LSP, SERVER_MODE_HTTP, SERVER_MODE_MCP)
 
   val serverMode: ScallopOption[String] = opt[String]("serverMode",
     descr = s"One of the supported protocols: ${server_modes.mkString(",")}.",
