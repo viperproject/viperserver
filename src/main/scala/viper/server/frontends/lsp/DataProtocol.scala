@@ -176,7 +176,10 @@ case class StateChangeParams(
               verificationNeeded: Double = -1,
               uri: String = null,
               stage: String = null,
-              error: String = null)
+              error: String = null,
+              allEntities: Array[String] = null,
+              verifiedEntity: String = null,
+              failedEntity: String = null)
 
 case class UnhandledViperServerMessageTypeParams(msgType: String, msg: String, logLevel: Int)
 
