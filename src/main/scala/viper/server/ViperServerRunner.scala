@@ -60,7 +60,8 @@ object ViperServerRunner {
    */
   def runMcpServer(config: ViperConfig)(executor: VerificationExecutionContext): Unit = {
     val viperMcpServer = new ViperMcpServer(config)(executor)
-    Await.ready(viperMcpServer.start(), Duration.Inf)
+    // use .result instead of .ready so that if .start() throws an exception the program crashes
+    Await.result(viperMcpServer.start(), Duration.Inf)
 
     // wait until the server is stopped (by client with stdin EOF or shutdown)
     Await.ready(viperMcpServer.stopped(), Duration.Inf)

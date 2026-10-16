@@ -4,9 +4,8 @@ import akka.Done
 import io.modelcontextprotocol.json.{McpJsonDefaults, TypeRef}
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider
 import io.modelcontextprotocol.server.{McpAsyncServer, McpServer}
-import io.modelcontextprotocol.server.McpServerFeatures.AsyncToolSpecification
 import io.modelcontextprotocol.spec.{McpServerSession, McpServerTransport}
-import io.modelcontextprotocol.spec.McpSchema.{CallToolResult, JSONRPCMessage, ServerCapabilities, Tool}
+import io.modelcontextprotocol.spec.McpSchema.{JSONRPCMessage, ServerCapabilities}
 import reactor.core.publisher.Mono
 import viper.server.ViperConfig
 import viper.server.utility.Helpers.validateViperFile
@@ -16,9 +15,8 @@ import viper.silver.reporter.{OverallFailureMessage, OverallSuccessMessage, AstC
 
 import java.time.{Duration => JDuration}
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.{List => JList, Map => JMap}
+import java.util.{List => JList}
 import scala.concurrent.{Future, Promise}
-import scala.jdk.FutureConverters._
 import scala.util.control.NonFatal
 
 class ViperMcpServer(config: ViperConfig)(override implicit val executor: VerificationExecutionContext)
@@ -42,28 +40,19 @@ class ViperMcpServer(config: ViperConfig)(override implicit val executor: Verifi
   /** The returned future is completed when the MCP session has ended and the server has been stopped. */
   def stopped(): Future[Done] = stoppedPromise.future
 
-
-  private val verifyFileSchema = JMap.of(
-    "type", "object",
-    "properties", JMap.of(
-      "path", JMap.of("type", "string", "description", "Absolute path for file to verify"),
-      "backend", JMap.of("type", "string", "description", "Name of backend to use for verification (silicon|carbon|custom)"),
-      "custom_args", JMap.of("type", "string", "description", "Extra arguments to pass to the backend verifier"),
-    ),
-    "required", JList.of("path")
-  )
-  private val verifyFileTool: Tool = Tool.builder("verify_file", verifyFileSchema)
-    .description("Formally verify a Viper (.vpr) file")
-    .build()
-
   override def start(): Future[Done] = {
     // first make sure all logging goes to stderr/null (not stdout since MCP uses it for its protocol).
-    McpLogging.redirectRootLoggerToStdNull()
+    McpLogging.redirectRootLoggerToNull()
 
-    super.start() flatMap { _ =>
+    super.start() map { _ =>
       mcpServer = McpServer.async(transport)
         .serverInfo("viper-mcp-server", "0.1.0")
         .capabilities(ServerCapabilities.builder().tools(true).build())
+        .tools(
+          McpTools.verifyFileSpec(verifyFile),
+          McpTools.verifySnippetSpec(verifyFile),
+          McpTools.flushCacheSpec(() => flushCache())
+        )
         .build()
 
       // fallback if the client terminates us (e.g. SIGTERM) instead of closing stdin
@@ -72,34 +61,9 @@ class ViperMcpServer(config: ViperConfig)(override implicit val executor: Verifi
         catch { case NonFatal(_) => }
       }
 
-      val verifyFileSpec = AsyncToolSpecification.builder()
-        .tool(verifyFileTool)
-        .callHandler((_, request) => {
-          // get and validate tool parameters
-          val path = request.arguments().get("path")
-          val backendName = request.arguments().getOrDefault("backend", "silicon").toString
-          val customArgs = request.arguments().getOrDefault("custom_args", "").toString
-          val backend = ViperBackendConfig(backendName, customArgs)
-
-          if (path == null) { Mono.just(errorResult("Missing required parameter: `path`")) }
-          else {
-            Mono.fromCompletionStage(() =>
-              verifyFile(path.toString, backend)
-                .map(res => CallToolResult.builder().addTextContent(res).build())
-                .recover { case NonFatal(e) => errorResult(s"Error: $e") }
-                .asJava
-            )
-          }
-        })
-        .build()
-
-      // addTool is lazy (Mono): convert to a Future so start() completes once the tool is registered
-      mcpServer.addTool(verifyFileSpec).toFuture.asScala.map(_ => Done)
+      Done
     }
   }
-
-  private def errorResult(msg: String): CallToolResult =
-    CallToolResult.builder().addTextContent(msg).isError(true).build()
 
   def verifyFile(file: String, backend: ViperBackendConfig): Future[String] = {
     if (!validateViperFile(file)) return Future.successful("Invalid file path")

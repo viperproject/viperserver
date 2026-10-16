@@ -33,7 +33,7 @@ object McpLogging {
     rootLogger.addAppender(stdErrAppender)
   }
 
-  def redirectRootLoggerToStdNull(): Unit = {
+  def redirectRootLoggerToNull(): Unit = {
     val context = LoggerFactory.getILoggerFactory.asInstanceOf[LoggerContext]
     val rootLogger = context.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME)
     rootLogger.detachAndStopAllAppenders()
