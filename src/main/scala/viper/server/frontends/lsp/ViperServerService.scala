@@ -15,7 +15,7 @@ import viper.server.ViperConfig
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer}
 import viper.server.utility.ReformatterAstGenerator
 import viper.server.utility.Helpers.validateViperFile
-import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
+import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopProcessReply, StopVerification}
 import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
 import viper.silver.parser.ReformatPrettyPrinter
 import viper.silver.ast.utility.FileLoader
@@ -119,10 +119,10 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
       case VerHandle(null, _, _, _) => Future.successful(false)
       case _ => {
         implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
-        val interrupt: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
+        val interrupt: Future[StopProcessReply] = (handle.job_actor ? StopVerification).mapTo[StopProcessReply]
         handle.job_actor ! PoisonPill // the actor played its part.
-        interrupt.map(msg => {
-          combinedLogger.info(msg)
+        interrupt.map(reply => {
+          combinedLogger.info(reply.message)
           true
         })
       }
