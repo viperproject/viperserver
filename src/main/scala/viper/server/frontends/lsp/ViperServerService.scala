@@ -7,7 +7,7 @@
 package viper.server.frontends.lsp
 
 import scala.language.postfixOps
-import akka.actor.{PoisonPill, Props}
+import akka.actor.Props
 import akka.pattern.ask
 import akka.util.Timeout
 import ch.qos.logback.classic.Logger
@@ -120,23 +120,12 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
       case _ => {
         implicit val askTimeout: Timeout = Timeout(config.actorCommunicationTimeout() milliseconds)
         val interrupt: Future[StopProcessReply] = (handle.job_actor ? StopVerification).mapTo[StopProcessReply]
-        handle.job_actor ! PoisonPill // the actor played its part.
         interrupt.map(reply => {
           combinedLogger.info(reply.message)
           true
         })
       }
     }
-  }
-
-  // Discards an AST job if it exists, the job will keep running but frees up a slot in the allowed number of jobs.
-  def discardAstJobLookup(jid: AstJobId): Unit = {
-    ast_jobs.lookupJob(jid).map({job =>
-      ast_jobs.discardJob(jid)
-      job.map(astHandle => astHandle.queue.watchCompletion().onComplete(_ => {
-        astHandle.job_actor ! PoisonPill
-      }))
-    })
   }
 
   def stopAstConstruction(jid: AstJobId, localLogger: Option[Logger] = None): Unit = {
@@ -151,7 +140,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
       case Some(handle_future) =>
         handle_future.map { handle =>
           handle.job_actor ! StopAstConstruction
-          handle.job_actor ! PoisonPill // the actor played its part.
+          // the job's actor is stopped as soon as the job's message queue completes (see `initializeProcess`)
           combinedLogger.info(s"ast construction stopped for job #$jid")
           true
         }
