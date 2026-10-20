@@ -46,6 +46,12 @@ lazy val server = (project in file("."))
 
         // Test settings
         Test / parallelExecution := false,
+        // Silicon's symbolic execution requires deep stacks (hence `-Xss128m` for `run` above).
+        // The forked test JVM must provide the same stack size to every thread for which no
+        // explicit stack size is configured -- in particular to Silicon's worker pool threads --
+        // as tests would otherwise overflow on programs with long sequential statement chains
+        // (the platform-default thread stack is 1MB on Linux x64, e.g. in CI):
+        Test / javaOptions += "-Xss128m",
 
         // Assembly settings
         assembly / assemblyJarName := "viperserver.jar",                // JAR filename

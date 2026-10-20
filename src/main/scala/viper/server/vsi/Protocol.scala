@@ -46,6 +46,14 @@ object VerificationProtocol {
 
   // Request Job Actor to stop its verification task
   case object StopVerification extends StopProcessRequest
+
+  /** the JobActor's reply to a [[StopProcessRequest]]
+    *
+    * @param interrupted whether an active task has been interrupted; false if there was nothing
+    *                    left to interrupt, i.e. the task already completed or none was submitted
+    * @param message human-readable description of the outcome
+    */
+  case class StopProcessReply(interrupted: Boolean, message: String)
 }
 
 
