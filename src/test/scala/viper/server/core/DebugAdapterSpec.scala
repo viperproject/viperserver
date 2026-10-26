@@ -30,6 +30,7 @@ class DebugAdapterSpec extends AnyWordSpec {
 
   private val debug_error_file = "src/test/resources/viper/debug_error.vpr"
   private val debug_package_file = "src/test/resources/viper/debug_package.vpr"
+  private val debug_fold_file = "src/test/resources/viper/debug_fold.vpr"
   private val timeoutSeconds = 300L
 
   /** Records the events the adapter sends. */
@@ -67,9 +68,12 @@ class DebugAdapterSpec extends AnyWordSpec {
     * @param pauseOnFailures whether to enable the exception filter that pauses at verification failures.
     * @param file            the file to debug.
     * @param conditions      the conditions of some of the breakpoints, by line.
+    * @param failure         the (0-based) line and column of the failure to start the session for, if it is not the
+    *                        one in `debug_error.vpr`.
     */
   private def withDebugSession(breakpointLines: Seq[Int] = Nil, pauseOnFailures: Boolean = false,
-                               file: String = debug_error_file, conditions: Map[Int, String] = Map.empty)
+                               file: String = debug_error_file, conditions: Map[Int, String] = Map.empty,
+                               failure: Option[(Int, Int)] = None)
                               (test: (IDebugProtocolServer, RecordingClient, ClientCoordinator, StoppedEventArguments) => Unit): Unit = {
     val context = new DefaultVerificationExecutionContext()
     val logFile = Paths.get("logs", s"viperserver_dap_${System.currentTimeMillis()}.log").toFile
@@ -96,10 +100,13 @@ class DebugAdapterSpec extends AnyWordSpec {
       val caps = get(adapter.initialize(init))
       assert(caps.getSupportsConfigurationDoneRequest)
 
-      val failure = Map[String, AnyRef]("line" -> Int.box(11), "column" -> Int.box(9),
-        "message" -> "Assert might fail. Assertion x.f > 5 might not hold.").asJava
+      val failureArgs = failure match {
+        case Some((line, column)) => Map[String, AnyRef]("line" -> Int.box(line), "column" -> Int.box(column)).asJava
+        case None => Map[String, AnyRef]("line" -> Int.box(11), "column" -> Int.box(9),
+          "message" -> "Assert might fail. Assertion x.f > 5 might not hold.").asJava
+      }
       val launchArgs = Map[String, AnyRef]("uri" -> Paths.get(file).toAbsolutePath.toUri.toString) ++
-        (if (breakpointLines.isEmpty && !pauseOnFailures) Map("failure" -> failure) else Map.empty)
+        (if (breakpointLines.isEmpty && !pauseOnFailures) Map("failure" -> failureArgs) else Map.empty)
       get(adapter.launch(launchArgs.asJava))
       client.await { case "initialized" => () }
       if (breakpointLines.nonEmpty) {
@@ -341,6 +348,62 @@ class DebugAdapterSpec extends AnyWordSpec {
         assert(first.getReason == StoppedEventArgumentsReason.BREAKPOINT)
         assert(client.outputs.asScala.exists(_.contains("could not be checked")),
           client.outputs.asScala.mkString)
+      }
+
+    "unfold a predicate, check the failure again, and report a failing fold" in
+      withDebugSession(pauseOnFailures = true, file = debug_fold_file) { (adapter, _, _, stopped) =>
+        // readCell: x.f cannot be read, since cell(x) is folded.
+        assert(stopped.getReason == StoppedEventArgumentsReason.EXCEPTION)
+        assert(lineOf(adapter, stopped.getThreadId) == 15)
+        assert(evaluate(adapter, ":recheck").getResult.contains("FAIL"))
+
+        def heap(): Seq[Variable] = {
+          val s = scopes(adapter, stopped.getThreadId).find(_.getName == "Heap").get
+          variables(adapter, s.getVariablesReference)
+        }
+        val chunks = heap()
+        // The obligation names variables by their version, which is also what the user can type.
+        assert(chunks.exists(v => v.getEvaluateName == "cell(x@1)" && v.getValue == "acc(cell(x@1), write)"),
+          chunks.map(v => s"${v.getValue} (${v.getEvaluateName})"))
+
+        assert(evaluate(adapter, ":unfold cell(x)").getResult.contains("Unfolded cell(x)"))
+        assert(heap().exists(_.getValue.startsWith("acc(x@1.f")), heap().map(_.getValue))
+        assert(scopes(adapter, stopped.getThreadId).exists(_.getName == "Assertion (before fold/unfold)"))
+        assert(evaluate(adapter, ":recheck").getResult.contains("PASS"))
+
+        val failedFold = scala.util.Try(evaluate(adapter, ":fold list(x)"))
+        assert(failedFold.isFailure, "folding list(x) needs permission to x.next, which there is none of")
+        assert(failedFold.failed.get.getMessage.contains("Folding list(x) failed"), failedFold.failed.get.getMessage)
+        // The failed fold leaves the obligation as it was.
+        assert(heap().exists(_.getValue.startsWith("acc(x@1.f")))
+      }
+
+    "unfold a conditional predicate into one case per branch" in
+      withDebugSession(pauseOnFailures = true, file = debug_fold_file) { (adapter, client, _, first) =>
+        // Go on to the failure in readList.
+        continue_(adapter, first.getThreadId)
+        val stopped = client.await { case s: StoppedEventArguments => s }
+        assert(lineOf(adapter, stopped.getThreadId) == 21)
+
+        val unfolded = evaluate(adapter, ":unfold list(x)").getResult
+        assert(unfolded.contains("2 cases"), unfolded)
+        val first_ = evaluate(adapter, "x.next != null").getResult
+        assert(evaluate(adapter, ":case 2").getResult.contains("Showing case 2"))
+        val second = evaluate(adapter, "x.next != null").getResult
+        assert(Set(first_, second) == Set("holds", "does not hold (it cannot be proved in this state)"),
+          s"the cases should differ in x.next != null, got: $first_, $second")
+        assert(scala.util.Try(evaluate(adapter, ":case 3")).isFailure)
+      }
+
+    "explain why a predicate cannot be unfolded in a session restricted to the failing member" in
+      withDebugSession(file = debug_fold_file, failure = Some((14, 9))) { (adapter, _, _, stopped) =>
+        // Like the IDE's quick fix, the session verifies only readCell, in which cell is abstract.
+        assert(stopped.getReason == StoppedEventArgumentsReason.EXCEPTION)
+        assert(lineOf(adapter, stopped.getThreadId) == 15)
+        val unfold = scala.util.Try(evaluate(adapter, ":unfold cell(x@1)"))
+        assert(unfold.isFailure)
+        assert(unfold.failed.get.getMessage.contains("has no body in the program that was verified"),
+          unfold.failed.get.getMessage)
       }
   }
 }

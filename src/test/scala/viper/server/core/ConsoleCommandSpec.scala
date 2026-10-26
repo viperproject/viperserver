@@ -26,6 +26,10 @@ class ConsoleCommandSpec extends AnyWordSpec {
       assert(parse(":timeout 0") == Timeout(None))
       assert(parse(":set oldheaps on") == ConsoleCommand.Set(PrintSetting.OldHeaps, Left(true)))
       assert(parse(":set depth 3") == ConsoleCommand.Set(PrintSetting.Depth, Right(3)))
+      assert(parse(":unfold list(x)") == Fold("list(x)", unfold = true))
+      assert(parse(":fold acc(list(x), 1/2)") == Fold("acc(list(x), 1/2)", unfold = false))
+      assert(parse(":case 2") == Case(2))
+      assert(parse(":recheck") == Recheck)
     }
 
     "treat input without a colon as an expression" in {
@@ -33,7 +37,7 @@ class ConsoleCommandSpec extends AnyWordSpec {
     }
 
     "reject malformed input" in {
-      Seq(":assert", ":remove a", ":timeout -1", ":set depth deep", ":set colour on", ":frobnicate").foreach { input =>
+      Seq(":assert", ":unfold", ":case 0", ":case x", ":remove a", ":timeout -1", ":set depth deep", ":set colour on", ":frobnicate").foreach { input =>
         assert(parse(input).isInstanceOf[Invalid], input)
       }
     }

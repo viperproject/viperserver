@@ -45,6 +45,9 @@ case class CommandArguments(command: String)
   */
 case class CommandResponse(ok: Boolean, message: String, proved: lang.Boolean)
 
+/** The arguments of the custom `viperFold` request: a predicate instance such as `list(x)`. */
+case class FoldArguments(predicate: String, unfold: Boolean)
+
 /** The response of the custom `viperGetText` request: the obligation and counterexample as the CLI prints them. */
 case class TextResponse(obligation: String, counterexample: String)
 
@@ -66,8 +69,8 @@ case class TextResponse(obligation: String, counterexample: String)
   * Commands are entered in the Debug Console (see [[ConsoleCommand]]); an expression without a command is checked
   * in the current state, which also makes watch expressions work.
   *
-  * Several custom requests (`viperCommand`, `viperRemoveAssumptions`, `viperGetPrintConfig`, `viperSetPrintConfig`,
-  * `viperGetText`) let the IDE offer the same operations from menus.
+  * Several custom requests (`viperCommand`, `viperRemoveAssumptions`, `viperFold`, `viperGetPrintConfig`,
+  * `viperSetPrintConfig`, `viperGetText`) let the IDE offer the same operations from menus.
   */
 class ViperDebugAdapter(coordinator: ClientCoordinator)(implicit executor: VerificationExecutionContext)
   extends IDebugProtocolServer with sil.DebugRunListener {
@@ -486,6 +489,13 @@ class ViperDebugAdapter(coordinator: ClientCoordinator)(implicit executor: Verif
           .asJava.toCompletableFuture
     }
 
+  /** Folds or unfolds a predicate instance, e.g. the one of a heap chunk the user right-clicked. */
+  @JsonRequest("viperFold")
+  def fold(args: FoldArguments): CompletableFuture[CommandResponse] =
+    withSession(focusedThread)(_.run(_.foldText(Option(args.predicate).getOrElse(""), args.unfold)))
+      .map(r => CommandResponse(r.ok, r.messages.map(_.text).mkString("\n").trim, null))
+      .asJava.toCompletableFuture
+
   /** The print configuration of the current proof obligation, so that the IDE can toggle its settings. */
   @JsonRequest("viperGetPrintConfig")
   def getPrintConfig(): CompletableFuture[sil.PrintConfigModel] =
@@ -540,6 +550,9 @@ class ViperDebugAdapter(coordinator: ClientCoordinator)(implicit executor: Verif
           case Remove(ids) => _.removeAssumptions(ids)
           case Solver(name, args) => _.setProver(name, args)
           case Timeout(ms) => _.setTimeout(ms)
+          case Fold(predicate, unfold) => _.foldText(predicate, unfold)
+          case Case(n) => _.selectCase(n)
+          case Recheck => _.recheck()
           case Set(setting, value) => s => s.currentObligation match {
             case None => sil.DebugCommandResult.error("There is no proof obligation.")
             case Some(m) => s.setPrintConfig(updatedPrintConfig(m.printConfig, setting, value))

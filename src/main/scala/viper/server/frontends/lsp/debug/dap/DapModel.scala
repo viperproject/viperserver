@@ -12,6 +12,22 @@ import viper.silicon.{debugger => sil}
 import java.nio.file.Paths
 import scala.collection.mutable
 
+/**
+  * A DAP variable with VS Code's extension `__vscodeVariableMenuContext`, which a `debug/variables/context` menu can
+  * refer to as `debugProtocolVariableMenuContext`, to offer commands only for some variables.
+  */
+class MenuContextVariable(menuContext: String) extends Variable {
+  // Serialized under this name by Gson; read by VS Code only.
+  val __vscodeVariableMenuContext: String = menuContext
+}
+
+object MenuContextVariable {
+  /** An assumption, which can be removed. */
+  val Assumption = "assumption"
+  /** A predicate chunk, which can be unfolded. */
+  val Predicate = "predicate"
+}
+
 /** What a `variablesReference` handed out to the client stands for. */
 sealed trait VariableContainer
 
@@ -83,7 +99,9 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
       if (model.declarations.isEmpty) Seq.empty
       else Seq(scope("Declarations", Nodes(model.declarations), model.declarations.size, expensive = true))
 
-    val assertion = if (paused) Seq.empty else Seq(scope("Assertion", Nodes(Seq(model.assertion)), 1))
+    // After a fold or unfold, the assertion still is the one evaluated before; :recheck checks the failed one again.
+    val assertionTitle = if (model.assertionOutdated) "Assertion (before fold/unfold)" else "Assertion"
+    val assertion = if (paused) Seq.empty else Seq(scope(assertionTitle, Nodes(Seq(model.assertion)), 1))
     assertion ++ Seq(
       scope("Assumptions", Nodes(model.assumptions), model.assumptions.size),
       scope("Store", Nodes(model.store), model.store.size, hint = Some("locals")),
@@ -151,7 +169,11 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
         (s"$idx", n.label)
       }
 
-    val v = new Variable()
+    val menuContext =
+      if (assumptionKinds.contains(n.kind) && n.id >= 0) Some(MenuContextVariable.Assumption)
+      else if (n.kind == sil.DebugNodeKind.Chunk && n.expString.isDefined) Some(MenuContextVariable.Predicate)
+      else None
+    val v = menuContext.map(new MenuContextVariable(_)).getOrElse(new Variable())
     v.setName(name)
     v.setValue(value)
     n.expString.foreach(v.setEvaluateName)
