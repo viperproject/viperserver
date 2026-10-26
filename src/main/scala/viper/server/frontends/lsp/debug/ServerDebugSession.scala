@@ -25,7 +25,9 @@ import scala.util.Try
   */
 class ServerDebugSession(val sessionId: String,
                          val uri: String,
-                         val silicon: Silicon,
+                         /** The Silicon instance of a finished debug run, which the session stops when it is
+                           * closed; None for the session of a paused verification, which goes on afterwards. */
+                         val silicon: Option[Silicon],
                          private val inner: SiliconDebugSession)
                         (implicit executor: VerificationExecutionContext) {
 
@@ -48,15 +50,22 @@ class ServerDebugSession(val sessionId: String,
 
   def isClosed: Boolean = synchronized(closed)
 
+  private var closeListeners: Seq[String => Unit] = Seq.empty
+
+  /** Registers a callback that is invoked with the reason once this session is closed, e.g. because the file
+    * was edited. The debug adapter uses it to end the DAP session that shows this debug session. */
+  def onClose(listener: String => Unit): Unit = synchronized { closeListeners :+= listener }
+
   /** Stops the prover(s) of this session and releases the symbolic state it kept alive. */
-  def close(): Future[Unit] = synchronized {
+  def close(reason: String): Future[Unit] = synchronized {
     if (closed) {
       Future.unit
     } else {
       closed = true
+      closeListeners.foreach(l => Try(l(reason)))
       queue.transformWith(_ => Future {
         Try(inner.close())
-        Try(silicon.stop())
+        silicon.foreach(s => Try(s.stop()))
         ()
       }(executor))(executor)
     }

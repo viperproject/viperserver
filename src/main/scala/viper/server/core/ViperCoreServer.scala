@@ -13,6 +13,7 @@ import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
 import viper.silicon.Silicon
+import viper.silicon.debugger.DebugHook
 import viper.silver.ast.Program
 import viper.silver.ast.utility.FileLoader
 import viper.silver.logger.ViperLogger
@@ -132,7 +133,8 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     * responsible for stopping it.
     */
   def verifyForDebugging(programId: String, backend_config: ViperBackendConfig, program: Program,
-                         localLogger: Option[Logger] = None): (VerJobId, Future[Either[String, Silicon]]) = {
+                         localLogger: Option[Logger] = None,
+                         debugHook: Option[DebugHook] = None): (VerJobId, Future[Either[String, Silicon]]) = {
     require(program != null && backend_config != null)
 
     val logger = combineLoggers(localLogger)
@@ -149,7 +151,8 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
           }
         case None =>
           promise.trySuccess(Left("The verification backend could not be started."))
-      })(executor)
+      },
+      debugHook = debugHook)(executor)
 
     val ver_id = initializeVerificationProcess(Future.successful(Some(task_backend)), None)
     if (ver_id.id < 0) {

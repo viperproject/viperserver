@@ -10,15 +10,21 @@ extended without having to re-discover the architecture.
 ## Overview
 
 ```
-viper-ide (TypeScript)            ViperServer (Scala)                    Silicon (Scala)
-─────────────────────             ───────────────────                    ───────────────
-DebugCodeActionProvider  ──LSP──▶ Receiver.onStartDebugSession
-DebugController                   DebugSessionRegistry.start
-DebugTreeProvider                   ViperServerService.startDebugVerification
-                                      (re-verifies with --enableDebugging)
-                                    ServerDebugSession           ───────▶ SiliconDebugSession
-                                    DebugProtocolConverter       ◀─────── ObligationModel
+viper-ide (TypeScript)                   ViperServer (Scala)                     Silicon (Scala)
+─────────────────────                    ───────────────────                     ───────────────
+ViperDebugAdapterDescriptorFactory ─LSP─▶ Receiver.onStartDebugAdapter
+                                           DebugAdapterServer (opens a socket)
+VS Code's debugger UI  ◀──────── DAP ───▶ ViperDebugAdapter
+DebugCommands (menus) ── custom DAP ──▶     DebugSessionRegistry.start
+DebugCodeActionProvider                       ViperServerService.startDebugVerification
+                                                (re-verifies with --enableDebugging)
+                                            ServerDebugSession            ───────▶ SiliconDebugSession
+                                            DapModel                      ◀─────── ObligationModel
 ```
+
+The debugger is a regular VS Code debug session of type `viper`. Its debug adapter runs inside ViperServer and
+speaks the [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/) (DAP) on a socket of its
+own; the only LSP message involved is the one that opens that socket.
 
 `SiliconDebuggerCli` is the second client of the same API and provides Silicon's `--enableDebugging` REPL.
 
@@ -64,28 +70,89 @@ the `VerificationExecutionContext` — a session owns a prover process and mutab
 handler threads must not block on prover round-trips.
 
 `DebugSessionRegistry` (one per `ClientCoordinator`, but with a server-wide single-session rule) starts, finds
-and closes sessions. A session is closed when a verification is started, when the debugged file is edited or
-closed, when the client disconnects, and on shutdown.
+and closes sessions. A session is closed when the debugged file is edited or closed, when a new session is
+started, when the client disconnects, and on shutdown. While a session is open, verifications are refused
+(`Receiver.onVerify` answers with `VerificationNotStarted`); the user has to stop the debugger first. Whoever
+shows a session registers with `ServerDebugSession.onClose` to learn that, and why, it was closed.
 
 The message stream of a debug run goes to `DebugDrainActor` rather than the file's `RelayActor`: relaying it
-normally would overwrite the user's diagnostics and emit spurious state-change notifications.
+normally would overwrite the user's diagnostics and emit spurious state-change notifications. Its progress
+messages are shown in the Debug Console instead.
 
 ## Protocol
 
-`frontends/lsp/CommandProtocol.scala` declares the method names and `frontends/lsp/DebugProtocol.scala` the
-payloads; `client/src/ViperProtocol.ts` in viper-ide mirrors both and must be kept in sync. Since LSP4J
-serializes with plain Gson, the payloads use `Array`, `null` and sentinel numbers rather than Scala's `Seq` and
-`Option`.
+### Starting the debug adapter (LSP)
 
-Positions are converted from Viper's 1-based to LSP's 0-based coordinates in `DebugProtocolConverter`.
+The `StartDebugAdapter` request (`frontends/lsp/CommandProtocol.scala`, payload in `frontends/lsp/DebugProtocol.scala`,
+mirrored in viper-ide's `client/src/ViperProtocol.ts`) makes `DebugAdapterServer` open a socket and returns its
+port. The socket accepts a single connection, within 30 seconds, and listens on all interfaces like the LSP
+socket does, so that an IDE attached to a remote ViperServer can reach it. The IDE's
+`ViperDebugAdapterDescriptorFactory` returns that port to VS Code, which then talks DAP to it directly.
+
+### The debug adapter (DAP)
+
+`frontends/lsp/debug/dap/ViperDebugAdapter.scala` implements LSP4J's `IDebugProtocolServer`:
+
+| DAP | The verification debugger |
+|---|---|
+| `launch` | Takes `uri` (or `program`), `backend`, `customArgs`, `failure` (`line`, `column`, both 0-based, and `message`), `restrictToMember` and `counterexample`. The IDE's `ViperDebugConfigurationProvider` fills these in from its settings. |
+| `configurationDone` | Starts the debug run via `DebugSessionRegistry.start`, with a `DebugRunController` (see "Breakpoints" below). If there are breakpoints, the whole file is verified, even if `restrictToMember` is set. |
+| `setBreakpoints` | Line breakpoints, handed to the controller. They are reported as unverified until the verification has started; then `breakpoint` events report where each one stops. A breakpoint may have a condition, a Viper expression: it stops unless the condition is provably false in the paused state, since a symbolic state stands for many concrete states, in some of which the condition may hold. A condition that cannot be checked (e.g. because it does not typecheck) stops, with a message in the Debug Console. |
+| `setExceptionBreakpoints` | The filter `failures` ("Verification failures", off by default) makes the verification pause at every final verification failure, with the failure's proof obligation (including its assertion and counterexample). |
+| threads | While the debug run is verified: thread 1, "Verification", stopped (reason `breakpoint`, `step`, `pause` or `exception`) whenever the verification is paused. Afterwards: one thread per verification error, thread `i + 2` for failure `i`, all stopped (reason `exception`) at their error, the one matching `failure` first. |
+| `stackTrace` | One frame per thread, at the paused statement or the error; the frame id is the thread id. |
+| `scopes` | Assertion, Assumptions, Store, the heap(s), Branch conditions, the counterexample (if computed), axioms and declarations (if shown), and the prover settings. A paused verification has no assertion and no counterexample. Silicon's session has one current obligation, so opening a frame of another error's thread opens that thread's obligation and discards the changes made to the previous one. |
+| `variables` | The `DebugNode`s of a scope, see `DapModel`. Assumptions are named `[id]`, the id the user refers to them by; nodes of the form `name -> value` are split. Children beyond what the model contains are requested with `SiliconDebugSession.expand`. References are dropped whenever the obligation changes. |
+| `evaluate` (Debug Console, watch expressions) | The commands of `ConsoleCommand`: `:prove`, `:assert`, `:assume`, `:remove`, `:reset`, `:solver`, `:timeout`, `:set`, `:text`, `:counterexample`, `:help`. Anything else is a Viper expression, which is checked in the current state (`SiliconDebugSession.assertText`): the result is `holds` or `does not hold`. After a command that changes the obligation, the adapter sends `invalidated` (or `stopped` again, for clients that do not support `invalidated`). |
+| `continue` | Lets a paused verification go on; once it has finished, goes to the next verification error. |
+| `next`, `stepIn`, `stepOut` | Let a paused verification go on to the next statement the same verifier executes: on the same path, or on the next path once this one is explored. `stepIn` stops at the next statement; `next` skips the statements of `package` proof scripts that start after the current statement; `stepOut` also skips the rest of the current proof script, and continues outside of one. Once the verification has finished, there is nothing to step. |
+| `pause` | Pauses the running verification before the next statement it executes. |
+| `disconnect`, `terminate` | Close the session. If the server closes it (e.g. because the file was edited), the adapter explains why in the Debug Console and sends `terminated`. |
+
+The IDE offers the console commands from menus as well, using custom requests: `viperCommand` (any console
+command), `viperRemoveAssumptions`, `viperGetPrintConfig`, `viperSetPrintConfig` and `viperGetText` (the obligation
+as the CLI prints it). See `client/src/debug/DebugCommands.ts`.
+
+### Breakpoints
+
+Silicon's executor calls a `DebugHook` (`silicon/src/main/scala/debugger/DebugHook.scala`) before every statement
+it executes. ViperServer installs one in the `Silicon` instance of a debug run: `DebugSessionRegistry.start`
+passes it to `ViperServerService.startDebugVerification`, which hands it via `ViperCoreServer.verifyForDebugging`,
+`VerificationWorker` and `ViperBackend` to `Silicon.debugHook`.
+
+The hook is Silicon's `DebugRunController`. When the verification starts, it resolves the breakpoints against the
+program as it is executed (`BreakpointResolver`): a breakpoint stops at the first executed statement on or after
+its line within the same method, since conditionals and loops are not executed as statements. When a verifier is
+about to execute such a statement, the controller opens a `SiliconDebugSession` on the current state
+(`openPausedState`), tells the adapter (`DebugRunListener.paused`) and blocks the verifier until `resume` or
+`abort`. The session has a prover of its own, so whatever the user does with the paused state has no effect on
+the verification; it is closed when the verification continues.
+
+Silicon explores the paths of a method one after another, so a breakpoint is hit once for every feasible path
+that reaches it, and a loop body once per path rather than once per iteration. The debug run uses a single
+verifier, no parallel branches and no timeout (see `ViperServerService.debugArgs`), so that only one path is
+paused at a time. Closing the session, e.g. because the file was edited, aborts a paused or running debug run
+via `DebugRunController.abort`.
+
+Steps are counted in statements Silicon executes, and nesting only exists inside `package` proof scripts:
+conditionals and loops become control flow, and method calls are verified modularly, so there is nothing to step
+into. `BreakpointResolver.depth` gives the number of proof scripts a statement is nested in.
+
+`SymbolicExecutionRules.createFailure` reports failures to the hook (`DebugHook.failed`), but only final ones:
+Silicon verifies some assertions twice, first without and then with additional heap consolidation, and a failure
+of the first attempt (`!State.isLastRetry`) is not an error.
+
+Note that LSP4J finds the methods of a service by their annotations, including those on the forwarders Scala
+generates for inherited default methods. Since DAP methods, unlike LSP methods, have no segment that tells such
+copies apart, ViperServer is compiled with `-Xmixin-force-forwarders:false` (see `build.sbt`).
 
 ## Versioning
 
-ViperServer's version is bumped to `3.2.0` for the debugger messages. The IDE's `MIN_SERVER_VERSION` is
-deliberately *not* raised, so the extension keeps working with the older ViperServer release it pins in
-`client/viperserver-version`; instead the client refuses to start a debug session against a server older than
-`MIN_SERVER_VERSION_FOR_DEBUGGER`. Once a release containing the debugger exists, bump
-`client/viperserver-version` to it.
+ViperServer's version is bumped to `3.3.0` for the debug adapter (`3.2.0` had an earlier, LSP-based version of
+the debugger). The IDE's `MIN_SERVER_VERSION` is deliberately *not* raised, so the extension keeps working with
+the older ViperServer release it pins in `client/viperserver-version`; instead the client refuses to start a
+debug session against a server older than `MIN_SERVER_VERSION_FOR_DEBUGGER`. Once a release containing the
+debugger exists, bump `client/viperserver-version` to it.
 
 ## Counterexamples
 
@@ -129,8 +196,8 @@ were missing and crashed with `NoSuchElementException: None.get`. It is now a `d
 1. **One session at a time, for the whole server.** Silicon keeps the configuration of the most recently
    created verifier in the global `Verifier.config`, and the frontend state the debugger needs for typechecking
    user input in the global `FrontendStateCache`. A concurrent verification would silently change the meaning
-   of a live session, so sessions are closed and running verifications are stopped before a session starts,
-   only one session may exist at a time, and no verification is accepted while one is being started.
+   of a live session, so running verifications are stopped before a session starts, only one session may exist
+   at a time, and no verification is accepted while a session is being started or is open.
 2. **The `FrontendStateCache` race is only mitigated, not fixed.** While a session is being started, the
    registry refuses to start verifications and parse/typecheck runs; but nothing prevents a second client from
    parsing a file in that window. Fixing this properly means snapshotting the frontend state after AST
@@ -150,9 +217,12 @@ were missing and crashed with `NoSuchElementException: None.get`. It is now a `d
 
 ## Testing
 
-- `src/test/scala/viper/server/core/DebugSessionSpec.scala` drives a session end to end through the same code
-  paths the IDE uses (no VS Code needed): starting a session for an error, proving, adding assumptions,
-  expanding nodes, changing the print configuration, and verifying normally afterwards.
+- `src/test/scala/viper/server/core/DebugSessionSpec.scala` drives a session through `DebugSessionRegistry`:
+  starting a session for an error, proving, adding assumptions, expanding nodes, changing the print
+  configuration, and verifying normally afterwards.
+- `src/test/scala/viper/server/core/DebugAdapterSpec.scala` connects a DAP client to `DebugAdapterServer` and
+  goes through DAP's initialization sequence like VS Code does, then inspects scopes and variables and runs
+  Debug Console commands. `ConsoleCommandSpec` tests the parsing of those commands.
 - The Silicon CLI can be exercised directly:
   `java -Xss128m -cp <silicon classpath> viper.silicon.SiliconRunner --enableDebugging <file.vpr>`
 - viper-ide has `client/src/test/3_debugger.test.ts` for the IDE side.

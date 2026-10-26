@@ -41,12 +41,4 @@ trait IdeLanguageClient extends LanguageClient {
 
   @JsonNotification(S2C_Commands.StateChange)
   def notifyStateChanged(params: StateChangeParams): Unit
-
-  /** Progress while a debug session is being started. */
-  @JsonNotification(S2C_Commands.DebugSessionState)
-  def notifyDebugSessionState(params: DebugSessionStateParams): Unit
-
-  /** Sent when a debug session is torn down, e.g. because a verification was started. */
-  @JsonNotification(S2C_Commands.DebugSessionClosed)
-  def notifyDebugSessionClosed(params: DebugSessionClosedParams): Unit
 }

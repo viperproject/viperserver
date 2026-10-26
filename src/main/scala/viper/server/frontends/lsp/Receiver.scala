@@ -13,8 +13,8 @@ import org.eclipse.lsp4j.services.{LanguageClient, LanguageClientAware, Language
 import org.eclipse.lsp4j._
 import viper.server.ViperConfig
 import viper.server.core.VerificationExecutionContext
-import viper.server.frontends.lsp.debug
-import viper.server.frontends.lsp.debug.DebugProtocolConverter
+import viper.server.frontends.lsp.debug.DebugSessionRegistry
+import viper.server.frontends.lsp.debug.dap.DebugAdapterServer
 import viper.viperserver.BuildInfo
 
 import scala.concurrent.Future
@@ -422,13 +422,19 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
       coordinator.client.map {
         _.notifyVerificationNotStarted(VerificationNotStartedParams(data.uri))
       }
+    } else if (DebugSessionRegistry.isAnySessionOpen) {
+      // A debug session keeps a Silicon instance (and Silicon's global configuration) alive, which a new
+      // verification would interfere with. Rather than silently ending the session the user is working with,
+      // verifications are refused until it is stopped.
+      coordinator.logger.info("A debug session is open, so the verification cannot be started.")
+      if (data.manuallyTriggered) coordinator.hint("Stop the verification debugger to verify again.")
+      coordinator.client.map {
+        _.notifyVerificationNotStarted(VerificationNotStartedParams(data.uri))
+      }
     } else if (coordinator.canVerificationBeStarted(data.uri, data.content, data.manuallyTriggered)) {
       // stop all other verifications because the backend crashes if multiple verifications are run in parallel
       coordinator.logger.trace("verification can be started - all running verifications are now going to be stopped")
-      // A debug session keeps a Silicon instance (and Silicon's global configuration) alive, which would
-      // interfere with a new verification; it therefore has to go first.
-      coordinator.debug.closeAll("a new verification was started")
-        .flatMap(_ => coordinator.stopAllRunningVerifications()).map(_ => {
+      coordinator.stopAllRunningVerifications().map(_ => {
         coordinator.logger.info("start or restart verification")
 
         coordinator.startVerification(data.backend, data.customArgs, data.uri, data.manuallyTriggered).map(verificationStarted => {
@@ -476,90 +482,24 @@ class CustomReceiver(config: ViperConfig, server: ViperServerService, serverUrl:
     }
   }
 
-  /* --- The verification debugger ------------------------------------------------------------------------
-   *
-   * Each of these requests operates on a debug session, which owns a live Silicon instance including a
-   * prover process. Requests therefore never block the calling thread: the session runs them one after
-   * another on the verification thread pool and the response is completed once the session is done.
-   */
-
-  @JsonRequest(C2S_Commands.StartDebugSession)
-  def onStartDebugSession(params: DebugStartParams): CompletableFuture[DebugStartResponse] = {
-    coordinator.logger.info(s"Starting a debug session for ${params.uri}")
-    try {
-      coordinator.debug.start(params).asJava.toCompletableFuture()
-    } catch {
-      case e: Throwable =>
-        coordinator.logger.debug(s"Error handling a start debug session request: $e")
-        CompletableFuture.completedFuture(
-          DebugStartResponse(null, Array.empty, -1, null, Array.empty, s"Could not start a debug session: ${e.getMessage}"))
+  /**
+    * Opens a socket on which the verification debugger speaks the Debug Adapter Protocol; the IDE connects its
+    * debug session to it. Starting the adapter does not start a debug run yet: that happens once the client has
+    * sent DAP's `launch` and `configurationDone` requests.
+    */
+  @JsonRequest(C2S_Commands.StartDebugAdapter)
+  def onStartDebugAdapter(): CompletableFuture[StartDebugAdapterResponse] = {
+    coordinator.logger.info("Starting a debug adapter")
+    val response = DebugAdapterServer.start(coordinator) match {
+      case scala.util.Success(port) =>
+        coordinator.logger.info(s"The debug adapter is waiting for a connection on port $port")
+        StartDebugAdapterResponse(port)
+      case scala.util.Failure(e) =>
+        coordinator.logger.debug(s"Error starting a debug adapter: $e")
+        StartDebugAdapterResponse(-1, s"Could not start the debug adapter: ${e.getMessage}")
     }
+    CompletableFuture.completedFuture(response)
   }
-
-  @JsonRequest(C2S_Commands.StopDebugSession)
-  def onStopDebugSession(request: DebugSessionRef): CompletableFuture[DebugStopResponse] =
-    coordinator.debug.closeAll("the debug session was stopped by the user")
-      .map(_ => DebugStopResponse(true))
-      .recover(_ => DebugStopResponse(false))
-      .asJava.toCompletableFuture()
-
-  @JsonRequest(C2S_Commands.DebugSelectFailure)
-  def onDebugSelectFailure(params: DebugSelectFailureParams): CompletableFuture[DebugCommandResponse] =
-    withSession(params.sessionId)(_.run(_.openObligation(params.index)))
-
-  @JsonRequest(C2S_Commands.DebugProve)
-  def onDebugProve(request: DebugSessionRef): CompletableFuture[DebugCommandResponse] =
-    withSession(request.sessionId)(_.run(_.prove()))
-
-  @JsonRequest(C2S_Commands.DebugReset)
-  def onDebugReset(request: DebugSessionRef): CompletableFuture[DebugCommandResponse] =
-    withSession(request.sessionId)(_.run(_.reset()))
-
-  @JsonRequest(C2S_Commands.DebugAddAssumption)
-  def onDebugAddAssumption(params: DebugAddAssumptionParams): CompletableFuture[DebugCommandResponse] =
-    withSession(params.sessionId)(_.run(_.addAssumption(params.expression, params.free)))
-
-  @JsonRequest(C2S_Commands.DebugRemoveAssumptions)
-  def onDebugRemoveAssumptions(params: DebugRemoveAssumptionsParams): CompletableFuture[DebugCommandResponse] =
-    withSession(params.sessionId)(_.run(_.removeAssumptions(params.nodeIds.toSeq)))
-
-  @JsonRequest(C2S_Commands.DebugSetPrintConfig)
-  def onDebugSetPrintConfig(params: DebugPrintConfigParams): CompletableFuture[DebugCommandResponse] =
-    withSession(params.sessionId)(_.run(_.setPrintConfig(DebugProtocolConverter.fromPrintConfig(params.config))))
-
-  @JsonRequest(C2S_Commands.DebugSetProver)
-  def onDebugSetProver(params: DebugSetProverParams): CompletableFuture[DebugCommandResponse] =
-    withSession(params.sessionId)(_.run(_.setProver(params.prover, Option(params.args).filter(_.nonEmpty))))
-
-  @JsonRequest(C2S_Commands.DebugSetTimeout)
-  def onDebugSetTimeout(params: DebugSetTimeoutParams): CompletableFuture[DebugCommandResponse] =
-    withSession(params.sessionId)(_.run(_.setTimeout(Some(params.timeoutMs).filter(_ > 0))))
-
-  @JsonRequest(C2S_Commands.DebugExpandNode)
-  def onDebugExpandNode(params: DebugExpandParams): CompletableFuture[DebugExpandResponse] =
-    coordinator.debug.get(params.sessionId) match {
-      case None =>
-        CompletableFuture.completedFuture(DebugExpandResponse(Array.empty, "There is no such debug session."))
-      case Some(session) =>
-        session.run(_.expand(params.nodeId)).map {
-          case Left(err) => DebugExpandResponse(Array.empty, err)
-          case Right(nodes) => DebugExpandResponse(DebugProtocolConverter.toNodes(nodes))
-        }.recover(e => DebugExpandResponse(Array.empty, e.getMessage)).asJava.toCompletableFuture()
-    }
-
-  private def withSession(sessionId: String)
-                         (f: debug.ServerDebugSession => Future[viper.silicon.debugger.DebugCommandResult])
-                         : CompletableFuture[DebugCommandResponse] =
-    coordinator.debug.get(sessionId) match {
-      case None =>
-        CompletableFuture.completedFuture(
-          DebugProtocolConverter.errorResponse(sessionId, "There is no such debug session."))
-      case Some(session) =>
-        f(session)
-          .map(res => DebugProtocolConverter.toResponse(sessionId, res))
-          .recover(e => DebugProtocolConverter.errorResponse(sessionId, s"The command failed: ${e.getMessage}"))
-          .asJava.toCompletableFuture()
-    }
 
   override def connect(client: LanguageClient): Unit = {
     val c = client.asInstanceOf[IdeLanguageClient]

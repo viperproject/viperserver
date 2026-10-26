@@ -12,6 +12,8 @@ import org.scalatest.wordspec.AnyWordSpec
 import org.scalatest.{Assertion, Outcome, Succeeded}
 import viper.server.ViperConfig
 import viper.server.frontends.lsp._
+import viper.server.frontends.lsp.debug.{DebugLaunchRequest, StartedDebugSession}
+import viper.silicon.debugger.{DebugRenderer, ObligationModel}
 import viper.server.utility.ViperAstGenerator
 import viper.silver.logger.SilentLogger
 import viper.silver.reporter.OverallFailureMessage
@@ -23,11 +25,12 @@ import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 
 /**
-  * End-to-end tests of the verification debugger as it is driven over LSP: a debug session is started for a
+  * End-to-end tests of debug sessions as ViperServer manages them: a debug session is started for a
   * verification error, commands are issued against it, and it is torn down again.
   *
-  * These tests exercise everything except the JSON transport itself, i.e. the same code paths the Viper IDE
-  * uses. They are structured like `CoreServerSpec`, with one execution context per test case.
+  * These tests exercise the code paths behind the debug adapter but not the Debug Adapter Protocol itself; see
+  * `DebugAdapterSpec` for that. They are structured like `CoreServerSpec`, with one execution context per test
+  * case.
   */
 class DebugSessionSpec extends AnyWordSpec with Matchers {
 
@@ -37,7 +40,7 @@ class DebugSessionSpec extends AnyWordSpec with Matchers {
   private def uriOf(file: String): String = Paths.get(file).toAbsolutePath.toUri.toString
 
   /** The position (0-based, as in LSP) of the failing assertion in `debug_error.vpr`. */
-  private val failingAssertion = new Position(11, 9)
+  private val failingAssertion = (11, 9)
   private val failingAssertionMessage = "Assert might fail. Assertion x.f > 5 might not hold."
 
   private var currentTestName: Option[String] = None
@@ -72,49 +75,57 @@ class DebugSessionSpec extends AnyWordSpec with Matchers {
     res
   }
 
-  private def startSession(coordinator: ClientCoordinator, restrictToMember: Boolean = true)
-                          (implicit ctx: VerificationExecutionContext): Future[DebugStartResponse] =
-    coordinator.debug.start(DebugStartParams(
+  private def launchRequest(backend: String = "silicon", restrictToMember: Boolean = true): DebugLaunchRequest =
+    DebugLaunchRequest(
       uri = uriOf(debug_error_file),
-      backend = "silicon",
+      backend = backend,
       customArgs = "",
-      position = failingAssertion,
-      message = failingAssertionMessage,
+      position = Some(failingAssertion),
+      message = Some(failingAssertionMessage),
       restrictToMember = restrictToMember,
-      withCounterexample = true))
+      withCounterexample = true)
+
+  /** Starts a session and opens the proof obligation of the failure the user asked about. */
+  private def startSession(coordinator: ClientCoordinator, restrictToMember: Boolean = true)
+                          (implicit ctx: VerificationExecutionContext): Future[(StartedDebugSession, ObligationModel)] =
+    coordinator.debug.start(launchRequest(restrictToMember = restrictToMember), _ => ()).flatMap {
+      case Left(err) => Future.failed(new AssertionError(s"starting the session failed: $err"))
+      case Right(started) =>
+        assert(started.selected >= 0, "the failure the user asked about should have been found")
+        started.session.run(_.openObligation(started.selected)).map { res =>
+          assert(res.ok, s"opening the obligation failed: ${res.messages.map(_.text).mkString("; ")}")
+          (started, res.obligation.get)
+        }
+    }
 
   "The verification debugger" should {
 
     "open a proof obligation for a verification error" in withCoordinator { (coordinator, _, context) =>
       implicit val ctx: VerificationExecutionContext = context
-      startSession(coordinator).map { res =>
-        assert(res.error == null, s"starting the session failed: ${res.error}")
-        assert(res.sessionId != null)
-        assert(res.failures.nonEmpty)
-        assert(res.selected >= 0, "the failure the user asked about should have been found")
-        val obl = res.obligation
-        assert(obl != null)
+      startSession(coordinator).map { case (started, obl) =>
+        assert(started.failures.nonEmpty)
         assert(obl.assertion != null)
-        assert(obl.errorMessage.contains("might not hold"))
+        assert(obl.originalError.message.contains("might not hold"))
         // The obligation of this program has a branch condition, a store and a heap chunk.
         assert(obl.branchConditions.nonEmpty)
         assert(obl.store.nonEmpty)
         assert(obl.heaps.nonEmpty)
         assert(obl.assumptions.nonEmpty)
-        assert(obl.renderedText.contains("Original Error:"))
+        assert(DebugRenderer.renderObligation(obl).contains("Original Error:"))
         // The debug run computes a counterexample for the failure, which comes with the obligation.
-        assert(obl.counterexample != null, "no counterexample was computed")
-        assert(!obl.counterexample.stale)
-        assert(obl.counterexample.sections.exists(_.nodes.exists(_.label.startsWith("i -> "))),
-          s"expected a value for i, got: ${obl.counterexample.sections.flatMap(_.nodes).map(_.label).mkString(", ")}")
+        assert(obl.counterexample.isDefined, "no counterexample was computed")
+        val ce = obl.counterexample.get
+        assert(!ce.stale)
+        assert(ce.sections.exists(_.nodes.exists(_.label.startsWith("i -> "))),
+          s"expected a value for i, got: ${ce.sections.flatMap(_.nodes).map(_.label).mkString(", ")}")
       }
     }
 
     "recompute the counterexample from the assumptions the user added" in withCoordinator { (coordinator, _, context) =>
       implicit val ctx: VerificationExecutionContext = context
       for {
-        started <- startSession(coordinator)
-        session = coordinator.debug.get(started.sessionId).get
+        (started, _) <- startSession(coordinator)
+        session = started.session
         // Adding an assumption invalidates the counterexample, ...
         added <- session.run(_.addAssumption("i == 4", free = true))
         // ... and proving again produces one that satisfies it.
@@ -133,10 +144,10 @@ class DebugSessionSpec extends AnyWordSpec with Matchers {
     "report that the obligation cannot be proved, and accept a free assumption" in withCoordinator { (coordinator, _, context) =>
       implicit val ctx: VerificationExecutionContext = context
       for {
-        started <- startSession(coordinator)
-        session = coordinator.debug.get(started.sessionId).get
+        (started, obl) <- startSession(coordinator)
+        session = started.session
         proveRes <- session.run(_.prove())
-        assumptionsBefore = started.obligation.assumptions.length
+        assumptionsBefore = obl.assumptions.length
         addRes <- session.run(_.addAssumption("i > 3", free = true))
       } yield {
         assert(proveRes.proved.contains(false), "the obligation must not be provable")
@@ -148,20 +159,20 @@ class DebugSessionSpec extends AnyWordSpec with Matchers {
     "expand an assumption and change the print configuration" in withCoordinator { (coordinator, _, context) =>
       implicit val ctx: VerificationExecutionContext = context
       for {
-        started <- startSession(coordinator)
-        session = coordinator.debug.get(started.sessionId).get
+        (started, obl) <- startSession(coordinator)
+        session = started.session
         // Showing internal assumptions must reveal at least as many nodes as before.
         withInternal <- session.run(_.setPrintConfig(
           viper.silicon.debugger.PrintConfigModel(printInternal = true, nChildrenToShow = 5, hierarchyLevel = 2,
             printAxioms = false, printInternalTermRepresentation = false, printOldHeaps = false)))
-        expandable = started.obligation.assumptions.find(_.childCount > 0).map(_.id)
+        expandable = obl.assumptions.find(_.childCount > 0).map(_.id)
         expanded <- expandable match {
           case Some(id) => session.run(_.expand(id))
           case None => Future.successful(Right(Seq.empty))
         }
       } yield {
         assert(withInternal.ok)
-        assert(withInternal.obligation.exists(_.assumptions.length >= started.obligation.assumptions.length))
+        assert(withInternal.obligation.exists(_.assumptions.length >= obl.assumptions.length))
         expanded match {
           case Right(nodes) => assert(expandable.isEmpty || nodes.nonEmpty)
           case Left(err) => fail(s"expanding a node failed: $err")
@@ -171,9 +182,8 @@ class DebugSessionSpec extends AnyWordSpec with Matchers {
 
     "refuse to debug a backend other than Silicon" in withCoordinator { (coordinator, _, context) =>
       implicit val ctx: VerificationExecutionContext = context
-      coordinator.debug.start(DebugStartParams(uriOf(debug_error_file), "carbon", "", failingAssertion,
-        failingAssertionMessage, restrictToMember = false)).map { res =>
-        assert(res.error != null)
+      coordinator.debug.start(launchRequest(backend = "carbon", restrictToMember = false), _ => ()).map { res =>
+        assert(res.isLeft)
         assert(!coordinator.debug.hasSession)
       }
     }
@@ -181,8 +191,7 @@ class DebugSessionSpec extends AnyWordSpec with Matchers {
     "allow a normal verification after the session has been closed" in withCoordinator { (coordinator, server, context) =>
       implicit val ctx: VerificationExecutionContext = context
       for {
-        started <- startSession(coordinator)
-        _ = assert(started.error == null)
+        _ <- startSession(coordinator)
         _ <- coordinator.debug.closeAll("the test closes the session")
         _ = assert(!coordinator.debug.hasSession)
         // Verifying again must work, i.e. the debug run must not have left the server in a broken state
@@ -197,24 +206,22 @@ class DebugSessionSpec extends AnyWordSpec with Matchers {
       }
     }
   }
+}
 
-  /** A client that ignores everything the server sends it. */
-  private class SilentClient extends IdeLanguageClient {
-    override def requestIdentifier(pos: Position): CompletableFuture[GetIdentifierResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
-    override def requestRange(range: Range): CompletableFuture[GetRangeResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
-    override def requestVprFileEndings(): CompletableFuture[GetViperFileEndingsResponse] = CompletableFuture.completedFuture(GetViperFileEndingsResponse(Array(".vpr", ".sil")))
-    override def requestSetupProject(param: SetupProjectParams): CompletableFuture[Unit] = CompletableFuture.completedFuture(())
-    override def notifyLog(param: LogParams): Unit = {}
-    override def notifyHint(param: HintMessage): Unit = {}
-    override def notifyUnhandledViperServerMessage(params: UnhandledViperServerMessageTypeParams): Unit = {}
-    override def notifyVerificationNotStarted(params: VerificationNotStartedParams): Unit = {}
-    override def notifyStateChanged(params: StateChangeParams): Unit = {}
-    override def notifyDebugSessionState(params: DebugSessionStateParams): Unit = {}
-    override def notifyDebugSessionClosed(params: DebugSessionClosedParams): Unit = {}
-    override def telemetryEvent(`object`: Any): Unit = {}
-    override def publishDiagnostics(diagnostics: PublishDiagnosticsParams): Unit = {}
-    override def showMessage(messageParams: MessageParams): Unit = {}
-    override def showMessageRequest(requestParams: ShowMessageRequestParams): CompletableFuture[MessageActionItem] = CompletableFuture.failedFuture(new UnsupportedOperationException())
-    override def logMessage(message: MessageParams): Unit = {}
-  }
+/** A language client that ignores everything the server sends it. */
+class SilentClient extends IdeLanguageClient {
+  override def requestIdentifier(pos: Position): CompletableFuture[GetIdentifierResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
+  override def requestRange(range: Range): CompletableFuture[GetRangeResponse] = CompletableFuture.failedFuture(new UnsupportedOperationException())
+  override def requestVprFileEndings(): CompletableFuture[GetViperFileEndingsResponse] = CompletableFuture.completedFuture(GetViperFileEndingsResponse(Array(".vpr", ".sil")))
+  override def requestSetupProject(param: SetupProjectParams): CompletableFuture[Unit] = CompletableFuture.completedFuture(())
+  override def notifyLog(param: LogParams): Unit = {}
+  override def notifyHint(param: HintMessage): Unit = {}
+  override def notifyUnhandledViperServerMessage(params: UnhandledViperServerMessageTypeParams): Unit = {}
+  override def notifyVerificationNotStarted(params: VerificationNotStartedParams): Unit = {}
+  override def notifyStateChanged(params: StateChangeParams): Unit = {}
+  override def telemetryEvent(`object`: Any): Unit = {}
+  override def publishDiagnostics(diagnostics: PublishDiagnosticsParams): Unit = {}
+  override def showMessage(messageParams: MessageParams): Unit = {}
+  override def showMessageRequest(requestParams: ShowMessageRequestParams): CompletableFuture[MessageActionItem] = CompletableFuture.failedFuture(new UnsupportedOperationException())
+  override def logMessage(message: MessageParams): Unit = {}
 }

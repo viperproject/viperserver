@@ -20,7 +20,7 @@ import viper.server.utility.Helpers.validateViperFile
 import viper.server.vsi.VerificationProtocol.{StopAstConstruction, StopVerification}
 import viper.server.vsi.{AstJobId, DefaultVerificationServerStart, VerHandle, VerJobId}
 import viper.silicon.Silicon
-import viper.silicon.debugger.SiliconDebugSession
+import viper.silicon.debugger.{DebugHook, SiliconDebugSession}
 import viper.silver.parser.ReformatPrettyPrinter
 import viper.silver.ast.{AbstractSourcePosition, Method, Program}
 import viper.silver.ast.utility.FileLoader
@@ -180,6 +180,8 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     * @param selectMemberAt if given, a (1-based) position; the member containing it is verified on its own,
     *                       which is much faster. If that run does not reproduce a debuggable failure, the
     *                       whole file is verified instead.
+    * @param debugHook      installed in the Silicon instance of the debug run, so that it can be paused at
+    *                       breakpoints; see [[viper.silicon.debugger.DebugRunController]].
     */
   def startDebugVerification(file: String,
                              customArgs: String,
@@ -187,7 +189,8 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
                              withCounterexample: Boolean,
                              loader: Option[FileLoader],
                              onProgress: String => Unit,
-                             localLogger: Option[Logger] = None): Future[Either[String, (Silicon, SiliconDebugSession)]] = {
+                             localLogger: Option[Logger] = None,
+                             debugHook: Option[DebugHook] = None): Future[Either[String, (Silicon, SiliconDebugSession)]] = {
     val logger = combineLoggers(localLogger)
     val baseArgs = getArgListFromArgString(customArgs)
 
@@ -210,11 +213,11 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
           Future.successful(Left("The file could not be parsed or type-checked."))
         case Some(program) =>
           val member = selectMemberAt.flatMap(pos => memberAt(program, pos))
-          runDebugVerification(file, baseArgs, program, member, withCounterexample, onProgress, localLogger).flatMap {
+          runDebugVerification(file, baseArgs, program, member, withCounterexample, onProgress, localLogger, debugHook).flatMap {
             case Left(err) if member.isDefined =>
               logger.info(s"Debugging only member '${member.get}' did not work ($err); verifying the whole file.")
               onProgress(s"Verifying only ${member.get} did not reproduce the error; verifying the whole file...")
-              runDebugVerification(file, baseArgs, program, None, withCounterexample, onProgress, localLogger)
+              runDebugVerification(file, baseArgs, program, None, withCounterexample, onProgress, localLogger, debugHook)
             case other =>
               Future.successful(other)
           }
@@ -228,7 +231,8 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
                                    member: Option[String],
                                    withCounterexample: Boolean,
                                    onProgress: String => Unit,
-                                   localLogger: Option[Logger]): Future[Either[String, (Silicon, SiliconDebugSession)]] = {
+                                   localLogger: Option[Logger],
+                                   debugHook: Option[DebugHook]): Future[Either[String, (Silicon, SiliconDebugSession)]] = {
     val args = debugArgs(baseArgs, member, withCounterexample)
     combineLoggers(localLogger).info(s"Starting a debug verification: silicon ${args.mkString(" ")}")
     onProgress(member match {
@@ -236,7 +240,7 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
       case None => "Verifying with debugging enabled..."
     })
 
-    val (verId, siliconFut) = verifyForDebugging(file, SiliconConfig(args), program, localLogger)
+    val (verId, siliconFut) = verifyForDebugging(file, SiliconConfig(args), program, localLogger, debugHook)
     if (verId.id < 0) {
       return Future.successful(Left("Could not start a verification process; too many jobs are running."))
     }
@@ -267,16 +271,19 @@ class ViperServerService(config: ViperConfig)(override implicit val executor: Ve
     * The IDE's custom arguments end with the file to verify, and Silicon's argument parser ignores options
     * that follow that positional argument — so the flags of the debug run have to come first. They also must
     * not be passed twice, hence the flags we set ourselves are removed from the user's arguments.
+    *
+    * A debug run verifies with a single verifier and without parallel branches, so that at most one path can
+    * be paused at a breakpoint at a time, and without a timeout, which a paused verification would run into.
     */
   private def debugArgs(baseArgs: List[String], member: Option[String], withCounterexample: Boolean): List[String] = {
-    val ownFlags = Set("--enableDebugging", "--disableCaching")
-    val cleaned = List("--select", "--counterexample", "--exhaleMode")
+    val ownFlags = Set("--enableDebugging", "--disableCaching", "--parallelizeBranches")
+    val cleaned = List("--select", "--counterexample", "--exhaleMode", "--numberOfParallelVerifiers", "--timeout")
       .foldLeft(baseArgs.filterNot(ownFlags.contains))(withoutOption)
     // Counterexamples need the prover to keep its models, and are far more informative with the more complete
     // exhale mode, which keeps the permissions of the heap around.
     val counterexampleArgs =
       if (withCounterexample) List("--counterexample", "mapped", "--exhaleMode", "1") else Nil
-    List("--enableDebugging", "--disableCaching") ++
+    List("--enableDebugging", "--disableCaching", "--numberOfParallelVerifiers", "1") ++
       counterexampleArgs ++
       member.map(m => List("--select", m)).getOrElse(Nil) ++
       cleaned

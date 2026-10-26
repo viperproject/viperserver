@@ -11,6 +11,7 @@ import viper.carbon.CarbonFrontend
 import viper.server.ViperConfig
 import viper.server.vsi.Envelope
 import viper.silicon.{Silicon, SiliconFrontend}
+import viper.silicon.debugger.DebugHook
 import viper.silver.ast._
 import viper.silver.ast.utility.chopper.PluginAwareChopper
 import viper.silver.frontend.SilFrontend
@@ -37,6 +38,7 @@ case class ViperEnvelope(m: Message) extends Envelope
   *                          them. The caller then becomes responsible for stopping the verifier.
   * @param onFinished        called exactly once when the verification has finished (also on failure), with the
   *                          backend that ran it, if one could be created.
+  * @param debugHook         installed in the Silicon instance of the verification, so that a debugger can pause it.
   */
 class VerificationWorker(private val command: List[String],
                          private val programId: String,
@@ -44,7 +46,8 @@ class VerificationWorker(private val command: List[String],
                          override val logger: Logger,
                          private val config: ViperConfig,
                          private val keepVerifierAlive: Boolean = false,
-                         private val onFinished: Option[ViperBackend] => Unit = _ => ())
+                         private val onFinished: Option[ViperBackend] => Unit = _ => (),
+                         private val debugHook: Option[DebugHook] = None)
                         (override val executor: VerificationExecutionContext)
   extends MessageReportingTask[Unit] {
 
@@ -86,7 +89,7 @@ class VerificationWorker(private val command: List[String],
       command match {
         case "silicon" :: args =>
           logger.info("Creating new Silicon verification backend.")
-          backend = new ViperBackend("silicon", new SiliconFrontend(new ActorReporter("silicon"), logger), programId, program, disablePlugins = config.disablePlugins(), keepVerifierAlive = keepVerifierAlive)
+          backend = new ViperBackend("silicon", new SiliconFrontend(new ActorReporter("silicon"), logger), programId, program, disablePlugins = config.disablePlugins(), keepVerifierAlive = keepVerifierAlive, debugHook = debugHook)
           backend.execute(args)
           success = true
         case "carbon" :: args =>
@@ -131,7 +134,7 @@ class VerificationWorker(private val command: List[String],
   * ViperBackend that verifies `_ast` using `_frontend` when calling `execute`.
   * Note that we wrap `_frontend` in this way to support custom backends (which are instances of `SilFrontend`).
   */
-class ViperBackend(val backendName: String, private val _frontend: SilFrontend, private val programId: String, private val _ast: Program, private val disablePlugins: Boolean = false, private val keepVerifierAlive: Boolean = false) {
+class ViperBackend(val backendName: String, private val _frontend: SilFrontend, private val programId: String, private val _ast: Program, private val disablePlugins: Boolean = false, private val keepVerifierAlive: Boolean = false, private val debugHook: Option[DebugHook] = None) {
 
   /** The frontend that ran the verification; used to obtain a debug session from a debug run. */
   def frontend: SilFrontend = _frontend
@@ -203,6 +206,10 @@ class ViperBackend(val backendName: String, private val _frontend: SilFrontend, 
     val argsWithDummyFilename = args ++ Seq("--ignoreFile", Silicon.dummyInputFilename)
     _frontend.setStartTime()
     _frontend.setVerifier( _frontend.createVerifier(argsWithDummyFilename.mkString(" ")) )
+    _frontend.verifier match {
+      case silicon: Silicon => silicon.debugHook = debugHook
+      case _ =>
+    }
 
     if (!_frontend.prepare(argsWithDummyFilename)) {
       // Without this, a rejected command line leads to a verification that silently reports nothing.

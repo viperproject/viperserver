@@ -1,0 +1,11 @@
+field f: Int
+
+method pkg(x: Ref)
+  requires acc(x.f)
+{
+  var a: Int := 1
+  package acc(x.f) --* acc(x.f) {
+    assert true
+  }
+  a := 3
+}

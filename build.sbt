@@ -31,6 +31,13 @@ lazy val server = (project in file("."))
         libraryDependencies += "com.typesafe.akka" %% "akka-stream-testkit" % "2.6.10" % Test,
         libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.2.1" % Test,
         libraryDependencies += "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.20.1", // Java implementation of language server protocol
+        libraryDependencies += "org.eclipse.lsp4j" % "org.eclipse.lsp4j.debug" % "0.20.1", // Java implementation of the debug adapter protocol
+
+        // By default, Scala 2.13 adds a forwarder to a class for every default method it inherits from a Java
+        // interface, and copies the method's annotations to it. LSP4J then finds each `@JsonRequest` and
+        // `@JsonNotification` of the debug adapter protocol twice and refuses to create a launcher, since DAP
+        // methods (unlike LSP methods) have no segment that tells the copies apart.
+        scalacOptions += "-Xmixin-force-forwarders:false",
 
         silicon / excludeFilter := "logback.xml", /* Ignore Silicon's Logback configuration */
         carbon / excludeFilter := "logback.xml", /* Ignore Carbon's Logback configuration */

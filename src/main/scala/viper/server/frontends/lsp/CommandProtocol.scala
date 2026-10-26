@@ -24,18 +24,8 @@ object C2S_Commands {
   final val GetIdentifier = "GetIdentifier"
   final val GetRange = "GetRange"
 
-  /* The verification debugger (Silicon only). */
-  final val StartDebugSession = "StartDebugSession"
-  final val StopDebugSession = "StopDebugSession"
-  final val DebugSelectFailure = "DebugSelectFailure"
-  final val DebugExpandNode = "DebugExpandNode"
-  final val DebugAddAssumption = "DebugAddAssumption"
-  final val DebugRemoveAssumptions = "DebugRemoveAssumptions"
-  final val DebugProve = "DebugProve"
-  final val DebugReset = "DebugReset"
-  final val DebugSetPrintConfig = "DebugSetPrintConfig"
-  final val DebugSetProver = "DebugSetProver"
-  final val DebugSetTimeout = "DebugSetTimeout"
+  /* The verification debugger (Silicon only); it opens a socket that speaks the Debug Adapter Protocol. */
+  final val StartDebugAdapter = "StartDebugAdapter"
 }
 
 object S2C_Commands {
@@ -44,8 +34,4 @@ object S2C_Commands {
   final val Hint = "Hint"
   final val VerificationNotStarted = "VerificationNotStarted"
   final val UnhandledViperServerMessageType = "UnhandledViperServerMessageType"
-
-  /* The verification debugger (Silicon only). */
-  final val DebugSessionState = "DebugSessionState"
-  final val DebugSessionClosed = "DebugSessionClosed"
 }
