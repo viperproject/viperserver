@@ -224,4 +224,10 @@ class SilentClient extends IdeLanguageClient {
   override def showMessage(messageParams: MessageParams): Unit = {}
   override def showMessageRequest(requestParams: ShowMessageRequestParams): CompletableFuture[MessageActionItem] = CompletableFuture.failedFuture(new UnsupportedOperationException())
   override def logMessage(message: MessageParams): Unit = {}
+  // The defaults of these throw, but the server sends them whenever the results of a file change.
+  override def refreshSemanticTokens(): CompletableFuture[Void] = CompletableFuture.completedFuture(null)
+  override def refreshCodeLenses(): CompletableFuture[Void] = CompletableFuture.completedFuture(null)
+  override def refreshInlayHints(): CompletableFuture[Void] = CompletableFuture.completedFuture(null)
+  override def refreshInlineValues(): CompletableFuture[Void] = CompletableFuture.completedFuture(null)
+  override def refreshDiagnostics(): CompletableFuture[Void] = CompletableFuture.completedFuture(null)
 }

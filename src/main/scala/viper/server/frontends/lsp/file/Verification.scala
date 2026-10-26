@@ -54,6 +54,9 @@ case class VerificationHandler(server: lsp.ViperServerService, logger: Logger) {
     waitingOn = Some(Right(ver))
   }
 
+  /** Stops and discards the AST job this handler waits on, if any, e.g. because its file was closed. */
+  def releaseAstJob(): Unit = if (isAstConstructing) clearWaitingOn()
+
   def isVerifying: Boolean = waitingOn.exists(_.isRight)
   def isAstConstructing: Boolean = waitingOn.exists(_.isLeft)
   def astHandle: Option[AstJobId] = waitingOn.flatMap(_.left.toOption)
@@ -203,6 +206,21 @@ trait VerificationManager extends ManagesLeaf {
     }
   }
 
+  /**
+    * Releases the AST job of this file if it only served parsing and typechecking and has finished, so that another
+    * file can use its place in the (bounded) pool of AST jobs. The file is parsed again when it is needed.
+    *
+    * @return whether a job was released.
+    */
+  def releaseIdleAstJob(): Boolean = {
+    val idle = handler.isAstConstructing && futureAst.forall(_.isCompleted)
+    if (idle) {
+      coordinator.logger.debug(s"Releasing the finished AST job of $filename")
+      handler.releaseAstJob()
+    }
+    idle
+  }
+
   def reformatFile(): Option[String] = {
     coordinator.logger.info(s"reformatting the file $filename")
     coordinator.server.reformatFile(path.toString, Some(coordinator.localLogger))
@@ -225,31 +243,37 @@ trait VerificationManager extends ManagesLeaf {
         case Some(existingAst) =>
           coordinator.logger.info(s"Reusing existing AST job ${existingAst.id} for verification")
           manuallyTriggered = mt
-          existingAst
+          Some(existingAst)
         // Otherwise, start a new AST job for verification.
         case None =>
           handler.clearWaitingOn()
-          startConstructAst(backend, loader, mt) match {
-            case None => return Future.successful(false)
-            case Some(ast) => ast
-          }
+          startConstructAst(backend, loader, mt)
       }
 
-      val verJob = coordinator.server.verifyAst(astJob, file.toString(), backend, Some(coordinator.localLogger))
-      if (verJob.id >= 0) {
-        // Execute all handles
-        this.resetContainers(false)
-        this.resetDiagnostics(false)
-        errorCount = 0
-        diagnosticCount = 0
-        handler.waitOn(verJob)
-        val receiver = props(Some(backendClassName))
-        futureVer = coordinator.server.startStreamingVer(verJob, receiver, Some(coordinator.localLogger))
-        true
-      } else {
-        // Ver pool full — free the orphaned AST slot
-        coordinator.server.discardAstJobLookup(astJob)
-        false
+      // Note: no `return` in this closure. A non-local return from it would throw `NonLocalReturnControl`, which the
+      // future does not catch, so that it would never complete and the client would never learn that the
+      // verification did not start.
+      astJob match {
+        case None =>
+          coordinator.logger.debug(s"The verification of $filename cannot be started: there is no AST job for it.")
+          false
+        case Some(astJob) =>
+          val verJob = coordinator.server.verifyAst(astJob, file.toString(), backend, Some(coordinator.localLogger))
+          if (verJob.id >= 0) {
+            // Execute all handles
+            this.resetContainers(false)
+            this.resetDiagnostics(false)
+            errorCount = 0
+            diagnosticCount = 0
+            handler.waitOn(verJob)
+            val receiver = props(Some(backendClassName))
+            futureVer = coordinator.server.startStreamingVer(verJob, receiver, Some(coordinator.localLogger))
+            true
+          } else {
+            // Ver pool full — free the orphaned AST slot
+            coordinator.server.discardAstJobLookup(astJob)
+            false
+          }
       }
     })
   }
@@ -258,11 +282,18 @@ trait VerificationManager extends ManagesLeaf {
     coordinator.logger.debug(s"startConstructAst")
     prepareVerification(mt)
 
-    val params = lsp.StateChangeParams(lsp.VerificationState.ConstructingAst.id, filename = filename)
-    coordinator.sendStateChangeNotification(params, Some(this))
-
-    val astJob = coordinator.server.constructAst(path.toString(), backend, Some(coordinator.localLogger), Some(loader))
+    def construct(): AstJobId =
+      coordinator.server.constructAst(path.toString(), backend, Some(coordinator.localLogger), Some(loader))
+    // Only a few AST jobs may exist at a time, and files that were only parsed keep theirs, so that a verification
+    // can reuse it. If all places are taken, the finished jobs of other files make room.
+    val astJob = construct() match {
+      case refused if refused.id < 0 && coordinator.releaseIdleAstJobs(except = this) => construct()
+      case job => job
+    }
     if (astJob.id >= 0) {
+      // Only now, since a client that is told that the AST is being constructed waits for it.
+      val params = lsp.StateChangeParams(lsp.VerificationState.ConstructingAst.id, filename = filename)
+      coordinator.sendStateChangeNotification(params, Some(this))
       this.resetDiagnostics(true)
       // Execute all handles
       val newFut = coordinator.server.startStreamingAst(astJob, props(None), Some(coordinator.localLogger))

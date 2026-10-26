@@ -96,6 +96,15 @@ class ClientCoordinator(val server: ViperServerService)(implicit executor: Verif
     }
   }
 
+  /**
+    * Releases the finished AST jobs of the files other than `except` that were only parsed (see
+    * [[viper.server.frontends.lsp.file.VerificationManager.releaseIdleAstJob]]), to make room for a new one.
+    *
+    * @return whether any job was released.
+    */
+  def releaseIdleAstJobs(except: viper.server.frontends.lsp.file.VerificationManager): Boolean =
+    _files.values().asScala.toSeq.filterNot(_ eq except).map(_.releaseIdleAstJob()).exists(identity)
+
   def resetDiagnosticsOne(uri: String): Unit = {
     getFileManager(uri).removeDiagnostics()
   }

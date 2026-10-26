@@ -51,6 +51,8 @@ case class FileManager(root: LeafManager)(implicit executor: VerificationExecuti
   def close(): Unit = {
     teardownProject()
     stopRunningVerification()
+    // A file that was only parsed still holds its AST job, which nobody would release once this manager is gone.
+    handler.releaseAstJob()
   }
 }
 
