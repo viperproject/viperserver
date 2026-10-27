@@ -31,6 +31,7 @@ class DebugAdapterSpec extends AnyWordSpec {
   private val debug_error_file = "src/test/resources/viper/debug_error.vpr"
   private val debug_package_file = "src/test/resources/viper/debug_package.vpr"
   private val debug_fold_file = "src/test/resources/viper/debug_fold.vpr"
+  private val debug_spec_file = "src/test/resources/viper/debug_spec.vpr"
   private val timeoutSeconds = 300L
 
   /** Records the events the adapter sends. */
@@ -147,11 +148,13 @@ class DebugAdapterSpec extends AnyWordSpec {
     args
   }
 
-  private def lineOf(adapter: IDebugProtocolServer, threadId: Int): Int = {
+  private def frameOf(adapter: IDebugProtocolServer, threadId: Int): StackFrame = {
     val args = new StackTraceArguments()
     args.setThreadId(threadId)
-    get(adapter.stackTrace(args)).getStackFrames.head.getLine
+    get(adapter.stackTrace(args)).getStackFrames.head
   }
+
+  private def lineOf(adapter: IDebugProtocolServer, threadId: Int): Int = frameOf(adapter, threadId).getLine
 
   /** Takes a step of the given kind and returns the next stop. */
   private def step(adapter: IDebugProtocolServer, client: RecordingClient, threadId: Int, kind: String): StoppedEventArguments = {
@@ -405,6 +408,74 @@ class DebugAdapterSpec extends AnyWordSpec {
         assert(unfold.isFailure)
         assert(unfold.failed.get.getMessage.contains("has no body in the program that was verified"),
           unfold.failed.get.getMessage)
+      }
+
+    "stop before the precondition of a call is checked, and prove it there" in
+      withDebugSession(Seq(4), file = debug_spec_file) { (adapter, client, _, first) =>
+        assert(client.breakpoints.asScala.map(_.getLine).toSet == Set(4))
+        // The precondition of inc is checked at the call in client; at the start of inc, it is only assumed.
+        assert(first.getReason == StoppedEventArgumentsReason.BREAKPOINT)
+        val frame = frameOf(adapter, first.getThreadId)
+        assert(frame.getName == "client: before checking the precondition of `inc` (call on line 14)", frame.getName)
+        assert((frame.getLine, frame.getColumn) == (4, 12), "the first conjunct, acc(x.f), is checked first")
+        assert(scopes(adapter, first.getThreadId).exists(_.getName == "Assertion"))
+        // The store maps the parameters of inc, to the arguments of the call.
+        assert(evaluate(adapter, "x.f == 0").getResult == "holds")
+        assert(evaluate(adapter, ":prove").getResult.contains("PASS"))
+
+        // Stepping in goes on to the next conjunct, stepping over leaves the precondition.
+        val second = frameOf(adapter, step(adapter, client, first.getThreadId, "in").getThreadId)
+        assert(second.getLine == 4 && second.getColumn > 12, s"${second.getLine}:${second.getColumn}")
+        val after = step(adapter, client, first.getThreadId, "next")
+        assert(after.getReason == StoppedEventArgumentsReason.STEP)
+        assert(lineOf(adapter, after.getThreadId) == 15)
+      }
+
+    "stop before a postcondition, and a loop invariant before and after the loop body, are checked" in
+      withDebugSession(Seq(5, 18), file = debug_spec_file) { (adapter, client, _, first) =>
+        var stops = Seq.empty[(String, Int, String)]
+        var event: AnyRef = first
+        while (event match {
+          case s: StoppedEventArguments => s.getReason == StoppedEventArgumentsReason.BREAKPOINT
+          case _ => false
+        }) {
+          val threadId = event.asInstanceOf[StoppedEventArguments].getThreadId
+          val frame = frameOf(adapter, threadId)
+          stops :+= ((frame.getName, frame.getLine, evaluate(adapter, ":prove").getResult))
+          continue_(adapter, threadId)
+          event = client.await {
+            case s: StoppedEventArguments => s
+            case t: TerminatedEventArguments => t
+          }
+        }
+        assert(stops.map(s => (s._1, s._2)).toSet == Set(
+          ("inc: before checking the postcondition of `inc`", 5),
+          ("client: before checking the loop invariant, on entry to the loop", 18),
+          ("client: before checking the loop invariant, after the loop body", 18)), stops)
+        assert(stops.forall(_._3.contains("PASS")), stops)
+      }
+
+    "step from the end of a loop body to the check of the loop invariant" in
+      withDebugSession(Seq(20), file = debug_spec_file) { (adapter, client, _, first) =>
+        assert(lineOf(adapter, first.getThreadId) == 20)
+        val check = step(adapter, client, first.getThreadId, "next")
+        assert(check.getReason == StoppedEventArgumentsReason.STEP)
+        val frame = frameOf(adapter, check.getThreadId)
+        assert(frame.getLine == 17, frame.getName)
+        assert(frame.getName.endsWith("after the loop body"), frame.getName)
+        assert(evaluate(adapter, "0 < i").getResult == "holds")
+      }
+
+    "prove a postcondition that does not hold before it is checked" in
+      withDebugSession(Seq(26), file = debug_spec_file) { (adapter, client, _, first) =>
+        assert(evaluate(adapter, ":prove").getResult.contains("PASS"), "acc(x.f) is checked first")
+        val second = step(adapter, client, first.getThreadId, "in")
+        assert(frameOf(adapter, second.getThreadId).getName == "bad: before checking the postcondition of `bad`")
+        assert(evaluate(adapter, ":prove").getResult.contains("FAIL"), "x.f == 1 does not hold, since x.f is 2")
+        // The verification then reports the failure of the postcondition.
+        continue_(adapter, first.getThreadId)
+        val failure = client.await { case s: StoppedEventArguments => s }
+        assert(failure.getReason == StoppedEventArgumentsReason.EXCEPTION)
       }
   }
 }

@@ -83,8 +83,8 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
     }
 
   /**
-    * The scopes of a proof obligation. The obligation of a paused verification (`paused`) has neither an assertion
-    * nor a counterexample.
+    * The scopes of a proof obligation. The obligation of a verification paused before a statement (`paused`) has
+    * neither an assertion nor a counterexample.
     */
   def scopes(model: sil.ObligationModel, paused: Boolean = false): Seq[Scope] = {
     import VariableContainer._

@@ -315,7 +315,10 @@ class ViperDebugAdapter(coordinator: ClientCoordinator)(implicit executor: Verif
     }
     val frames =
       if (args.getThreadId == LiveThreadId)
-        livePause.toSeq.map { case (p, _) => frame(p.memberName.getOrElse("verification"), p.position) }
+        livePause.toSeq.map { case (p, _) =>
+          val member = p.memberName.getOrElse("verification")
+          frame(p.check.map(c => s"$member: before checking $c").getOrElse(member), p.position)
+        }
       else
         failure(args.getThreadId).toSeq.map(f => frame(f.memberName.getOrElse("verification error"), f.pos))
     val response = new StackTraceResponse()
@@ -331,8 +334,9 @@ class ViperDebugAdapter(coordinator: ClientCoordinator)(implicit executor: Verif
       case Left(err) => throw error(err)
       case Right(model) =>
         val response = new ScopesResponse()
-        // At a failure, the obligation has an assertion (and maybe a counterexample) like after the verification.
-        val atStatement = threadId == LiveThreadId && !livePause.exists(_._1.reason.isInstanceOf[sil.PauseReason.Failure])
+        // At a failure, the obligation has an assertion (and maybe a counterexample) like after the verification;
+        // before a specification is checked, the assertion is the specification. Only before a statement is there none.
+        val atStatement = threadId == LiveThreadId && livePause.exists(_._1.stmt.isDefined)
         response.setScopes(dapModel.scopes(model, paused = atStatement).toArray)
         response
     }
@@ -674,7 +678,7 @@ class ViperDebugAdapter(coordinator: ClientCoordinator)(implicit executor: Verif
     pause.reason match {
       case sil.PauseReason.Breakpoint(ids) =>
         e.setReason(StoppedEventArgumentsReason.BREAKPOINT)
-        e.setDescription("Paused at a breakpoint")
+        e.setDescription(pause.check.map(c => s"Paused before checking $c").getOrElse("Paused at a breakpoint"))
         e.setHitBreakpointIds(ids.map(Int.box).toArray)
       case sil.PauseReason.Step =>
         e.setReason(StoppedEventArgumentsReason.STEP)

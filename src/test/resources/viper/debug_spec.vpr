@@ -1,0 +1,29 @@
+field f: Int
+
+method inc(x: Ref)
+  requires acc(x.f) && x.f >= 0
+  ensures acc(x.f) && x.f > old(x.f)
+{
+  x.f := x.f + 1
+}
+
+method client(x: Ref)
+  requires acc(x.f)
+{
+  x.f := 0
+  inc(x)
+  var i: Int := 0
+  while (i < 3)
+    invariant acc(x.f)
+    invariant 0 <= i && i <= 3
+  {
+    i := i + 1
+  }
+}
+
+method bad(x: Ref)
+  requires acc(x.f)
+  ensures acc(x.f) && x.f == 1
+{
+  x.f := 2
+}

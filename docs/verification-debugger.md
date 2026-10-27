@@ -97,17 +97,17 @@ socket does, so that an IDE attached to a remote ViperServer can reach it. The I
 |---|---|
 | `launch` | Takes `uri` (or `program`), `backend`, `customArgs`, `failure` (`line`, `column`, both 0-based, and `message`), `restrictToMember` and `counterexample`. The IDE's `ViperDebugConfigurationProvider` fills these in from its settings. |
 | `configurationDone` | Starts the debug run via `DebugSessionRegistry.start`, with a `DebugRunController` (see "Breakpoints" below). If there are breakpoints, the whole file is verified, even if `restrictToMember` is set. |
-| `setBreakpoints` | Line breakpoints, handed to the controller. They are reported as unverified until the verification has started; then `breakpoint` events report where each one stops. A breakpoint may have a condition, a Viper expression: it stops unless the condition is provably false in the paused state, since a symbolic state stands for many concrete states, in some of which the condition may hold. A condition that cannot be checked (e.g. because it does not typecheck) stops, with a message in the Debug Console. |
+| `setBreakpoints` | Line breakpoints, handed to the controller; on statements, or on preconditions, postconditions and loop invariants (see "Breakpoints" below). They are reported as unverified until the verification has started; then `breakpoint` events report where each one stops. A breakpoint may have a condition, a Viper expression: it stops unless the condition is provably false in the paused state, since a symbolic state stands for many concrete states, in some of which the condition may hold. A condition that cannot be checked (e.g. because it does not typecheck) stops, with a message in the Debug Console. |
 | `setExceptionBreakpoints` | The filter `failures` ("Verification failures", off by default) makes the verification pause at every final verification failure, with the failure's proof obligation (including its assertion and counterexample). |
 | threads | While the debug run is verified: thread 1, "Verification", stopped (reason `breakpoint`, `step`, `pause` or `exception`) whenever the verification is paused. Afterwards: one thread per verification error, thread `i + 2` for failure `i`, all stopped (reason `exception`) at their error, the one matching `failure` first. |
-| `stackTrace` | One frame per thread, at the paused statement or the error; the frame id is the thread id. |
-| `scopes` | Assertion, Assumptions, Store, the heap(s), Branch conditions, the counterexample (if computed), axioms and declarations (if shown), and the prover settings. A paused verification has no assertion and no counterexample. Silicon's session has one current obligation, so opening a frame of another error's thread opens that thread's obligation and discards the changes made to the previous one. |
+| `stackTrace` | One frame per thread, at the paused statement, the specification conjunct about to be checked, or the error; the frame id is the thread id. Before a specification is checked, the frame's name says which one, e.g. "client: before checking the precondition of \`inc\` (call on line 14)". |
+| `scopes` | Assertion, Assumptions, Store, the heap(s), Branch conditions, the counterexample (if computed), axioms and declarations (if shown), and the prover settings. A verification paused before a statement has no assertion and no counterexample; one paused before a specification is checked has the specification's conjunct as its assertion, which `:prove` checks the way the verification is about to. Silicon's session has one current obligation, so opening a frame of another error's thread opens that thread's obligation and discards the changes made to the previous one. |
 | `variables` | The `DebugNode`s of a scope, see `DapModel`. Assumptions are named `[id]`, the id the user refers to them by; nodes of the form `name -> value` are split. Children beyond what the model contains are requested with `SiliconDebugSession.expand`. References are dropped whenever the obligation changes. |
 | `evaluate` (Debug Console, watch expressions) | The commands of `ConsoleCommand`: `:prove`, `:assert`, `:assume`, `:remove`, `:reset`, `:solver`, `:timeout`, `:set`, `:text`, `:counterexample`, `:help`. Anything else is a Viper expression, which is checked in the current state (`SiliconDebugSession.assertText`): the result is `holds` or `does not hold`. After a command that changes the obligation, the adapter sends `invalidated` (or `stopped` again, for clients that do not support `invalidated`). |
 | `evaluate`: `:fold`, `:unfold`, `:case` | Fold or unfold a predicate instance (e.g. `:unfold list(x@1)`) in the current proof obligation, as if the statement was executed at that point; this happens on the obligation's own prover (`SiliconDebugSession.foldText`). Unfolding a predicate with a conditional body produces one case per feasible branch; `:case n` switches between them. A fold that fails reports why and leaves the obligation as it was. Since the heap changed but the obligation's assertion is the one evaluated before, the Assertion scope is then labelled "(before fold/unfold)". `:prove` checks the failed assertion (the node the error points to) again in the current state anyway: it evaluates or consumes it on the obligation's prover, and a failure comes with a counterexample of the current state (`SiliconDebugSession.prove`). Only if the node cannot be checked on its own (e.g. because it refers to variables bound in a surrounding quantifier) is the recorded term of the failed check proved instead. The IDE offers "Unfold this predicate" on the predicate chunks of the Heap scope (custom request `viperFold`), using VS Code's `__vscodeVariableMenuContext` (see `DapModel.MenuContextVariable`). |
 | `continue` | Lets a paused verification go on; once it has finished, goes to the next verification error. |
-| `next`, `stepIn`, `stepOut` | Let a paused verification go on to the next statement the same verifier executes: on the same path, or on the next path once this one is explored. `stepIn` stops at the next statement; `next` skips the statements of `package` proof scripts that start after the current statement; `stepOut` also skips the rest of the current proof script, and continues outside of one. Once the verification has finished, there is nothing to step. |
-| `pause` | Pauses the running verification before the next statement it executes. |
+| `next`, `stepIn`, `stepOut` | Let a paused verification go on to the next statement the same verifier executes: on the same path, or on the next path once this one is explored. Steps also stop before the next specification that is checked. `stepIn` stops at the next statement, and at the precondition of a call; `next` skips the statements of `package` proof scripts that start after the current statement, and the preconditions of calls; `stepOut` also skips the rest of the current proof script, and continues outside of one. Once the verification has finished, there is nothing to step. |
+| `pause` | Pauses the running verification before the next statement it executes, or the next specification it checks. |
 | `disconnect`, `terminate` | Close the session. If the server closes it (e.g. because the file was edited), the adapter explains why in the Debug Console and sends `terminated`. |
 
 The IDE offers the console commands from menus as well, using custom requests: `viperCommand` (any console
@@ -129,15 +129,26 @@ about to execute such a statement, the controller opens a `SiliconDebugSession` 
 `abort`. The session has a prover of its own, so whatever the user does with the paused state has no effect on
 the verification; it is closed when the verification continues.
 
+A breakpoint on a line of a precondition, postcondition or loop invariant (of a method) stops before a top-level
+conjunct of it is checked: the first one that starts on that line, or else the last one before it. It stops
+wherever Silicon checks the conjunct, not where it assumes it: a precondition at every call of the method (in the
+caller, with the callee's parameters in the store), a postcondition at the end of the method, and a loop invariant
+on entry to the loop and after the loop body. For this, the consumer reports every top-level conjunct it consumes
+to the hook (`DebugHook.beforeCheck`, called in `consumer.consumeTlcs`), and the controller pauses if the
+conjunct's position is one that a breakpoint resolved to (`BreakpointResolver.specification`). The paused session
+is opened with `openPausedCheck`: its obligation's assertion is the conjunct, so `:prove` tells whether the check
+will succeed, and the user can try what makes it succeed (e.g. an unfold) before the verification makes it.
+
 Silicon explores the paths of a method one after another, so a breakpoint is hit once for every feasible path
 that reaches it, and a loop body once per path rather than once per iteration. The debug run uses a single
 verifier, no parallel branches and no timeout (see `ViperServerService.debugArgs`), so that only one path is
 paused at a time. Closing the session, e.g. because the file was edited, aborts a paused or running debug run
 via `DebugRunController.abort`.
 
-Steps are counted in statements Silicon executes, and nesting only exists inside `package` proof scripts:
-conditionals and loops become control flow, and method calls are verified modularly, so there is nothing to step
-into. `BreakpointResolver.depth` gives the number of proof scripts a statement is nested in.
+Steps are counted in statements Silicon executes and specifications it checks, and nesting only exists inside
+`package` proof scripts: conditionals and loops become control flow, and method calls are verified modularly, so
+the only thing to step into at a call is the check of its precondition. `BreakpointResolver.depth` gives the number
+of proof scripts a statement is nested in; specifications are at depth 0.
 
 `SymbolicExecutionRules.createFailure` reports failures to the hook (`DebugHook.failed`), but only final ones:
 Silicon verifies some assertions twice, first without and then with additional heap consolidation, and a failure
