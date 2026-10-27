@@ -552,7 +552,6 @@ class ViperDebugAdapter(coordinator: ClientCoordinator)(implicit executor: Verif
           case Timeout(ms) => _.setTimeout(ms)
           case Fold(predicate, unfold) => _.foldText(predicate, unfold)
           case Case(n) => _.selectCase(n)
-          case Recheck => _.recheck()
           case Set(setting, value) => s => s.currentObligation match {
             case None => sil.DebugCommandResult.error("There is no proof obligation.")
             case Some(m) => s.setPrintConfig(updatedPrintConfig(m.printConfig, setting, value))

@@ -18,7 +18,6 @@ object ConsoleCommand {
   case object Reset extends ConsoleCommand
   case object Text extends ConsoleCommand
   case object Counterexample extends ConsoleCommand
-  case object Recheck extends ConsoleCommand
   /** Folds (or, if `unfold`, unfolds) the predicate instance `predicate`, e.g. `list(x)`. */
   case class Fold(predicate: String, unfold: Boolean) extends ConsoleCommand
   /** Switches to case `n` (1-based) of the last fold or unfold. */
@@ -48,14 +47,13 @@ object ConsoleCommand {
 
   val help: String =
     """Commands of the Viper verification debugger:
-      |  :prove                 try to prove the proof obligation again
+      |  :prove                 check the failed assertion again in the current state, e.g. after an unfold
       |  :assert <expression>   prove <expression> and add it to the assumptions
       |  :assume <expression>   add <expression> to the assumptions without proving it
       |  :remove <id>, ...      remove the assumptions with the given ids (shown as [id] in the Variables view)
       |  :unfold <predicate>    unfold a predicate instance, e.g. :unfold list(x) or :unfold acc(list(x), 1/2)
       |  :fold <predicate>      fold a predicate instance
       |  :case <n>              switch to case n of the last fold or unfold, if it produced several
-      |  :recheck               check the failed assertion again in the current state, e.g. after an unfold
       |  :reset                 discard all changes made to the proof obligation
       |  :solver <name> [args]  use another SMT solver (z3 or cvc5), optionally with command line arguments
       |  :timeout <ms>          set the prover timeout; 0 means no timeout
@@ -86,7 +84,6 @@ object ConsoleCommand {
           case Some(n) if n >= 1 => Case(n)
           case _ => Invalid("Usage: :case <n>, where n is the number of a case, starting at 1")
         }
-      case "recheck" => Recheck
       case "assert" | "ap" => nonEmpty(rest, ":assert")(Assume(_, free = false))
       case "assume" | "af" => nonEmpty(rest, ":assume")(Assume(_, free = true))
       case "remove" | "ra" =>

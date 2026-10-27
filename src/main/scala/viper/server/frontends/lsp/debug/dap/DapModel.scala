@@ -99,7 +99,7 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
       if (model.declarations.isEmpty) Seq.empty
       else Seq(scope("Declarations", Nodes(model.declarations), model.declarations.size, expensive = true))
 
-    // After a fold or unfold, the assertion still is the one evaluated before; :recheck checks the failed one again.
+    // After a fold or unfold, the assertion shown is the one evaluated before; :prove checks the failed one again.
     val assertionTitle = if (model.assertionOutdated) "Assertion (before fold/unfold)" else "Assertion"
     val assertion = if (paused) Seq.empty else Seq(scope(assertionTitle, Nodes(Seq(model.assertion)), 1))
     assertion ++ Seq(

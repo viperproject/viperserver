@@ -355,7 +355,7 @@ class DebugAdapterSpec extends AnyWordSpec {
         // readCell: x.f cannot be read, since cell(x) is folded.
         assert(stopped.getReason == StoppedEventArgumentsReason.EXCEPTION)
         assert(lineOf(adapter, stopped.getThreadId) == 15)
-        assert(evaluate(adapter, ":recheck").getResult.contains("FAIL"))
+        assert(evaluate(adapter, ":prove").getResult.contains("FAIL"))
 
         def heap(): Seq[Variable] = {
           val s = scopes(adapter, stopped.getThreadId).find(_.getName == "Heap").get
@@ -369,7 +369,8 @@ class DebugAdapterSpec extends AnyWordSpec {
         assert(evaluate(adapter, ":unfold cell(x)").getResult.contains("Unfolded cell(x)"))
         assert(heap().exists(_.getValue.startsWith("acc(x@1.f")), heap().map(_.getValue))
         assert(scopes(adapter, stopped.getThreadId).exists(_.getName == "Assertion (before fold/unfold)"))
-        assert(evaluate(adapter, ":recheck").getResult.contains("PASS"))
+        // :prove checks the failure again in the current state, in which x.f can now be read.
+        assert(evaluate(adapter, ":prove").getResult.contains("PASS"))
 
         val failedFold = scala.util.Try(evaluate(adapter, ":fold list(x)"))
         assert(failedFold.isFailure, "folding list(x) needs permission to x.next, which there is none of")

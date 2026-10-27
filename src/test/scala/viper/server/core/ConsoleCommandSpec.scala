@@ -29,7 +29,6 @@ class ConsoleCommandSpec extends AnyWordSpec {
       assert(parse(":unfold list(x)") == Fold("list(x)", unfold = true))
       assert(parse(":fold acc(list(x), 1/2)") == Fold("acc(list(x), 1/2)", unfold = false))
       assert(parse(":case 2") == Case(2))
-      assert(parse(":recheck") == Recheck)
     }
 
     "treat input without a colon as an expression" in {
