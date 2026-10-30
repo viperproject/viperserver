@@ -25,6 +25,8 @@ object ConsoleCommand {
   /** Adds `expression` to the assumptions; unless `free`, it has to be provable first. */
   case class Assume(expression: String, free: Boolean) extends ConsoleCommand
   case class Remove(ids: Seq[Int]) extends ConsoleCommand
+  /** Instantiates the quantified assumption `id` with `arguments`, Viper expressions separated by commas. */
+  case class Instantiate(id: Int, arguments: String) extends ConsoleCommand
   case class Solver(name: String, args: Option[String]) extends ConsoleCommand
   /** A timeout of `None` means no timeout. */
   case class Timeout(ms: Option[Int]) extends ConsoleCommand
@@ -51,6 +53,9 @@ object ConsoleCommand {
       |  :assert <expression>   prove <expression> and add it to the assumptions
       |  :assume <expression>   add <expression> to the assumptions without proving it
       |  :remove <id>, ...      remove the assumptions with the given ids (shown as [id] in the Variables view)
+      |  :instantiate <id> <values>
+      |                         instantiate the forall assumption [id] with values separated by commas,
+      |                         e.g. :instantiate 12 3, x.next
       |  :unfold <predicate>    unfold a predicate instance, e.g. :unfold list(x) or :unfold acc(list(x), 1/2)
       |  :fold <predicate>      fold a predicate instance
       |  :case <n>              switch to case n of the last fold or unfold, if it produced several
@@ -92,6 +97,12 @@ object ConsoleCommand {
         if (ids.isEmpty) Invalid("Usage: :remove <id>, ...")
         else if (ids.exists(_.isEmpty)) Invalid(s"Not an assumption id: ${parts.zip(ids).collectFirst { case (p, None) => p }.get}")
         else Remove(ids.flatten)
+      case "instantiate" | "inst" =>
+        val (id, values) = rest.span(c => !c.isWhitespace)
+        id.stripPrefix("[").stripSuffix("]").toIntOption match {
+          case Some(n) if values.trim.nonEmpty => Instantiate(n, values.trim)
+          case _ => Invalid("Usage: :instantiate <id> <value>, ..., e.g. :instantiate 12 3, x.next")
+        }
       case "solver" | "s" =>
         val (solver, args) = rest.span(c => !c.isWhitespace)
         if (solver.isEmpty) Invalid("Usage: :solver <name> [args]")

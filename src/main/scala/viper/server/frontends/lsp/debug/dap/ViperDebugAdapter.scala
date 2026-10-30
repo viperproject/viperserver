@@ -552,6 +552,7 @@ class ViperDebugAdapter(coordinator: ClientCoordinator)(implicit executor: Verif
           case Reset => _.reset()
           case Assume(e, free) => _.addAssumption(e, free)
           case Remove(ids) => _.removeAssumptions(ids)
+          case Instantiate(id, arguments) => _.instantiate(id, arguments)
           case Solver(name, args) => _.setProver(name, args)
           case Timeout(ms) => _.setTimeout(ms)
           case Fold(predicate, unfold) => _.foldText(predicate, unfold)

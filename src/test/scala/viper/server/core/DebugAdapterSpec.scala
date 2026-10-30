@@ -32,6 +32,7 @@ class DebugAdapterSpec extends AnyWordSpec {
   private val debug_package_file = "src/test/resources/viper/debug_package.vpr"
   private val debug_fold_file = "src/test/resources/viper/debug_fold.vpr"
   private val debug_spec_file = "src/test/resources/viper/debug_spec.vpr"
+  private val debug_forall_file = "src/test/resources/viper/debug_forall.vpr"
   private val timeoutSeconds = 300L
 
   /** Records the events the adapter sends. */
@@ -192,6 +193,26 @@ class DebugAdapterSpec extends AnyWordSpec {
     val args = new VariablesArguments()
     args.setVariablesReference(ref)
     get(adapter.variables(args)).getVariables.toSeq
+  }
+
+  /** The top-level assumptions of the proof obligation of the given thread. */
+  private def assumptions(adapter: IDebugProtocolServer, threadId: Int): Seq[Variable] = {
+    val s = scopes(adapter, threadId).find(_.getName == "Assumptions").get
+    variables(adapter, s.getVariablesReference)
+  }
+
+  /** The id of the (only) top-level assumption whose text satisfies `p`. */
+  private def assumptionId(adapter: IDebugProtocolServer, threadId: Int)(p: String => Boolean): Int = {
+    val all = assumptions(adapter, threadId)
+    val matching = all.filter(v => p(v.getValue))
+    assert(matching.size == 1, all.map(v => s"${v.getName} ${v.getValue}"))
+    matching.head.getName.stripPrefix("[").stripSuffix("]").toInt
+  }
+
+  private def failureMessage(r: => EvaluateResponse): String = {
+    val t = scala.util.Try(r)
+    assert(t.isFailure, s"expected the command to fail, but it returned ${t.map(_.getResult)}")
+    t.failed.get.getMessage
   }
 
   "The debug adapter" should {
@@ -476,6 +497,63 @@ class DebugAdapterSpec extends AnyWordSpec {
         continue_(adapter, first.getThreadId)
         val failure = client.await { case s: StoppedEventArguments => s }
         assert(failure.getReason == StoppedEventArgumentsReason.EXCEPTION)
+      }
+
+    "instantiate a quantifier that no trigger instantiates, and remove the instance with it" in
+      withDebugSession(file = debug_forall_file, failure = Some((13, 9))) { (adapter, _, _, stopped) =>
+        val thread = stopped.getThreadId
+        assert(evaluate(adapter, ":prove").getResult.contains("FAIL"), "trig(3) does not occur, so g(3) > 0 is unknown")
+        // The obligation names the bound variables by their version, e.g. i@1.
+        val forall = assumptionId(adapter, thread)(v => v.startsWith("(forall") && v.contains("> 0"))
+
+        assert(failureMessage(evaluate(adapter, s":instantiate $forall 3, 4")).contains("binds 1 variable"))
+        assert(failureMessage(evaluate(adapter, s":instantiate $forall true")).contains("sort"))
+        val notForall = assumptionId(adapter, thread)(_.startsWith("Joined path conditions"))
+        assert(failureMessage(evaluate(adapter, s":instantiate $notForall 3")).contains("not a universally quantified"))
+
+        assert(evaluate(adapter, s":instantiate $forall 3").getResult.contains(s"the instance of [$forall]"))
+        assert(assumptions(adapter, thread).exists(_.getValue.startsWith(s"instance of [$forall] with")),
+          assumptions(adapter, thread).map(_.getValue))
+        assert(evaluate(adapter, ":prove").getResult.contains("PASS"))
+
+        evaluate(adapter, s":remove $forall")
+        assert(!assumptions(adapter, thread).exists(_.getValue.contains("instance of")))
+        assert(evaluate(adapter, ":prove").getResult.contains("FAIL"))
+      }
+
+    "instantiate a quantifier variable by variable, and one under the condition of an implication" in
+      withDebugSession(file = debug_forall_file, failure = Some((20, 9))) { (adapter, _, _, stopped) =>
+        val thread = stopped.getThreadId
+        val both = assumptionId(adapter, thread)(v => v.startsWith("(forall") && v.contains("::h("))
+        evaluate(adapter, s":instantiate $both 1")
+        assert(evaluate(adapter, ":prove").getResult.contains("FAIL"), "the instance is still quantified over j")
+        val partial = assumptionId(adapter, thread)(_.startsWith(s"instance of [$both]"))
+        evaluate(adapter, s":instantiate $partial 2")
+        assert(evaluate(adapter, ":prove").getResult.contains("PASS"))
+        // The second instance goes with the first one, which goes with the quantifier.
+        evaluate(adapter, s":remove $both")
+        assert(!assumptions(adapter, thread).exists(_.getValue.contains("instance of")))
+        assert(evaluate(adapter, ":prove").getResult.contains("FAIL"))
+
+        val guarded = assumptionId(adapter, thread)(_.contains("==> (forall"))
+        evaluate(adapter, s":instantiate $guarded 3")
+        assert(evaluate(adapter, "g(3) < 0").getResult.startsWith("does not hold"), "b might not hold")
+        assert(evaluate(adapter, "b ==> g(3) < 0").getResult == "holds")
+      }
+
+    "keep the conditions of joined path conditions when an assumption is removed" in
+      withDebugSession(file = debug_forall_file, failure = Some((27, 9))) { (adapter, _, _, stopped) =>
+        val thread = stopped.getThreadId
+        assert(assumptions(adapter, thread).exists(_.getValue.contains("Joined path conditions")),
+          assumptions(adapter, thread).map(_.getValue))
+        assert(evaluate(adapter, "b").getResult.startsWith("does not hold"))
+        def ids() = assumptions(adapter, thread).map(_.getName).toSet
+        val before = ids()
+        evaluate(adapter, ":assume x != null")
+        val added = (ids() -- before).head.stripPrefix("[").stripSuffix("]").toInt
+        evaluate(adapter, s":remove $added")
+        assert(evaluate(adapter, "b").getResult.startsWith("does not hold"),
+          "the path conditions of the branch in which b holds must still be conditional on b")
       }
   }
 }

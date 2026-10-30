@@ -24,6 +24,8 @@ class MenuContextVariable(menuContext: String) extends Variable {
 object MenuContextVariable {
   /** An assumption, which can be removed. */
   val Assumption = "assumption"
+  /** A universally quantified assumption, which can be removed or instantiated. */
+  val QuantifiedAssumption = "quantifiedAssumption"
   /** A predicate chunk, which can be unfolded. */
   val Predicate = "predicate"
 }
@@ -170,7 +172,8 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
       }
 
     val menuContext =
-      if (assumptionKinds.contains(n.kind) && n.id >= 0) Some(MenuContextVariable.Assumption)
+      if (assumptionKinds.contains(n.kind) && n.id >= 0 && n.instantiable) Some(MenuContextVariable.QuantifiedAssumption)
+      else if (assumptionKinds.contains(n.kind) && n.id >= 0) Some(MenuContextVariable.Assumption)
       else if (n.kind == sil.DebugNodeKind.Chunk && n.expString.isDefined) Some(MenuContextVariable.Predicate)
       else None
     val v = menuContext.map(new MenuContextVariable(_)).getOrElse(new Variable())

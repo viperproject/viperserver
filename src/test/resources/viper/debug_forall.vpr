@@ -1,0 +1,29 @@
+field f: Int
+
+function trig(i: Int): Bool
+function g(i: Int): Int
+function h(i: Int, j: Int): Bool
+
+predicate cell(x: Ref) {
+  acc(x.f)
+}
+
+method one()
+  requires forall i: Int :: {trig(i)} g(i) > 0
+{
+  assert g(3) > 0
+}
+
+method two(b: Bool)
+  requires forall i: Int, j: Int :: {trig(i), trig(j)} h(i, j)
+  requires b ==> forall i: Int :: {trig(i)} g(i) < 0
+{
+  assert h(1, 2)
+}
+
+method join(b: Bool, x: Ref)
+  requires cell(x)
+{
+  var y: Bool := b ==> unfolding cell(x) in x.f > 0
+  assert false
+}
