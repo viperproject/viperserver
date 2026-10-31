@@ -95,7 +95,11 @@ abstract class MessageStreamingTask[T] extends Callable[T] with Post {
     // answer is a future that will resolve with the actor's response to the BackendReport request
     val answer = (q_actor ? TaskProtocol.BackendReport(msg)).mapTo[Future[QueueOfferResult]]
     // currentOffer is the future that the actor will send in its response (assuming that no timeout occurred requesting it from the actor)
-    // currentOffer will resolve when the message is dequeued from the queue
+    // currentOffer resolves as soon as the message has been added to the queue's buffer (or has been
+    // handed to a subscriber), i.e. NOT when a consumer has processed it. Only when the buffer is full
+    // (see `initializeProcess` for its size), the offer and, thus, this method blocks until a consumer
+    // made space. Since this method blocks until the offer resolved, a task has at most one pending
+    // offer at a time (which is the maximum number of concurrent offers that the queue permits).
     val currentOffer = answer.flatten
     try {
       // note that an exception is thrown if the currentOffer future fails, e.g. because the askTimeout occurred
