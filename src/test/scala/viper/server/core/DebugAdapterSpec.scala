@@ -210,6 +210,15 @@ class DebugAdapterSpec extends AnyWordSpec {
     matching.head.getName.stripPrefix("[").stripSuffix("]").toInt
   }
 
+  /** Precedes the value of what the user added in the debugger. */
+  private val userAddedMarker = "✎ "
+
+  /** The variables of the scope with the given name, if there is one. */
+  private def scopeVariables(adapter: IDebugProtocolServer, threadId: Int, name: String): Seq[Variable] =
+    scopes(adapter, threadId).find(_.getName == name).map(s => variables(adapter, s.getVariablesReference)).getOrElse(Seq.empty)
+
+  private def describe(vs: Seq[Variable]): Seq[String] = vs.map(v => s"${v.getName} ${v.getValue} (${v.getType})")
+
   private def failureMessage(r: => EvaluateResponse): String = {
     val t = scala.util.Try(r)
     assert(t.isFailure, s"expected the command to fail, but it returned ${t.map(_.getResult)}")
@@ -392,7 +401,7 @@ class DebugAdapterSpec extends AnyWordSpec {
           chunks.map(v => s"${v.getValue} (${v.getEvaluateName})"))
 
         assert(evaluate(adapter, ":unfold cell(x)").getResult.contains("Unfolded cell(x)"))
-        assert(heap().exists(_.getValue.startsWith("acc(x@1.f")), heap().map(_.getValue))
+        assert(heap().exists(_.getValue.contains("acc(x@1.f")), heap().map(_.getValue))
         assert(scopes(adapter, stopped.getThreadId).exists(_.getName == "Assertion (before fold/unfold)"))
         // :prove checks the failure again in the current state, in which x.f can now be read.
         assert(evaluate(adapter, ":prove").getResult.contains("PASS"))
@@ -401,7 +410,7 @@ class DebugAdapterSpec extends AnyWordSpec {
         assert(failedFold.isFailure, "folding list(x) needs permission to x.next, which there is none of")
         assert(failedFold.failed.get.getMessage.contains("Folding list(x) failed"), failedFold.failed.get.getMessage)
         // The failed fold leaves the obligation as it was.
-        assert(heap().exists(_.getValue.startsWith("acc(x@1.f")))
+        assert(heap().exists(_.getValue.contains("acc(x@1.f")))
       }
 
     "unfold a conditional predicate into one case per branch" in
@@ -513,7 +522,7 @@ class DebugAdapterSpec extends AnyWordSpec {
         assert(failureMessage(evaluate(adapter, s":instantiate $notForall 3")).contains("not a quantified assumption"))
 
         assert(evaluate(adapter, s":instantiate $forall 3").getResult.contains(s"the instance of [$forall]"))
-        assert(assumptions(adapter, thread).exists(_.getValue.startsWith(s"instance of [$forall] with")),
+        assert(assumptions(adapter, thread).exists(_.getValue.contains(s"instance of [$forall] with")),
           assumptions(adapter, thread).map(_.getValue))
         assert(evaluate(adapter, ":prove").getResult.contains("PASS"))
 
@@ -528,7 +537,7 @@ class DebugAdapterSpec extends AnyWordSpec {
         val both = assumptionId(adapter, thread)(v => v.startsWith("(forall") && v.contains("::h("))
         evaluate(adapter, s":instantiate $both 1")
         assert(evaluate(adapter, ":prove").getResult.contains("FAIL"), "the instance is still quantified over j")
-        val partial = assumptionId(adapter, thread)(_.startsWith(s"instance of [$both]"))
+        val partial = assumptionId(adapter, thread)(_.contains(s"instance of [$both]"))
         evaluate(adapter, s":instantiate $partial 2")
         assert(evaluate(adapter, ":prove").getResult.contains("PASS"))
         // The second instance goes with the first one, which goes with the quantifier.
@@ -560,7 +569,7 @@ class DebugAdapterSpec extends AnyWordSpec {
 
         // The witness goes with the exists; the instance of the forall stays, but does not help without it.
         evaluate(adapter, s":remove $exists")
-        assert(!assumptions(adapter, thread).exists(_.getValue.startsWith("witness of")))
+        assert(!assumptions(adapter, thread).exists(_.getValue.contains("witness of")))
         assert(evaluate(adapter, ":prove").getResult.contains("FAIL"))
       }
 
@@ -585,6 +594,51 @@ class DebugAdapterSpec extends AnyWordSpec {
         evaluate(adapter, s":remove $added")
         assert(evaluate(adapter, "b").getResult.startsWith("does not hold"),
           "the path conditions of the branch in which b holds must still be conditional on b")
+      }
+
+    "mark what the user added in the debugger, and with which command" in
+      withDebugSession(pauseOnFailures = true, file = debug_fold_file) { (adapter, _, _, stopped) =>
+        val thread = stopped.getThreadId
+        val marker = userAddedMarker
+        def scope(name: String): Seq[Variable] = scopeVariables(adapter, thread, name)
+        assert(lineOf(adapter, thread) == 15)
+        assert(!scopes(adapter, thread).exists(_.getName == "Removed in debugger"))
+        assert((scope("Assumptions") ++ scope("Heap") ++ scope("Store")).forall(v => v.getType == null && !v.getValue.startsWith(marker)),
+          "nothing was changed yet")
+
+        evaluate(adapter, ":unfold cell(x)")
+        assert(scope("Heap").exists(v => v.getValue.startsWith(marker + "acc(x@1.f") && v.getType == "added by: unfold cell(x)"),
+          describe(scope("Heap")))
+        assert(scope("Removed in debugger").exists(v => v.getValue == "acc(cell(x@1), write)" && v.getType == "removed by: unfold cell(x)"),
+          describe(scope("Removed in debugger")))
+
+        val before = scope("Assumptions").map(_.getName).toSet
+        evaluate(adapter, ":assume x.f > 0")
+        val added = scope("Assumptions").filterNot(v => before.contains(v.getName))
+        assert(added.nonEmpty && added.forall(v => v.getValue.startsWith(marker) && v.getType.startsWith("added by: assume ")),
+          describe(added))
+
+        // The predicate gets a new snapshot, so it is not the chunk the program had.
+        evaluate(adapter, ":fold cell(x)")
+        assert(scope("Heap").exists(v => v.getValue == marker + "acc(cell(x@1), write)" && v.getType == "added by: fold cell(x)"),
+          describe(scope("Heap")))
+        assert(!scope("Heap").exists(_.getValue.contains("x@1.f")), describe(scope("Heap")))
+
+        evaluate(adapter, ":reset")
+        assert(!scopes(adapter, thread).exists(_.getName == "Removed in debugger"))
+        assert((scope("Assumptions") ++ scope("Heap")).forall(_.getType == null), "a reset discards all changes")
+      }
+
+    "show the assumptions of the program that the user removed" in
+      withDebugSession(file = debug_forall_file, failure = Some((27, 9))) { (adapter, _, _, stopped) =>
+        val thread = stopped.getThreadId
+        val joined = assumptionId(adapter, thread)(_.startsWith("Joined path conditions"))
+        evaluate(adapter, s":remove $joined")
+        val removed = scopeVariables(adapter, thread, "Removed in debugger")
+        assert(removed.exists(v => v.getName == s"[$joined]" && v.getType == "removed by: remove"), describe(removed))
+        // Its children can still be inspected.
+        val entry = removed.find(_.getName == s"[$joined]").get
+        assert(entry.getVariablesReference > 0 && variables(adapter, entry.getVariablesReference).nonEmpty)
       }
   }
 }

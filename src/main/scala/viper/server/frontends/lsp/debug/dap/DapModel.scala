@@ -36,10 +36,13 @@ object MenuContextVariable {
 sealed trait VariableContainer
 
 object VariableContainer {
-  /** A list of nodes, e.g. the contents of a scope. */
-  case class Nodes(nodes: Seq[sil.DebugNode]) extends VariableContainer
+  /**
+    * A list of nodes, e.g. the contents of a scope; `removed` if they are no longer part of the obligation, see
+    * [[sil.ObligationModel.removed]].
+    */
+  case class Nodes(nodes: Seq[sil.DebugNode], removed: Boolean = false) extends VariableContainer
   /** The children of a node; they may have to be requested from the session, see [[sil.DebugNode.hasHiddenChildren]]. */
-  case class Children(node: sil.DebugNode) extends VariableContainer
+  case class Children(node: sil.DebugNode, removed: Boolean = false) extends VariableContainer
   /** The sections of a counterexample. */
   case class Sections(sections: Seq[sil.DebugSectionModel]) extends VariableContainer
   /** Plain name/value pairs. */
@@ -106,8 +109,12 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
     // After a fold or unfold, the assertion shown is the one evaluated before; :prove checks the failed one again.
     val assertionTitle = if (model.assertionOutdated) "Assertion (before fold/unfold)" else "Assertion"
     val assertion = if (paused) Seq.empty else Seq(scope(assertionTitle, Nodes(Seq(model.assertion)), 1))
+    val removed =
+      if (model.removed.isEmpty) Seq.empty
+      else Seq(scope("Removed in debugger", Nodes(model.removed, removed = true), model.removed.size))
     assertion ++ Seq(
       scope("Assumptions", Nodes(model.assumptions), model.assumptions.size),
+    ) ++ removed ++ Seq(
       scope("Store", Nodes(model.store), model.store.size, hint = Some("locals")),
     ) ++ heapScopes ++ Seq(
       scope("Branch conditions", Nodes(model.branchConditions), model.branchConditions.size),
@@ -133,8 +140,8 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
     s
   }
 
-  def variables(nodes: Seq[sil.DebugNode]): Seq[Variable] =
-    nodes.zipWithIndex.map { case (n, idx) => variable(n, idx) }
+  def variables(nodes: Seq[sil.DebugNode], removed: Boolean = false): Seq[Variable] =
+    nodes.zipWithIndex.map { case (n, idx) => variable(n, idx, removed) }
 
   def sectionVariables(sections: Seq[sil.DebugSectionModel]): Seq[Variable] =
     sections.map { section =>
@@ -161,7 +168,14 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
   val assumptionKinds: Set[String] =
     Set(sil.DebugNodeKind.Assumption, sil.DebugNodeKind.Implication, sil.DebugNodeKind.Quantified)
 
-  private def variable(n: sil.DebugNode, idx: Int): Variable = {
+  /** Precedes the value of a node the user added with a debugger command, see [[sil.DebugNode.origin]]. */
+  val userAddedMarker = "✎ "
+
+  /**
+    * `removed` if `n` is no longer part of the obligation, so that nothing can be done with it. What the user added or
+    * removed is marked, and its `type`, which VS Code shows on hover, names the command that did it.
+    */
+  private def variable(n: sil.DebugNode, idx: Int, removed: Boolean): Variable = {
     val (name, value) =
       if (assumptionKinds.contains(n.kind) && n.id >= 0) {
         // The id is what the user types to remove the assumption (":remove 12"), so it is the name.
@@ -174,7 +188,8 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
       }
 
     val menuContext =
-      if (assumptionKinds.contains(n.kind) && n.id >= 0) n.quantifier match {
+      if (removed) None
+      else if (assumptionKinds.contains(n.kind) && n.id >= 0) n.quantifier match {
         case Some("forall") => Some(MenuContextVariable.QuantifiedAssumption)
         case Some("exists") => Some(MenuContextVariable.ExistentialAssumption)
         case _ => Some(MenuContextVariable.Assumption)
@@ -183,10 +198,11 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
       else None
     val v = menuContext.map(new MenuContextVariable(_)).getOrElse(new Variable())
     v.setName(name)
-    v.setValue(value)
+    v.setValue(if (n.origin.isDefined && !removed) userAddedMarker + value else value)
+    n.origin.foreach(c => v.setType(s"${if (removed) "removed" else "added"} by: $c"))
     n.expString.foreach(v.setEvaluateName)
     val hasChildren = n.children.nonEmpty || n.childCount > 0
-    v.setVariablesReference(if (hasChildren) handles.create(VariableContainer.Children(n)) else 0)
+    v.setVariablesReference(if (hasChildren) handles.create(VariableContainer.Children(n, removed)) else 0)
     if (hasChildren) v.setNamedVariables(n.childCount)
 
     val hint = new VariablePresentationHint()

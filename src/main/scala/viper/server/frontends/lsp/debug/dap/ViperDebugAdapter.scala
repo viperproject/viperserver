@@ -348,16 +348,16 @@ class ViperDebugAdapter(coordinator: ClientCoordinator)(implicit executor: Verif
     val session = current.flatMap { case (threadId, _) => sessionFor(threadId) }
     val fut: Future[Seq[Variable]] = handles.get(args.getVariablesReference) match {
       case None => Future.successful(Seq.empty)
-      case Some(Nodes(nodes)) => Future.successful(dapModel.variables(nodes))
+      case Some(Nodes(nodes, removed)) => Future.successful(dapModel.variables(nodes, removed))
       case Some(Sections(sections)) => Future.successful(dapModel.sectionVariables(sections))
       case Some(Entries(entries)) => Future.successful(dapModel.entryVariables(entries))
-      case Some(Children(node)) if node.hasHiddenChildren && node.id >= 0 && session.isDefined =>
+      case Some(Children(node, removed)) if node.hasHiddenChildren && node.id >= 0 && session.isDefined =>
         // The model only contains the first levels of the assumption tree; the rest is requested on demand.
         session.get.run(_.expand(node.id)).map {
-          case Right(children) => dapModel.variables(children)
+          case Right(children) => dapModel.variables(children, removed)
           case Left(err) => throw error(err)
         }
-      case Some(Children(node)) => Future.successful(dapModel.variables(node.children))
+      case Some(Children(node, removed)) => Future.successful(dapModel.variables(node.children, removed))
     }
     fut.map { vars =>
       val response = new VariablesResponse()
