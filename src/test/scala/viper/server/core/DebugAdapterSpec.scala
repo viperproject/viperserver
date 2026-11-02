@@ -33,6 +33,7 @@ class DebugAdapterSpec extends AnyWordSpec {
   private val debug_fold_file = "src/test/resources/viper/debug_fold.vpr"
   private val debug_spec_file = "src/test/resources/viper/debug_spec.vpr"
   private val debug_forall_file = "src/test/resources/viper/debug_forall.vpr"
+  private val debug_exists_file = "src/test/resources/viper/debug_exists.vpr"
   private val timeoutSeconds = 300L
 
   /** Records the events the adapter sends. */
@@ -509,7 +510,7 @@ class DebugAdapterSpec extends AnyWordSpec {
         assert(failureMessage(evaluate(adapter, s":instantiate $forall 3, 4")).contains("binds 1 variable"))
         assert(failureMessage(evaluate(adapter, s":instantiate $forall true")).contains("sort"))
         val notForall = assumptionId(adapter, thread)(_.startsWith("Joined path conditions"))
-        assert(failureMessage(evaluate(adapter, s":instantiate $notForall 3")).contains("not a universally quantified"))
+        assert(failureMessage(evaluate(adapter, s":instantiate $notForall 3")).contains("not a quantified assumption"))
 
         assert(evaluate(adapter, s":instantiate $forall 3").getResult.contains(s"the instance of [$forall]"))
         assert(assumptions(adapter, thread).exists(_.getValue.startsWith(s"instance of [$forall] with")),
@@ -539,6 +540,36 @@ class DebugAdapterSpec extends AnyWordSpec {
         evaluate(adapter, s":instantiate $guarded 3")
         assert(evaluate(adapter, "g(3) < 0").getResult.startsWith("does not hold"), "b might not hold")
         assert(evaluate(adapter, "b ==> g(3) < 0").getResult == "holds")
+      }
+
+    "obtain a witness of an exists, and instantiate a forall with it" in
+      withDebugSession(file = debug_exists_file, failure = Some((8, 9))) { (adapter, _, _, stopped) =>
+        val thread = stopped.getThreadId
+        assert(evaluate(adapter, ":prove").getResult.contains("FAIL"), "trig never occurs, so the forall is not used")
+        val exists = assumptionId(adapter, thread)(_.startsWith("(exists"))
+        val forall = assumptionId(adapter, thread)(v => v.startsWith("(forall") && v.contains("==> p("))
+        assert(failureMessage(evaluate(adapter, s":witness $forall")).contains("not an exists"))
+        assert(failureMessage(evaluate(adapter, s":instantiate $exists 3")).contains("not a forall"))
+
+        assert(evaluate(adapter, s":witness $exists").getResult.contains("i_witness@1"))
+        val store = variables(adapter, scopes(adapter, thread).find(_.getName == "Store").get.getVariablesReference)
+        assert(store.exists(_.getName == "i_witness@1"), store.map(_.getName))
+        assert(evaluate(adapter, "g(i_witness@1) == 0").getResult == "holds")
+        evaluate(adapter, s":instantiate $forall i_witness@1")
+        assert(evaluate(adapter, ":prove").getResult.contains("PASS"))
+
+        // The witness goes with the exists; the instance of the forall stays, but does not help without it.
+        evaluate(adapter, s":remove $exists")
+        assert(!assumptions(adapter, thread).exists(_.getValue.startsWith("witness of")))
+        assert(evaluate(adapter, ":prove").getResult.contains("FAIL"))
+      }
+
+    "obtain a witness of an exists under the condition of an implication" in
+      withDebugSession(file = debug_exists_file, failure = Some((14, 9))) { (adapter, _, _, stopped) =>
+        val exists = assumptionId(adapter, stopped.getThreadId)(_.contains("==> (exists"))
+        evaluate(adapter, s":witness $exists")
+        assert(evaluate(adapter, "g(i_witness@1) == 0").getResult.startsWith("does not hold"), "b might not hold")
+        assert(evaluate(adapter, "b ==> g(i_witness@1) == 0").getResult == "holds")
       }
 
     "keep the conditions of joined path conditions when an assumption is removed" in

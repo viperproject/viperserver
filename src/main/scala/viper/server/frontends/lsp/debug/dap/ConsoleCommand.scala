@@ -27,6 +27,8 @@ object ConsoleCommand {
   case class Remove(ids: Seq[Int]) extends ConsoleCommand
   /** Instantiates the quantified assumption `id` with `arguments`, Viper expressions separated by commas. */
   case class Instantiate(id: Int, arguments: String) extends ConsoleCommand
+  /** Obtains a witness of the existentially quantified assumption `id`. */
+  case class Witness(id: Int) extends ConsoleCommand
   case class Solver(name: String, args: Option[String]) extends ConsoleCommand
   /** A timeout of `None` means no timeout. */
   case class Timeout(ms: Option[Int]) extends ConsoleCommand
@@ -56,6 +58,7 @@ object ConsoleCommand {
       |  :instantiate <id> <values>
       |                         instantiate the forall assumption [id] with values separated by commas,
       |                         e.g. :instantiate 12 3, x.next
+      |  :witness <id>          obtain a witness of the exists assumption [id], e.g. i_witness@1
       |  :unfold <predicate>    unfold a predicate instance, e.g. :unfold list(x) or :unfold acc(list(x), 1/2)
       |  :fold <predicate>      fold a predicate instance
       |  :case <n>              switch to case n of the last fold or unfold, if it produced several
@@ -102,6 +105,11 @@ object ConsoleCommand {
         id.stripPrefix("[").stripSuffix("]").toIntOption match {
           case Some(n) if values.trim.nonEmpty => Instantiate(n, values.trim)
           case _ => Invalid("Usage: :instantiate <id> <value>, ..., e.g. :instantiate 12 3, x.next")
+        }
+      case "witness" | "w" =>
+        rest.stripPrefix("[").stripSuffix("]").toIntOption match {
+          case Some(n) => Witness(n)
+          case None => Invalid("Usage: :witness <id>, e.g. :witness 12")
         }
       case "solver" | "s" =>
         val (solver, args) = rest.span(c => !c.isWhitespace)

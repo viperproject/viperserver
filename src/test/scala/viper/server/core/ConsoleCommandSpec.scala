@@ -29,6 +29,7 @@ class ConsoleCommandSpec extends AnyWordSpec {
       assert(parse(":unfold list(x)") == Fold("list(x)", unfold = true))
       assert(parse(":fold acc(list(x), 1/2)") == Fold("acc(list(x), 1/2)", unfold = false))
       assert(parse(":instantiate [12] 3, f(x, y)") == Instantiate(12, "3, f(x, y)"))
+      assert(parse(":witness 7") == Witness(7))
       assert(parse(":case 2") == Case(2))
     }
 
@@ -37,7 +38,7 @@ class ConsoleCommandSpec extends AnyWordSpec {
     }
 
     "reject malformed input" in {
-      Seq(":assert", ":unfold", ":case 0", ":case x", ":remove a", ":timeout -1", ":set depth deep", ":set colour on", ":instantiate 12", ":instantiate x 3", ":frobnicate").foreach { input =>
+      Seq(":assert", ":unfold", ":case 0", ":case x", ":remove a", ":timeout -1", ":set depth deep", ":set colour on", ":instantiate 12", ":instantiate x 3", ":witness", ":witness x", ":frobnicate").foreach { input =>
         assert(parse(input).isInstanceOf[Invalid], input)
       }
     }
