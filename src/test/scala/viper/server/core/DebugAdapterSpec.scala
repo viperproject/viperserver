@@ -196,10 +196,15 @@ class DebugAdapterSpec extends AnyWordSpec {
     get(adapter.variables(args)).getVariables.toSeq
   }
 
-  /** The top-level assumptions of the proof obligation of the given thread. */
+  /** The entries grouping the assumptions the user added by the command that added them. */
+  private def isCommandGroup(v: Variable): Boolean =
+    v.getPresentationHint != null && v.getPresentationHint.getKind == "virtual"
+
+  /** The top-level assumptions of the proof obligation of the given thread, including those the user added. */
   private def assumptions(adapter: IDebugProtocolServer, threadId: Int): Seq[Variable] = {
     val s = scopes(adapter, threadId).find(_.getName == "Assumptions").get
-    variables(adapter, s.getVariablesReference)
+    variables(adapter, s.getVariablesReference).flatMap(v =>
+      if (isCommandGroup(v)) variables(adapter, v.getVariablesReference) else Seq(v))
   }
 
   /** The id of the (only) top-level assumption whose text satisfies `p`. */
@@ -612,11 +617,21 @@ class DebugAdapterSpec extends AnyWordSpec {
         assert(scope("Removed in debugger").exists(v => v.getValue == "acc(cell(x@1), write)" && v.getType == "removed by: unfold cell(x)"),
           describe(scope("Removed in debugger")))
 
-        val before = scope("Assumptions").map(_.getName).toSet
+        val before = assumptions(adapter, thread).map(_.getName).toSet
         evaluate(adapter, ":assume x.f > 0")
-        val added = scope("Assumptions").filterNot(v => before.contains(v.getName))
+        val added = assumptions(adapter, thread).filterNot(v => before.contains(v.getName))
         assert(added.nonEmpty && added.forall(v => v.getValue.startsWith(marker) && v.getType.startsWith("added by: assume ")),
           describe(added))
+        // The assumptions the user added are grouped by the command that added them, after those of the program.
+        val top = scope("Assumptions")
+        val groups = top.filter(isCommandGroup)
+        assert(groups.map(_.getType) == Seq("added by: unfold cell(x)", "added by: assume x.f > 0"), describe(top))
+        assert(top.dropWhile(!isCommandGroup(_)).forall(isCommandGroup), "the groups follow the program's assumptions")
+        assert(top.filterNot(isCommandGroup).forall(_.getType == null), describe(top))
+        val assumeGroup = groups.last
+        assert(assumeGroup.getName == marker + "assume x.f > 0" &&
+          variables(adapter, assumeGroup.getVariablesReference).map(_.getName).toSet == added.map(_.getName).toSet,
+          describe(Seq(assumeGroup)))
 
         // The predicate gets a new snapshot, so it is not the chunk the program had.
         evaluate(adapter, ":fold cell(x)")
@@ -626,7 +641,8 @@ class DebugAdapterSpec extends AnyWordSpec {
 
         evaluate(adapter, ":reset")
         assert(!scopes(adapter, thread).exists(_.getName == "Removed in debugger"))
-        assert((scope("Assumptions") ++ scope("Heap")).forall(_.getType == null), "a reset discards all changes")
+        assert((scope("Assumptions") ++ scope("Heap")).forall(v => v.getType == null && !isCommandGroup(v)),
+          "a reset discards all changes")
       }
 
     "show the assumptions of the program that the user removed" in

@@ -153,6 +153,11 @@ class DebugSessionSpec extends AnyWordSpec with Matchers {
         assert(proveRes.proved.contains(false), "the obligation must not be provable")
         assert(addRes.ok, s"adding an assumption failed: ${addRes.messages.map(_.text).mkString("; ")}")
         assert(addRes.obligation.exists(_.assumptions.length > assumptionsBefore))
+        // The CLI prints the assumption in a section of its own, after those of the program.
+        val text = DebugRenderer.renderObligation(addRes.obligation.get)
+        val section = "Assumptions added by assume i > 3:"
+        assert(text.contains(section) && text.indexOf("Assumptions:") < text.indexOf(section), text)
+        assert(!text.contains("(added by: assume"), "the section title names the command, the assumptions need not")
       }
     }
 

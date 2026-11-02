@@ -349,6 +349,7 @@ class ViperDebugAdapter(coordinator: ClientCoordinator)(implicit executor: Verif
     val fut: Future[Seq[Variable]] = handles.get(args.getVariablesReference) match {
       case None => Future.successful(Seq.empty)
       case Some(Nodes(nodes, removed)) => Future.successful(dapModel.variables(nodes, removed))
+      case Some(Assumptions(program, byCommand)) => Future.successful(dapModel.assumptionVariables(program, byCommand))
       case Some(Sections(sections)) => Future.successful(dapModel.sectionVariables(sections))
       case Some(Entries(entries)) => Future.successful(dapModel.entryVariables(entries))
       case Some(Children(node, removed)) if node.hasHiddenChildren && node.id >= 0 && session.isDefined =>

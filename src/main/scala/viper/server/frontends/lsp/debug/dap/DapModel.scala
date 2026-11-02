@@ -41,6 +41,8 @@ object VariableContainer {
     * [[sil.ObligationModel.removed]].
     */
   case class Nodes(nodes: Seq[sil.DebugNode], removed: Boolean = false) extends VariableContainer
+  /** The assumptions from the program, followed by those the user added, grouped by the command that added them. */
+  case class Assumptions(program: Seq[sil.DebugNode], byCommand: Seq[(String, Seq[sil.DebugNode])]) extends VariableContainer
   /** The children of a node; they may have to be requested from the session, see [[sil.DebugNode.hasHiddenChildren]]. */
   case class Children(node: sil.DebugNode, removed: Boolean = false) extends VariableContainer
   /** The sections of a counterexample. */
@@ -113,7 +115,8 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
       if (model.removed.isEmpty) Seq.empty
       else Seq(scope("Removed in debugger", Nodes(model.removed, removed = true), model.removed.size))
     assertion ++ Seq(
-      scope("Assumptions", Nodes(model.assumptions), model.assumptions.size),
+      scope("Assumptions", Assumptions(model.programAssumptions, model.userAssumptionsByCommand),
+        model.programAssumptions.size + model.userAssumptionsByCommand.size),
     ) ++ removed ++ Seq(
       scope("Store", Nodes(model.store), model.store.size, hint = Some("locals")),
     ) ++ heapScopes ++ Seq(
@@ -142,6 +145,27 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
 
   def variables(nodes: Seq[sil.DebugNode], removed: Boolean = false): Seq[Variable] =
     nodes.zipWithIndex.map { case (n, idx) => variable(n, idx, removed) }
+
+  /**
+    * The assumptions from the program, then an entry for each debugger command that added assumptions, which can be
+    * expanded to show them. The entry's name is marked like what the user added, but is not an id, so the client
+    * offers no commands for it.
+    */
+  def assumptionVariables(program: Seq[sil.DebugNode], byCommand: Seq[(String, Seq[sil.DebugNode])]): Seq[Variable] =
+    variables(program) ++ byCommand.map { case (command, nodes) =>
+      val v = new Variable()
+      v.setName(userAddedMarker + command)
+      v.setValue(s"${nodes.size} ${if (nodes.size == 1) "assumption" else "assumptions"}")
+      v.setType(s"added by: $command")
+      v.setVariablesReference(handles.create(VariableContainer.Nodes(nodes)))
+      v.setNamedVariables(nodes.size)
+      val hint = new VariablePresentationHint()
+      // A synthetic entry, introduced only to group the assumptions.
+      hint.setKind("virtual")
+      hint.setAttributes(Array("readOnly"))
+      v.setPresentationHint(hint)
+      v
+    }
 
   def sectionVariables(sections: Seq[sil.DebugSectionModel]): Seq[Variable] =
     sections.map { section =>
