@@ -45,21 +45,15 @@ object McpTools {
                     (implicit executor: VerificationExecutionContext): AsyncToolSpecification = AsyncToolSpecification.builder()
     .tool(verifyFileTool)
     .callHandler((_, request) => {
-      // get and validate tool parameters
-      val path = request.arguments().get("path")
+      val path = request.arguments().get("path").toString
       val backend = getBackendFromArgs(request.arguments())
 
-      if (path == null) {
-        Mono.just(errorResult("Missing required parameter: `path`"))
-      }
-      else {
-        Mono.fromCompletionStage(() =>
-          verifyFileCallback(path.toString, backend)
-            .map(toolResult)
-            .recover { case NonFatal(e) => errorResult(s"Error: $e") }
-            .asJava
-        )
-      }
+      Mono.fromCompletionStage(() =>
+        verifyFileCallback(path, backend)
+          .map(toolResult)
+          .recover { case NonFatal(e) => errorResult(s"Error: $e") }
+          .asJava
+      )
     })
     .build()
 
@@ -81,24 +75,18 @@ object McpTools {
                        (implicit executor: VerificationExecutionContext): AsyncToolSpecification = AsyncToolSpecification.builder()
     .tool(verifySnippetTool)
     .callHandler((_, request) => {
-      // get and validate tool parameters
-      val code = request.arguments().get("code")
+      val code = request.arguments().get("code").toString
       val backend = getBackendFromArgs(request.arguments())
 
-      if (code == null) {
-        Mono.just(errorResult("Missing required parameter: `code`"))
-      }
-      else {
-        val tempPath = Files.createTempFile("viper-snippet-", ".vpr")
-        Files.writeString(tempPath, code.toString)
-        Mono.fromCompletionStage(() =>
-          verifyFileCallback(tempPath.toString, backend)
-            .map(toolResult)
-            .recover { case NonFatal(e) => errorResult(s"Error: $e") }
-            .andThen{ case _ => Files.deleteIfExists(tempPath) }
-            .asJava
-        )
-      }
+      val tempPath = Files.createTempFile("viper-snippet-", ".vpr")
+      Files.writeString(tempPath, code)
+      Mono.fromCompletionStage(() =>
+        verifyFileCallback(tempPath.toString, backend)
+          .map(toolResult)
+          .recover { case NonFatal(e) => errorResult(s"Error: $e") }
+          .andThen{ case _ => Files.deleteIfExists(tempPath) }
+          .asJava
+      )
     })
     .build()
 
