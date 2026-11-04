@@ -25,9 +25,12 @@ class ViperMcpServer(config: ViperConfig)(override implicit val executor: Verifi
 
   private var mcpServer: McpAsyncServer = _
 
+  private val protocolOut = System.out // the real stdout, used only by the transport
+  System.setOut(System.err) // everyone else who writes to "stdout" ends up on stderr
+
   // MCP has no shutdown request: over stdio, the client ends the session by closing stdin.
   // The SDK then closes the session's transport, so we wrap each transport to get notified.
-  private val transport = new StdioServerTransportProvider(McpJsonDefaults.getMapper) {
+  private val transport = new StdioServerTransportProvider(McpJsonDefaults.getMapper, System.in, protocolOut) {
     override def setSessionFactory(factory: McpServerSession.Factory): Unit = {
       // we pass a function where it expects a Factory interface, this function gets converted
       // to Factory by compiler since it's a "SAM type" (lambda gets converted to .create method)
@@ -42,9 +45,6 @@ class ViperMcpServer(config: ViperConfig)(override implicit val executor: Verifi
   def stopped(): Future[Done] = stoppedPromise.future
 
   override def start(): Future[Done] = {
-    // first make sure all logging goes to stderr/null (not stdout since MCP uses it for its protocol).
-    McpLogging.redirectRootLoggerToNull()
-
     super.start() map { _ =>
       mcpServer = McpServer.async(transport)
         .serverInfo("viper-mcp-server", "0.1.0")
