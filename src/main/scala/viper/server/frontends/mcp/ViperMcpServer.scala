@@ -1,6 +1,7 @@
 package viper.server.frontends.mcp
 
 import akka.Done
+import akka.actor.PoisonPill
 import io.modelcontextprotocol.json.{McpJsonDefaults, TypeRef}
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider
 import io.modelcontextprotocol.server.{McpAsyncServer, McpServer}
@@ -10,7 +11,7 @@ import reactor.core.publisher.Mono
 import viper.server.ViperConfig
 import viper.server.utility.Helpers.validateViperFile
 import viper.server.core.{VerificationExecutionContext, ViperBackendConfig, ViperCoreServer, ViperCoreServerUtils}
-import viper.server.vsi.DefaultVerificationServerStart
+import viper.server.vsi.{AstJobId, DefaultVerificationServerStart}
 import viper.silver.reporter.{OverallFailureMessage, OverallSuccessMessage, AstConstructionFailureMessage, ExceptionReport}
 
 import java.time.{Duration => JDuration}
@@ -68,14 +69,28 @@ class ViperMcpServer(config: ViperConfig)(override implicit val executor: Verifi
   def verifyFile(file: String, backend: ViperBackendConfig): Future[String] = {
     if (!validateViperFile(file)) return Future.successful("Invalid file path")
     val astId = requestAst(file, backend)
+    if (astId.id < 0) return Future.successful("Server busy")
     val verId = verifyWithAstJob(file, astId, backend)
-    if (astId.id < 0 || verId.id < 0) Future.successful("Server busy")
-    else ViperCoreServerUtils.getMessagesFuture(this, verId).map(_.collect {
+    if (verId.id < 0) {
+      // verification pool is full: free the AST slot we just took
+      releaseAstJob(astId)
+      return Future.successful("Server busy")
+    }
+    ViperCoreServerUtils.getMessagesFuture(this, verId).map(_.collect {
       case m: OverallSuccessMessage => s"Verified (${m.verificationTime}ms)"
       case m: OverallFailureMessage => ("Failed:" +: m.result.errors.map(_.readableMessage)).mkString("\n")
       case m: AstConstructionFailureMessage => ("Parse/typecheck failed:" +: m.result.errors.map(_.readableMessage)).mkString("\n")
       case m: ExceptionReport => s"Exception: ${m.e}"
     }.mkString("\n"))
+      .andThen { case _ => releaseAstJob(astId) }
+  }
+
+  /** needed as AST jobs are not released when done by default (poisonPill to end the future when done) */
+  private def releaseAstJob(jid: AstJobId): Unit = {
+    // look the handle up *before* discarding it: afterward the pool no longer knows the job
+    ast_jobs.lookupJob(jid).foreach(_.foreach(handle =>
+      handle.queue.watchCompletion().onComplete(_ => handle.job_actor ! PoisonPill)))
+    discardAstJob(jid)
   }
 
   /** Called (possibly several times, from SDK threads) when the stdio session ends. */
