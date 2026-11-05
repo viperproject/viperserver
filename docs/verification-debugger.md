@@ -26,7 +26,9 @@ The debugger is a regular VS Code debug session of type `viper`. Its debug adapt
 speaks the [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/) (DAP) on a socket of its
 own; the only LSP message involved is the one that opens that socket.
 
-`SiliconDebuggerCli` is the second client of the same API and provides Silicon's `--enableDebugging` REPL.
+`SiliconDebuggerCli` is the second client of the same API and provides Silicon's `--enableDebugging` REPL. It offers
+assumptions, proving, counterexamples, folding and unfolding (with their cases), instantiating foralls and obtaining
+witnesses of exists, but no breakpoints or stepping: it only opens the obligations of failures.
 
 ## Silicon
 
