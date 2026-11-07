@@ -24,7 +24,8 @@ object ConsoleCommand {
   case class Case(n: Int) extends ConsoleCommand
   /** Adds `expression` to the assumptions; unless `free`, it has to be provable first. */
   case class Assume(expression: String, free: Boolean) extends ConsoleCommand
-  case class Remove(ids: Seq[Int]) extends ConsoleCommand
+  /** Removes the assumptions with ids `ids` and the chunks `hn` of the current heap with numbers `n` in `chunks`. */
+  case class Remove(ids: Seq[Int], chunks: Seq[Int] = Seq.empty) extends ConsoleCommand
   /** Instantiates the quantified assumption `id` with `arguments`, Viper expressions separated by commas. */
   case class Instantiate(id: Int, arguments: String) extends ConsoleCommand
   /** Obtains a witness of the existentially quantified assumption `id`. */
@@ -54,7 +55,7 @@ object ConsoleCommand {
       |  :prove                 check the failed assertion again in the current state, e.g. after an unfold
       |  :assert <expression>   prove <expression> and add it to the assumptions
       |  :assume <expression>   add <expression> to the assumptions without proving it
-      |  :remove <id>, ...      remove the assumptions with the given ids (shown as [id] in the Variables view)
+      |  :remove <id>, ...      remove the assumptions [id] and the heap chunks [hn] given, e.g. :remove 12, h3
       |  :instantiate <id> <values>
       |                         instantiate the forall assumption [id] with values separated by commas,
       |                         e.g. :instantiate 12 3, x.next
@@ -95,11 +96,11 @@ object ConsoleCommand {
       case "assert" | "ap" => nonEmpty(rest, ":assert")(Assume(_, free = false))
       case "assume" | "af" => nonEmpty(rest, ":assume")(Assume(_, free = true))
       case "remove" | "ra" =>
-        val parts = rest.split("[,\\s]+").filter(_.nonEmpty).toSeq
-        val ids = parts.map(p => p.stripPrefix("[").stripSuffix("]").toIntOption)
-        if (ids.isEmpty) Invalid("Usage: :remove <id>, ...")
-        else if (ids.exists(_.isEmpty)) Invalid(s"Not an assumption id: ${parts.zip(ids).collectFirst { case (p, None) => p }.get}")
-        else Remove(ids.flatten)
+        viper.silicon.debugger.SiliconDebugSession.parseRemovalTargets(rest) match {
+          case Right((Seq(), Seq())) => Invalid("Usage: :remove <id or chunk>, ..., e.g. :remove 12, h3")
+          case Right((ids, chunks)) => Remove(ids, chunks)
+          case Left(error) => Invalid(error)
+        }
       case "instantiate" | "inst" =>
         val (id, values) = rest.span(c => !c.isWhitespace)
         id.stripPrefix("[").stripSuffix("]").toIntOption match {

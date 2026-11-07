@@ -402,7 +402,7 @@ class DebugAdapterSpec extends AnyWordSpec {
 
         assert(evaluate(adapter, ":unfold cell(x)").getResult.contains("Unfolded cell(x)"))
         assert(heap().exists(_.getValue.contains("acc(x@1.f")), heap().map(_.getValue))
-        assert(scopes(adapter, stopped.getThreadId).exists(_.getName == "Assertion (before fold/unfold)"))
+        assert(scopes(adapter, stopped.getThreadId).exists(_.getName == "Assertion (before the heap changed)"))
         // :prove checks the failure again in the current state, in which x.f can now be read.
         assert(evaluate(adapter, ":prove").getResult.contains("PASS"))
 
@@ -627,6 +627,26 @@ class DebugAdapterSpec extends AnyWordSpec {
         evaluate(adapter, ":reset")
         assert(!scopes(adapter, thread).exists(_.getName == "Removed in debugger"))
         assert((scope("Assumptions") ++ scope("Heap")).forall(_.getType == null), "a reset discards all changes")
+      }
+
+    "remove heap chunks by their handle, and list the removed ones" in
+      withDebugSession(pauseOnFailures = true, file = debug_fold_file) { (adapter, _, _, stopped) =>
+        val thread = stopped.getThreadId
+        def heap(): Seq[Variable] = scopeVariables(adapter, thread, "Heap")
+        val cell = heap().find(_.getValue == "acc(cell(x@1), write)").getOrElse(fail(describe(heap()).mkString(", ")))
+        assert(cell.getName.matches("""\[h\d+\]"""), describe(Seq(cell)))
+
+        assert(failureMessage(evaluate(adapter, ":remove h9")).contains("There is no heap chunk h9"))
+        evaluate(adapter, s":remove ${cell.getName}")
+        assert(!heap().exists(_.getValue.contains("cell(x@1)")), describe(heap()))
+        val removed = scopeVariables(adapter, thread, "Removed in debugger")
+        assert(removed.exists(v => v.getValue == "acc(cell(x@1), write)" && v.getType == "removed by: remove"), describe(removed))
+        // Without the predicate, x.f cannot be accessed by unfolding it.
+        assert(scala.util.Try(evaluate(adapter, ":unfold cell(x)")).isFailure)
+
+        evaluate(adapter, ":reset")
+        assert(heap().exists(_.getValue == "acc(cell(x@1), write)"), describe(heap()))
+        assert(!scopes(adapter, thread).exists(_.getName == "Removed in debugger"))
       }
 
     "show the assumptions of the program that the user removed" in

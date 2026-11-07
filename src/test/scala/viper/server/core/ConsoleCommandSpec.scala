@@ -20,6 +20,7 @@ class ConsoleCommandSpec extends AnyWordSpec {
       assert(parse(":assert x.f > 5") == Assume("x.f > 5", free = false))
       assert(parse(":assume i == 4") == Assume("i == 4", free = true))
       assert(parse(":remove 3, [5] 7") == Remove(Seq(3, 5, 7)))
+      assert(parse(":remove 3, h2 [h4]") == Remove(Seq(3), Seq(2, 4)))
       assert(parse(":solver cvc5 --foo bar") == Solver("cvc5", Some("--foo bar")))
       assert(parse(":solver z3") == Solver("z3", None))
       assert(parse(":timeout 500") == Timeout(Some(500)))
@@ -38,7 +39,7 @@ class ConsoleCommandSpec extends AnyWordSpec {
     }
 
     "reject malformed input" in {
-      Seq(":assert", ":unfold", ":case 0", ":case x", ":remove a", ":timeout -1", ":set depth deep", ":set colour on", ":instantiate 12", ":instantiate x 3", ":witness", ":witness x", ":frobnicate").foreach { input =>
+      Seq(":assert", ":unfold", ":case 0", ":case x", ":remove a", ":remove", ":remove hx", ":timeout -1", ":set depth deep", ":set colour on", ":instantiate 12", ":instantiate x 3", ":witness", ":witness x", ":frobnicate").foreach { input =>
         assert(parse(input).isInstanceOf[Invalid], input)
       }
     }

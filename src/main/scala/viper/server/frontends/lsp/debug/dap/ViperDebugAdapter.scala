@@ -24,8 +24,11 @@ import scala.concurrent.Future
 import scala.jdk.CollectionConverters._
 import scala.jdk.FutureConverters._
 
-/** The arguments of the custom `viperRemoveAssumptions` request. */
-case class RemoveAssumptionsArguments(ids: Array[Int])
+/**
+  * The arguments of the custom `viperRemoveAssumptions` request: the ids of assumptions and the numbers `n` of heap
+  * chunks `hn` to remove; either may be missing.
+  */
+case class RemoveAssumptionsArguments(ids: Array[Int], chunks: Array[Int])
 
 /** The arguments of the custom `viperSetPrintConfig` request; fields that are null are left unchanged. */
 case class SetPrintConfigArguments(printInternal: lang.Boolean,
@@ -470,7 +473,8 @@ class ViperDebugAdapter(coordinator: ClientCoordinator)(implicit executor: Verif
 
   @JsonRequest("viperRemoveAssumptions")
   def removeAssumptions(args: RemoveAssumptionsArguments): CompletableFuture[CommandResponse] =
-    withSession(focusedThread)(_.run(_.removeAssumptions(Option(args.ids).getOrElse(Array.empty[Int]).toSeq)))
+    withSession(focusedThread)(_.run(_.remove(Option(args.ids).getOrElse(Array.empty[Int]).toSeq,
+      Option(args.chunks).getOrElse(Array.empty[Int]).toSeq)))
       .map(r => CommandResponse(r.ok, r.messages.map(_.text).mkString("\n").trim, null))
       .asJava.toCompletableFuture
 
@@ -551,7 +555,7 @@ class ViperDebugAdapter(coordinator: ClientCoordinator)(implicit executor: Verif
           case Prove => _.prove()
           case Reset => _.reset()
           case Assume(e, free) => _.addAssumption(e, free)
-          case Remove(ids) => _.removeAssumptions(ids)
+          case Remove(ids, chunks) => _.remove(ids, chunks)
           case Instantiate(id, arguments) => _.instantiate(id, arguments)
           case Witness(id) => _.obtainWitness(id)
           case Solver(name, args) => _.setProver(name, args)

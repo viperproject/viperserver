@@ -28,8 +28,10 @@ object MenuContextVariable {
   val QuantifiedAssumption = "quantifiedAssumption"
   /** An existentially quantified assumption, which can be removed or have a witness obtained of it. */
   val ExistentialAssumption = "existentialAssumption"
-  /** A predicate chunk, which can be unfolded. */
+  /** A predicate chunk of the current heap, which can be unfolded or removed. */
   val Predicate = "predicate"
+  /** Another chunk of the current heap, which can be removed. */
+  val Chunk = "chunk"
 }
 
 /** What a `variablesReference` handed out to the client stands for. */
@@ -106,8 +108,8 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
       if (model.declarations.isEmpty) Seq.empty
       else Seq(scope("Declarations", Nodes(model.declarations), model.declarations.size, expensive = true))
 
-    // After a fold or unfold, the assertion shown is the one evaluated before; :prove checks the failed one again.
-    val assertionTitle = if (model.assertionOutdated) "Assertion (before fold/unfold)" else "Assertion"
+    // After the heap changed, the assertion shown is the one evaluated before; :prove checks the failed one again.
+    val assertionTitle = if (model.assertionOutdated) "Assertion (before the heap changed)" else "Assertion"
     val assertion = if (paused) Seq.empty else Seq(scope(assertionTitle, Nodes(Seq(model.assertion)), 1))
     val removed =
       if (model.removed.isEmpty) Seq.empty
@@ -180,6 +182,9 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
       if (assumptionKinds.contains(n.kind) && n.id >= 0) {
         // The id is what the user types to remove the assumption (":remove 12"), so it is the name.
         (s"[${n.id}]", n.label)
+      } else if (n.handle.isDefined) {
+        // Like an assumption's id, the handle is what the user types to remove the chunk (":remove h3").
+        (s"[${n.handle.get}]", n.label)
       } else if (keyValueKinds.contains(n.kind) && n.label.contains(" -> ")) {
         val i = n.label.indexOf(" -> ")
         (n.label.substring(0, i), n.label.substring(i + 4))
@@ -194,7 +199,8 @@ class DapModel(handles: VariableHandles, linesStartAt1: Boolean, columnsStartAt1
         case Some("exists") => Some(MenuContextVariable.ExistentialAssumption)
         case _ => Some(MenuContextVariable.Assumption)
       }
-      else if (n.kind == sil.DebugNodeKind.Chunk && n.expString.isDefined) Some(MenuContextVariable.Predicate)
+      else if (n.kind == sil.DebugNodeKind.Chunk && n.handle.isDefined)
+        Some(if (n.expString.isDefined) MenuContextVariable.Predicate else MenuContextVariable.Chunk)
       else None
     val v = menuContext.map(new MenuContextVariable(_)).getOrElse(new Variable())
     v.setName(name)
