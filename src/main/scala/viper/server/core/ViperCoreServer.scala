@@ -12,10 +12,12 @@ import akka.util.Timeout
 import ch.qos.logback.classic.Logger
 import viper.server.ViperConfig
 import viper.server.vsi.{AstHandle, AstJobId, VerJobId, VerificationServer}
+import viper.silver.ast.{Function, HasLineColumn, Method, Node, Program, SourcePosition}
 import viper.silver.ast.Program
 import viper.silver.ast.utility.FileLoader
 import viper.silver.logger.ViperLogger
 
+import scala.collection.immutable.HashSet
 import scala.concurrent.duration._
 import scala.concurrent.Future
 import scala.language.postfixOps
@@ -75,7 +77,7 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     ast_id
   }
 
-  def verifyWithAstJob(programId: String, ast_id: AstJobId, backend_config: ViperBackendConfig, localLogger: Option[Logger] = None): VerJobId = {
+  def verifyWithAstJob(programId: String, ast_id: AstJobId, backend_config: ViperBackendConfig, localLogger: Option[Logger] = None, verifyTarget: Option[HasLineColumn] = None): VerJobId = {
     val logger = combineLoggers(localLogger)
 
     if (!isRunning) throw new IllegalStateException("Instance of VerificationServer already stopped")
@@ -88,7 +90,44 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
         val task_backend_maybe_fut: Future[Option[VerificationWorker]] =
           handle_future.map((handle: AstHandle[Option[Program]]) => {
             val program_maybe_fut: Future[Option[Program]] = handle.artifact
-            program_maybe_fut.map(_.map(new VerificationWorker(args, programId, _, logger, config)(executor))).recover({
+            program_maybe_fut.map(_.map(p => {
+              val target: Option[(Node, SourcePosition)] = verifyTarget.flatMap(pos => {
+                (p.methods ++ p.functions).collectFirst(m =>  m.pos match {
+                  case p: SourcePosition  if p.start <= pos && p.end.getOrElse(p.start)  >= pos => (m, p)
+                })
+              });
+
+              if (!verifyTarget.isEmpty && target.isEmpty) {
+                logger.warn(s"Tried to verify target at position ${verifyTarget.get}, " +
+                  s"but no method or function exists at that position.")
+              }
+
+              val (updated_program, position) = target match {
+                // Remove unused functions, predicates and methods
+                // and make not-targeted methods abstract
+                case Some(root) => {
+                  val deps = HashSet() ++ (root._1 match {
+                    case m: Method => p.getMethodDependenciesWithMethods(p, m)
+                    case f: Function => p.getFunctionDependencies(p, f)
+                  })
+                  val functions = p.functions.filter(deps.contains(_))
+                  val predicates = p.predicates.filter(deps.contains(_))
+                  // For methods, we additionally make them abstract if they are not the target method
+                  val methods = p.methods.filter(deps.contains(_)).map(m => {
+                    if (m == root._1) {
+                      m
+                    } else {
+                      m.copy(body = None)(m.pos, m.info, m.errT)
+                    }
+                  })
+                  (p.copy(methods = methods, functions = functions, predicates = predicates)(p.pos, p.info, p.errT), Some(root._2))
+                }
+
+                case None => (p, None)
+              }
+
+              new VerificationWorker(args, programId, updated_program, position, logger, config)(executor)
+            })).recover({
               case e: Throwable =>
                 logger.error(s"### An exception has occurred while constructing Viper AST: $e")
                 throw e
@@ -113,7 +152,7 @@ abstract class ViperCoreServer(val config: ViperConfig)(implicit val executor: V
     val logger = combineLoggers(localLogger)
 
     val args: List[String] = backend_config.toList
-    val task_backend = new VerificationWorker(args, programId, program, logger, config)(executor)
+    val task_backend = new VerificationWorker(args, programId, program, None, logger, config)(executor)
     val ver_id = initializeVerificationProcess(Future.successful(Some(task_backend)), None)
 
     if (ver_id.id >= 0) {
