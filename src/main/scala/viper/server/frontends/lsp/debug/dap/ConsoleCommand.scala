@@ -55,6 +55,7 @@ object ConsoleCommand {
       |  :prove                 check the failed assertion again in the current state, e.g. after an unfold
       |  :assert <expression>   prove <expression> and add it to the assumptions
       |  :assume <expression>   add <expression> to the assumptions without proving it
+      |                         (with permissions, e.g. acc(x.f) && x.f > 0, it is inhaled; :assert checks them)
       |  :remove <id>, ...      remove the assumptions [id] and the heap chunks [hn] given, e.g. :remove 12, h3
       |  :instantiate <id> <values>
       |                         instantiate the forall assumption [id] with values separated by commas,

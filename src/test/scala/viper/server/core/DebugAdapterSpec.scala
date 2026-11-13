@@ -629,6 +629,27 @@ class DebugAdapterSpec extends AnyWordSpec {
         assert((scope("Assumptions") ++ scope("Heap")).forall(_.getType == null), "a reset discards all changes")
       }
 
+    "assume and assert assertions with permissions" in
+      withDebugSession(pauseOnFailures = true, file = debug_fold_file) { (adapter, _, _, stopped) =>
+        val thread = stopped.getThreadId
+        def heap(): Seq[Variable] = scopeVariables(adapter, thread, "Heap")
+        assert(failureMessage(evaluate(adapter, ":assert acc(x.f)")).contains("insufficient permission"))
+
+        evaluate(adapter, ":assume acc(x.f) && x.f > 0")
+        val field = heap().find(_.getValue.contains("acc(x@1.f"))
+        assert(field.exists(v => v.getValue.startsWith(userAddedMarker) &&
+          v.getType == "added by: assume acc(x.f, write) && x.f > 0"), describe(heap()))
+        assert(evaluate(adapter, ":prove").getResult.contains("PASS"), "x.f can be read now")
+        assert(evaluate(adapter, ":assert acc(x.f, 1/2) && x.f > 0").getResult.contains("Proved"))
+        // A second full permission to x.f would make the state infeasible, so it is not added.
+        assert(evaluate(adapter, ":assume acc(x.f)").getResult.contains("infeasible"))
+        assert(heap().count(_.getValue.contains("acc(x@1.f")) == 1, describe(heap()))
+
+        // What an assumption added to the heap can be removed again.
+        evaluate(adapter, s":remove ${field.get.getName}")
+        assert(!heap().exists(_.getValue.contains("acc(x@1.f")), describe(heap()))
+      }
+
     "remove heap chunks by their handle, and list the removed ones" in
       withDebugSession(pauseOnFailures = true, file = debug_fold_file) { (adapter, _, _, stopped) =>
         val thread = stopped.getThreadId
