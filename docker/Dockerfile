@@ -4,9 +4,9 @@
 #
 # Copyright (c) 2011-2020 ETH Zurich.
 
-FROM ubuntu:20.04
+FROM ubuntu:24.04
 
-ENV DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Install prerequisites
 RUN apt-get update && \
@@ -22,9 +22,9 @@ RUN apt-get update && \
 
 # Set up locale
 RUN locale-gen en_US.UTF-8
-ENV LANG en_US.UTF-8
-ENV LANGUAGE en_US:en
-ENV LC_ALL en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
 
 # Install Java
 RUN apt-get update && \
@@ -42,11 +42,11 @@ RUN echo "deb https://repo.scala-sbt.org/scalasbt/debian all main" | tee /etc/ap
 
 
 # Install Z3
-# ENV Z3_URL="https://github.com/Z3Prover/z3/releases/download/z3-4.8.6/z3-4.8.6-x64-ubuntu-16.04.zip"
-ENV Z3_URL="https://github.com/Z3Prover/z3/releases/download/z3-4.8.7/z3-4.8.7-x64-ubuntu-16.04.zip"
+# note: Z3 releases are now named after the glibc version they were built against
+# (glibc 2.39 matches Ubuntu 24.04) instead of an Ubuntu version
+ENV Z3_URL="https://github.com/Z3Prover/z3/releases/download/z3-4.16.0/z3-4.16.0-x64-glibc-2.39.zip"
 # path to z3 binary unzipping Z3_ZIP:
-# ENV Z3_BIN="z3-4.8.6-x64-ubuntu-16.04/bin/z3"
-ENV Z3_BIN="z3-4.8.7-x64-ubuntu-16.04/bin/z3"
+ENV Z3_BIN="z3-4.16.0-x64-glibc-2.39/bin/z3"
 
 # download z3 release from GitHub, unzip, and copy to bin:
 RUN curl -L $Z3_URL --output /z3.zip && \
@@ -55,7 +55,7 @@ RUN curl -L $Z3_URL --output /z3.zip && \
     cp /z3/$Z3_BIN /usr/bin/ && \
     rm -r /z3
 # executing `which z3` and setting Z3_EXE based on its result is unfortunately not possible, therefore it is hardcoded
-ENV Z3_EXE /usr/bin/z3
+ENV Z3_EXE=/usr/bin/z3
 
 # Install Boogie
 ENV BOOGIE_URL="https://github.com/viperproject/boogie-builder/releases/latest/download/boogie-linux.zip"
@@ -65,7 +65,7 @@ RUN curl -L $BOOGIE_URL --output /boogie.zip && \
     rm /boogie.zip && \
     ln -s /boogie/$BOOGIE_BIN /usr/bin/boogie
 # executing `which boogie` and setting BOOGIE_EXE based on its result is unfortunately not possible, therefore it is hardcoded
-ENV BOOGIE_EXE /usr/bin/boogie
+ENV BOOGIE_EXE=/usr/bin/boogie
 
 
 WORKDIR /

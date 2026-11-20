@@ -11,6 +11,7 @@ import akka.http.scaladsl.Http
 import viper.server.core.VerificationExecutionContext
 
 import java.util.concurrent.atomic.AtomicInteger
+import scala.annotation.unused
 import scala.concurrent.Future
 
 // --- Actor: Terminator ---
@@ -35,8 +36,10 @@ object Terminator {
   = Props(new Terminator(ast_jobs, ver_jobs, bindingFuture)(ctx))
 }
 
-class Terminator[R](ast_jobs: JobPool[AstJobId, AstHandle[R]],
-                    ver_jobs: JobPool[VerJobId, VerHandle],
+/** The job pools are currently unused; they are kept as parameters for the not yet implemented
+  * handling of [[Terminator.WatchJobQueue]] messages. */
+class Terminator[R](@unused ast_jobs: JobPool[AstJobId, AstHandle[R]],
+                    @unused ver_jobs: JobPool[VerJobId, VerHandle],
                     bindingFuture: Option[Future[Http.ServerBinding]])
                 (implicit val ctx: VerificationExecutionContext) extends Actor {
 

@@ -1,0 +1,42 @@
+// Any copyright is dedicated to the Public Domain.
+// http://creativecommons.org/publicdomain/zero/1.0/
+
+// This program's verification is reliably long-running: Silicon explores both branches of every
+// `if` separately, i.e. the method below has 2^30 symbolic execution paths. Verifying it hence
+// takes practically forever -- independently of any SMT solver behavior -- which makes it
+// suitable for testing that a running verification can be interrupted.
+method slow(b0: Bool, b1: Bool, b2: Bool, b3: Bool, b4: Bool, b5: Bool, b6: Bool, b7: Bool, b8: Bool, b9: Bool, b10: Bool, b11: Bool, b12: Bool, b13: Bool, b14: Bool, b15: Bool, b16: Bool, b17: Bool, b18: Bool, b19: Bool, b20: Bool, b21: Bool, b22: Bool, b23: Bool, b24: Bool, b25: Bool, b26: Bool, b27: Bool, b28: Bool, b29: Bool)
+{
+  var x: Int := 0
+  if (b0) { x := x + 1 } else { x := x - 1 }
+  if (b1) { x := x + 1 } else { x := x - 1 }
+  if (b2) { x := x + 1 } else { x := x - 1 }
+  if (b3) { x := x + 1 } else { x := x - 1 }
+  if (b4) { x := x + 1 } else { x := x - 1 }
+  if (b5) { x := x + 1 } else { x := x - 1 }
+  if (b6) { x := x + 1 } else { x := x - 1 }
+  if (b7) { x := x + 1 } else { x := x - 1 }
+  if (b8) { x := x + 1 } else { x := x - 1 }
+  if (b9) { x := x + 1 } else { x := x - 1 }
+  if (b10) { x := x + 1 } else { x := x - 1 }
+  if (b11) { x := x + 1 } else { x := x - 1 }
+  if (b12) { x := x + 1 } else { x := x - 1 }
+  if (b13) { x := x + 1 } else { x := x - 1 }
+  if (b14) { x := x + 1 } else { x := x - 1 }
+  if (b15) { x := x + 1 } else { x := x - 1 }
+  if (b16) { x := x + 1 } else { x := x - 1 }
+  if (b17) { x := x + 1 } else { x := x - 1 }
+  if (b18) { x := x + 1 } else { x := x - 1 }
+  if (b19) { x := x + 1 } else { x := x - 1 }
+  if (b20) { x := x + 1 } else { x := x - 1 }
+  if (b21) { x := x + 1 } else { x := x - 1 }
+  if (b22) { x := x + 1 } else { x := x - 1 }
+  if (b23) { x := x + 1 } else { x := x - 1 }
+  if (b24) { x := x + 1 } else { x := x - 1 }
+  if (b25) { x := x + 1 } else { x := x - 1 }
+  if (b26) { x := x + 1 } else { x := x - 1 }
+  if (b27) { x := x + 1 } else { x := x - 1 }
+  if (b28) { x := x + 1 } else { x := x - 1 }
+  if (b29) { x := x + 1 } else { x := x - 1 }
+  assert -30 <= x && x <= 30
+}

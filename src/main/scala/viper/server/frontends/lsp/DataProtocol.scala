@@ -6,7 +6,7 @@
 
 package viper.server.frontends.lsp
 
-import org.eclipse.lsp4j.{Diagnostic, ParameterInformation, Position, Range}
+import org.eclipse.lsp4j.{ParameterInformation, Range}
 import viper.silver.reporter
 
 object VerificationSuccess extends Enumeration {

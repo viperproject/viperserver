@@ -42,7 +42,7 @@ object Socket {
     * TODO: check license
     *
     * @return a free port number on localhost
-    * @throws IllegalStateException if unable to find a free port
+    * @throws java.lang.IllegalStateException if unable to find a free port
     */
   def findFreePort: Int = {
     var socket: ServerSocket = null

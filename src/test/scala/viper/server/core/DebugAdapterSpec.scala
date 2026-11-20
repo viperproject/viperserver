@@ -378,7 +378,7 @@ class DebugAdapterSpec extends AnyWordSpec {
       }
 
     "stop at a breakpoint whose condition cannot be checked, and say why" in
-      withDebugSession(Seq(12), conditions = Map(12 -> "y > 0")) { (adapter, client, _, first) =>
+      withDebugSession(Seq(12), conditions = Map(12 -> "y > 0")) { (_, client, _, first) =>
         assert(first.getReason == StoppedEventArgumentsReason.BREAKPOINT)
         assert(client.outputs.asScala.exists(_.contains("could not be checked")),
           client.outputs.asScala.mkString)

@@ -17,6 +17,7 @@ import viper.server.frontends.lsp.debug.DebugSessionRegistry
 import viper.server.frontends.lsp.debug.dap.DebugAdapterServer
 import viper.viperserver.BuildInfo
 
+import scala.annotation.nowarn
 import scala.concurrent.Future
 import scala.concurrent.duration.DurationInt
 import scala.jdk.CollectionConverters._
@@ -184,6 +185,9 @@ trait TextDocumentReceiver extends StandardReceiver with TextDocumentService {
   // Optional
   //////////////////
 
+  // `SymbolInformation` is deprecated but the LSP4J interface still requires it as the left
+  // alternative of the returned `Either`.
+  @nowarn("cat=deprecation")
   override def documentSymbol(params: DocumentSymbolParams) = {
     // This happens for every edit, so `trace` to avoid spam
     coordinator.logger.trace(s"[Req: textDocument/documentSymbol] ${params.toString()}")

@@ -54,6 +54,7 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
   private val empty_viper_file = "src/test/resources/viper/empty.vpr"
   private val correct_viper_file = "src/test/resources/viper/sum_method.vpr"
   private val ver_error_file = "src/test/resources/viper/verification_error.vpr"
+  private val long_running_file = "src/test/resources/viper/long_running.vpr"
   private val execution_context_terminate_timeout_ms = 1000 // 1 sec
 
   private val files = List(empty_viper_file, correct_viper_file, ver_error_file)
@@ -178,6 +179,59 @@ class CoreServerSpec extends AnyWordSpec with Matchers {
       Future.successful(assertThrows[IllegalStateException] {
         verifySiliconWithoutCaching(core, ver_error_file)
       })
+    })
+
+    s"be able to interrupt a verification while it is running" in withServer[ViperCoreServer]({ (core, context) =>
+      // `--disableCatchingExceptions` lets the InterruptedException caused by interrupting the
+      // verification propagate (instead of Silicon reporting it as a verification failure), such
+      // that the interrupted verification ends without an overall verdict. This mirrors how e.g.
+      // Gobra invokes Silicon:
+      val siliconConfig = SiliconConfig(List("--disableCaching", "--disableCatchingExceptions"))
+      val jid = core.verify(long_running_file, siliconConfig, getAstByFileName(long_running_file))
+      assert(jid.id >= 0)
+      val messagesFuture = ViperCoreServerUtils.getMessagesFuture(core, jid)(context)
+      // give the verification some time to reach the backend:
+      Thread.sleep(2000)
+      // the path explosion keeps Silicon busy practically forever, i.e. the verification can
+      // only end via the interrupt below:
+      assert(!messagesFuture.isCompleted,
+        "the supposedly long-running verification finished before it could be interrupted")
+      // bound the wait for the message stream so that a regression hangs this test case for 60s
+      // instead of forever:
+      val boundedMessagesFuture = Future.firstCompletedOf(Seq(
+        messagesFuture,
+        akka.pattern.after(60 seconds, context.actorSystem.scheduler)(
+          Future.failed(new java.util.concurrent.TimeoutException(
+            "the interrupted verification's message stream did not complete")))(context)
+      ))(context)
+      core.interruptVerification(jid).flatMap(interrupted => {
+        // assert before waiting on the stream such that a failed interrupt is reported as the
+        // root cause instead of as a timed-out stream:
+        assert(interrupted)
+        // the stream completes only once the interrupted verification's task has finished its
+        // teardown and completed its queue. Note that this observes the task's cleanup having
+        // run, not directly that the backend's prover processes are gone (destroying them is the
+        // backend's responsibility within that teardown):
+        boundedMessagesFuture.flatMap(messages => {
+          // an interrupted verification must not report an overall verdict:
+          assert(!messages.exists(_.isInstanceOf[OverallSuccessMessage]))
+          assert(!messages.exists(_.isInstanceOf[OverallFailureMessage]))
+          // the interrupted job's slot must have been freed. This is only falsifiable when
+          // submitting the maximum number of concurrently active jobs: if the interrupted job's
+          // slot leaked, one of the following submissions would be rejected with a negative id:
+          val jids = (1 to core.config.maximumActiveJobs()).map(_ =>
+            verifySiliconWithoutCaching(core, correct_viper_file))
+          assert(jids.forall(_.id >= 0))
+          val resultFutures = jids.map(jid2 => ViperCoreServerUtils.getResultsFuture(core, jid2)(context))
+          resultFutures.foldLeft(Future.successful(succeed))((accFuture, resultFuture) =>
+            accFuture.flatMap(_ =>
+              resultFuture.map(result => assert(result === VerifierSuccess))(context))(context))
+        })(context)
+      })(context)
+    })
+
+    s"return false when interrupting an unknown verification job" in withServer[ViperCoreServer]({ (core, context) =>
+      core.interruptVerification(VerJobId(12345)).map(interrupted => assert(!interrupted))(context)
     })
 
     s"be able to verify a single program with caching enabled" in withServer[ViperCoreServer]({ (core, context) =>

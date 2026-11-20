@@ -7,7 +7,6 @@
 package viper.server.vsi
 
 import akka.{Done, NotUsed}
-import akka.actor.PoisonPill
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.marshalling.ToResponseMarshallable
@@ -59,7 +58,7 @@ sealed trait CustomizableHttp extends BasicHttp {
   *
   * The VerificationServer-specific functionality will need to be implemented for each individual
   * server. In particular, this means providing a protocol that returns the VerificationServer's
-  * responses as type [[ToResponseMarshallable]].
+  * responses as type `akka.http.scaladsl.marshalling.ToResponseMarshallable`.
   * */
 trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
   import scala.language.postfixOps
@@ -223,9 +222,11 @@ trait VerificationServerHttp extends VerificationServer with CustomizableHttp {
           onComplete(handle_future) {
             case Success(handle) =>
               implicit val askTimeout: Timeout = Timeout(5000 milliseconds)
-              val interrupt_done: Future[String] = (handle.job_actor ? StopVerification).mapTo[String]
+              val interrupt_done: Future[String] =
+                (handle.job_actor ? StopVerification).mapTo[VerificationProtocol.StopProcessReply].map(_.message)
               onSuccess(interrupt_done) { msg =>
-                handle.job_actor ! PoisonPill // the actor played its part.
+                // note that the job's actor is stopped as soon as the job's message queue
+                // completes (see `initializeProcess`)
                 complete(discardJobConfirmation(id, msg))
               }
             case Failure(_) =>

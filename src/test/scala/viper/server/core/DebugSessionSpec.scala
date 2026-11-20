@@ -9,7 +9,7 @@ package viper.server.core
 import org.eclipse.lsp4j.{MessageActionItem, MessageParams, Position, PublishDiagnosticsParams, Range, ShowMessageRequestParams}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
-import org.scalatest.{Assertion, Outcome, Succeeded}
+import org.scalatest.Assertion
 import viper.server.ViperConfig
 import viper.server.frontends.lsp._
 import viper.server.frontends.lsp.debug.{DebugLaunchRequest, StartedDebugSession}
@@ -43,14 +43,6 @@ class DebugSessionSpec extends AnyWordSpec with Matchers {
   private val failingAssertion = (11, 9)
   private val failingAssertionMessage = "Assert might fail. Assertion x.f > 5 might not hold."
 
-  private var currentTestName: Option[String] = None
-  override def withFixture(test: NoArgTest): Outcome = {
-    currentTestName = Some(test.name)
-    val res = super.withFixture(test)
-    currentTestName = None
-    res
-  }
-
   /** Starts a server with a connected coordinator, runs the test code, and shuts everything down again. */
   private def withCoordinator(testCode: (ClientCoordinator, ViperServerService, VerificationExecutionContext) => Future[Assertion]): Assertion = {
     val context = new DefaultVerificationExecutionContext()
@@ -75,7 +67,7 @@ class DebugSessionSpec extends AnyWordSpec with Matchers {
     res
   }
 
-  private def launchRequest(backend: String = "silicon", restrictToMember: Boolean = true): DebugLaunchRequest =
+  private def launchRequest(backend: String = "silicon", restrictToMember: Boolean): DebugLaunchRequest =
     DebugLaunchRequest(
       uri = uriOf(debug_error_file),
       backend = backend,

@@ -10,7 +10,6 @@ import java.net.URI
 import java.nio.file.{Path, Paths}
 
 import org.eclipse.lsp4j.{Position, Range}
-import scala.collection.mutable.ArrayBuffer
 import viper.silver.ast
 import org.eclipse.lsp4j.Location
 
