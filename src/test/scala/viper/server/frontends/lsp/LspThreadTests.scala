@@ -21,7 +21,7 @@ import scala.jdk.CollectionConverters._
 /** How many threads the LSP mode keeps for the files of an IDE. Threads can only be looked at from
   * inside their JVM, so this suite, unlike the black-box suites whose helpers it shares, runs the
   * server in the JVM of the tests: put together the way `ViperServerRunner` does it for one IDE.
-  * The IDE is the black-box suites' [[LspClient]], connected over a socket.
+  * The IDE is the black-box suites' [[viper.server.blackbox.LspClient]], connected over a socket.
   */
 class LspThreadTests extends BlackBoxSuite {
 
