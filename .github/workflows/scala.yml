@@ -259,7 +259,7 @@ jobs:
       # unfortunately, the JAR seems to be broken and discovering test suites (e.g. using `-w viper.server`) fails.
       # thus, the test suites have to be explicitly mentioned
       - name: Test ViperServer
-        run: java -Xss128m -Dlogback.configurationFile=$GITHUB_WORKSPACE/silicon/src/main/resources/logback.xml -cp viperserver-test.jar org.scalatest.tools.Runner -R viperserver-test.jar -o -s viper.server.core.AstGenerationTests -s viper.server.core.CoreServerSpec -s viper.server.core.ViperServerHttpSpec
+        run: java -Xss128m -Dlogback.configurationFile=$GITHUB_WORKSPACE/silicon/src/main/resources/logback.xml -cp viperserver-test.jar org.scalatest.tools.Runner -R viperserver-test.jar -o -s viper.server.core.AstGenerationTests -s viper.server.core.CoreServerSpec -s viper.server.core.ViperServerHttpSpec -s viper.server.vsi.JobLifecycleTests -s viper.server.vsi.TaskInterruptionTests -s viper.server.blackbox.HttpBlackBoxTests -s viper.server.blackbox.LspBlackBoxTests -s viper.server.frontends.lsp.LspThreadTests
         shell: bash
         working-directory: viperserver
 
