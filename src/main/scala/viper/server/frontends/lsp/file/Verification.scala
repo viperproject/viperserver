@@ -145,6 +145,7 @@ trait VerificationManager extends ManagesLeaf {
   // verification config cache when parse-only
   var lastCustomArgs: Option[String] = None
   var lastBackendClassName: Option[String] = None
+  var allEntityNames: Array[String] = Array.empty
 
   def prepareVerification(mt: Boolean): Unit = {
     manuallyTriggered = mt
